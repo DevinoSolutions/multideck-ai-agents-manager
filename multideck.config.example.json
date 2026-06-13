@@ -1,0 +1,27 @@
+{
+  "baseDir": "C:\\Users\\you\\code",
+
+  "layout": {
+    "columns": 2,
+    "rows": 1
+  },
+
+  "settings": {
+    "defaultTool": "claude",
+    "settleSeconds": 3,
+    "launchDelayMs": 400,
+    "tools": {
+      "claude": "claude --continue",
+      "codex": "codex --yolo"
+    }
+  },
+
+  "projects": [
+    { "path": "api",                   "color": "#3b82f6" },
+    { "path": "web",                   "color": "#22c55e" },
+    { "path": "infra",                 "color": "#f59e0b", "tool": "codex" },
+    { "path": "docs",                  "color": "#a855f7", "tool": "code" },
+    { "path": "experiments\\spike",    "color": "#ef4444", "enabled": false },
+    { "path": "C:\\work\\ops-scripts", "title": "ops" }
+  ]
+}

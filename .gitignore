@@ -1,0 +1,12 @@
+# Your personal config lives here - copy multideck.config.example.json to
+# multideck.config.json and edit it. It stays local and is never committed.
+multideck.config.json
+
+# Any extra named configs you keep around
+*.local.json
+
+# Windows / editor cruft
+Thumbs.db
+desktop.ini
+.vscode/
+*.log
