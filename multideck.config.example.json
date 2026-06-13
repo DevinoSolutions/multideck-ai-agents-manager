@@ -1,5 +1,5 @@
 {
-  "baseDir": "C:\\Users\\you\\code",
+  "baseDir": "C:/Users/you/code",
 
   "layout": {
     "columns": 2,
@@ -17,11 +17,11 @@
   },
 
   "projects": [
-    { "path": "api",                   "color": "#3b82f6" },
-    { "path": "web",                   "color": "#22c55e" },
-    { "path": "infra",                 "color": "#f59e0b", "tool": "codex" },
-    { "path": "docs",                  "color": "#a855f7", "tool": "code" },
-    { "path": "experiments\\spike",    "color": "#ef4444", "enabled": false },
-    { "path": "C:\\work\\ops-scripts", "title": "ops" }
+    { "path": "internal/api",        "group": "internal", "color": "#3b82f6" },
+    { "path": "internal/web",        "group": "internal", "color": "#22c55e" },
+    { "path": "infra/terraform",     "group": "infra",    "color": "#f59e0b", "tool": "codex" },
+    { "path": "docs",                "group": "internal", "color": "#a855f7", "tool": "code"  },
+    { "path": "experiments/spike",   "group": "labs",     "color": "#ef4444", "enabled": false },
+    { "path": "C:/work/ops-scripts", "title": "ops" }
   ]
 }

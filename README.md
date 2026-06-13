@@ -30,6 +30,9 @@ If you juggle a fleet of repos with terminal AI agents (Claude Code, Codex, aide
 - 🪟 **VS Code support** — projects can open in VS Code instead of a terminal.
 - 🧮 **Configurable grid** — `columns × rows` per screen, spanning every monitor.
 - 📐 **DPI-correct** — per-monitor-aware, so a 175% laptop screen next to 250% 4K monitors tiles perfectly (see [How DPI works](#how-the-dpi-handling-works)).
+- ✨ **Zero-typing setup** — point `-Init` at a folder and it scans your git repos and writes the config for you, with groups and colors filled in.
+- 🏷 **Groups** — tag projects and launch just one set: `multideck -Group lead-gen`.
+- 🧭 **Interactive menu** — run with no arguments for a friendly menu; no flags to memorize.
 - ♻️ **Idempotent** — re-running only opens what's missing; `-RetileAll` re-snaps everything.
 - 👀 **`-DryRun`** — preview the whole plan before anything launches.
 - 🔒 **Your config stays local** — `multideck.config.json` is git-ignored; only the example ships.
@@ -41,85 +44,110 @@ If you juggle a fleet of repos with terminal AI agents (Claude Code, Codex, aide
 - **Windows PowerShell 5.1** (built in) or PowerShell 7+
 - Whatever you launch: the **[Claude Code](https://www.anthropic.com/claude-code)** CLI, **Codex**, **[VS Code](https://code.visualstudio.com/)** (`code` on PATH), etc.
 
-## Quick start
+## Install
 
 ```powershell
 git clone https://github.com/DevinoSolutions/multideck-ai-agent.git
 cd multideck-ai-agent
-
-# 1. create your personal config from the example
-copy multideck.config.example.json multideck.config.json
-
-# 2. edit it — set baseDir and list your projects
-notepad multideck.config.json
-
-# 3. preview, then go
-.\multideck.bat -DryRun
-.\multideck.bat
 ```
 
-> 💡 Pin `multideck.bat` (launch + tile new) and `multideck-retile.bat` (re-tile everything) to your taskbar or drop shortcuts on your desktop — both are double-click friendly.
+**Option A — run from anywhere (recommended):** double-click **`install.bat`** (or run `.\install.ps1`). It adds the folder to your user PATH and drops **Desktop + Start-Menu shortcuts**, so you can type `multideck` in any terminal or double-click an icon. Reversible any time with `uninstall.bat`. *(Open a new terminal afterwards so PATH refreshes.)*
 
-## Commands
+**Option B — run in place:** skip the installer and just call `.\multideck.bat` from the repo folder.
+
+> The examples below use `multideck`; if you didn't install, use `.\multideck.bat` instead.
+
+## First run — build your config
+
+**Let it scan for you** (no JSON by hand):
+
+```powershell
+multideck -Init -BaseDir C:\code     # scans C:\code for git repos, writes multideck.config.json
+multideck -DryRun                    # preview, then:
+multideck
+```
+
+`-Init` walks the folder, finds git repositories (a few levels deep), and writes a config with **groups derived from the top folder** (`internal/api` → group `internal`), auto-assigned tab colors, and unique titles. Just run with no `-BaseDir` and it'll ask which folder to scan — in fact, the very first time you run `multideck` with no config, it offers to do this for you.
+
+**Or edit by hand:** copy `multideck.config.example.json` to `multideck.config.json` and tweak it.
+
+## Everyday use
+
+Run **`multideck`** with no arguments for the menu:
+
+```
+  multideck
+  =========
+   1) Launch missing + tile new windows   (default)
+   2) Re-tile ALL open windows
+   3) Launch a group   (internal, infra, lead-gen)
+   4) Dry run (preview, change nothing)
+   5) Re-generate config from a folder scan
+   Q) Quit
+```
+
+Or skip the menu with flags:
 
 | Command | What it does |
 | --- | --- |
-| `multideck.bat` | Launch any projects that aren't open yet, then tile the **new** windows. |
-| `multideck.bat -RetileAll` | Re-tile **every** matching window — already-open ones too. |
-| `multideck-retile.bat` | Shortcut for `-RetileAll`. Re-snap the whole grid after plugging/unplugging a monitor. |
-| `multideck.bat -DryRun` | Print the launch + tiling plan and exit. Touches nothing. |
-| `multideck.bat -Config path\to\other.json` | Use a different config (e.g. a "frontend only" layout). |
+| `multideck` | Interactive menu (press **Enter** for the default: launch + tile new). |
+| `multideck -Go` | Launch any projects that aren't open, then tile the **new** windows — no menu. |
+| `multideck -RetileAll` | Re-tile **every** matching window — already-open ones too. (`multideck-retile.bat`) |
+| `multideck -Group <name>` | Launch only the projects in that group. |
+| `multideck -DryRun` | Print the launch + tiling plan and exit. Touches nothing. |
+| `multideck -Init -BaseDir <folder>` | Generate `multideck.config.json` by scanning a folder. |
+| `multideck -Config <path>` | Use a different config file. |
 
-Flags combine: `multideck.bat -RetileAll -DryRun` previews a full re-tile.
+Flags combine, e.g. `multideck -Group infra -DryRun` or `multideck -Init -BaseDir C:\code -DryRun`.
 
 ## Configuration
 
-Everything lives in `multideck.config.json` (copy it from `multideck.config.example.json`):
+Everything lives in `multideck.config.json` (generate it with `-Init`, or copy `multideck.config.example.json`):
 
 ```jsonc
 {
-  "baseDir": "C:\\Users\\you\\code",       // root that relative project paths join onto
+  "baseDir": "C:/Users/you/code",            // root that relative project paths join onto
 
-  "layout": {
-    "columns": 2,                            // tiles across each screen
-    "rows": 1                                // tiles down each screen
-  },
+  "layout": { "columns": 2, "rows": 1 },     // tiles per screen
 
   "settings": {
-    "defaultTool": "claude",                 // tool used when a project omits "tool"
-    "settleSeconds": 3,                      // wait for new windows to appear before moving them
-    "launchDelayMs": 400,                    // pause between launches
-    "tools": {                               // command run inside Windows Terminal, per tool
+    "defaultTool": "claude",                  // tool used when a project omits "tool"
+    "settleSeconds": 3,                       // wait for new windows before moving them
+    "launchDelayMs": 400,                     // pause between launches
+    "tools": {                                // command run inside Windows Terminal, per tool
       "claude": "claude --continue",
       "codex":  "codex --yolo"
     }
   },
 
   "projects": [
-    { "path": "api",                   "color": "#3b82f6" },
-    { "path": "web",                   "color": "#22c55e" },
-    { "path": "infra",                 "color": "#f59e0b", "tool": "codex" },
-    { "path": "docs",                  "color": "#a855f7", "tool": "code"  },
-    { "path": "experiments\\spike",    "color": "#ef4444", "enabled": false },
-    { "path": "C:\\work\\ops-scripts", "title": "ops" }
+    { "path": "internal/api",  "group": "internal", "color": "#3b82f6" },
+    { "path": "internal/web",  "group": "internal", "color": "#22c55e" },
+    { "path": "infra/tf",      "group": "infra",    "color": "#f59e0b", "tool": "codex" },
+    { "path": "docs",          "group": "internal", "color": "#a855f7", "tool": "code"  },
+    { "path": "labs/spike",    "group": "labs",     "color": "#ef4444", "enabled": false },
+    { "path": "C:/work/ops",   "title": "ops" }
   ]
 }
 ```
+
+> Paths accept **forward slashes** (`internal/api`) — no `\\` escaping needed. `%ENV%` vars and `~` work too.
 
 ### Fields
 
 | Key | Where | Default | Meaning |
 | --- | --- | --- | --- |
-| `baseDir` | top level | script folder | Root that **relative** project `path`s are joined onto. Supports `%ENV%` and `~`. |
-| `layout.columns` / `layout.rows` | top level | `2` / `1` | Tiles per screen. `2×1` = left/right halves; `2×2` = quadrants; `3×1` = thirds. |
+| `baseDir` | top level | script folder | Root that **relative** project `path`s join onto. |
+| `layout.columns` / `layout.rows` | top level | `2` / `1` | Tiles per screen. `2×1` = halves; `2×2` = quadrants; `3×1` = thirds; `1×1` = maximized. |
 | `settings.defaultTool` | settings | `claude` | Tool for projects that don't set their own `tool`. |
 | `settings.settleSeconds` | settings | `3` | Seconds to wait after launching before tiling (only when something launched). |
 | `settings.launchDelayMs` | settings | `400` | Delay between launches so windows register in order. |
 | `settings.tools` | settings | claude, codex | Map of tool name → command run inside Windows Terminal. |
-| `path` | project | — *(required)* | Absolute, or relative to `baseDir`. The folder the tool opens in. |
+| `path` | project | — *(required)* | Absolute, or relative to `baseDir`. Forward slashes OK. |
+| `group` | project | none | Tag for `-Group` subset launches. |
 | `tool` | project | `defaultTool` | Which tool to launch. Use `"code"` to open in VS Code instead of a terminal. |
 | `color` | project | none | Windows Terminal tab color (`#rrggbb`). |
-| `title` | project | folder name | Window title and the key used to find the window for tiling. Keep titles unique. |
+| `title` | project | folder name | Window title + the key used to find the window for tiling. Keep titles unique. |
 | `enabled` | project | `true` | Set `false` to skip a project without deleting it. |
 
 ## Layout examples
@@ -131,7 +159,22 @@ Everything lives in `multideck.config.json` (copy it from `multideck.config.exam
 "layout": { "columns": 1, "rows": 1 }   // one maximized window per screen
 ```
 
-Windows fill slots in list order, left-to-right then top-to-bottom, cycling across screens. If you list more projects than slots, later windows stack on top of earlier ones on the same slot — exactly like opening more than fit.
+Windows fill slots in list order, left-to-right then top-to-bottom, cycling across screens. List more projects than slots and later windows stack on the same slot — just like opening more than fit.
+
+## Groups
+
+Tag related projects and launch them as a set:
+
+```jsonc
+{ "path": "lead-gen/upwork",   "group": "lead-gen" },
+{ "path": "lead-gen/wellfound","group": "lead-gen" }
+```
+
+```powershell
+multideck -Group lead-gen     # opens + tiles just that group
+```
+
+`-Init` fills `group` in for you from the top folder of each repo, so a `lead-gen/…` layout is grouped automatically. Menu option **3** lists your groups to pick from.
 
 ## Adding your own agent / tool
 
@@ -169,11 +212,12 @@ The grid is then computed in real pixels and is correct on every screen regardle
 
 ## Troubleshooting
 
-- **`No config found`** — copy `multideck.config.example.json` to `multideck.config.json` first.
-- **`Not found: <name>` when tiling** — the window title didn't match. Titles must be unique; if a tool overrides its own title, set a `title` and keep the tab open long enough (raise `settleSeconds`).
+- **`No config found`** — run `multideck -Init -BaseDir <folder>`, or copy `multideck.config.example.json` to `multideck.config.json`.
+- **`multideck` not recognized after install** — open a **new** terminal so the updated PATH loads.
+- **`Not found: <name>` when tiling** — the window title didn't match. Titles must be unique (`-Init` auto-disambiguates duplicates); if a tool overrides its own title, set a `title` and raise `settleSeconds`.
 - **A project is skipped** — its folder doesn't exist under `baseDir` (the path is printed), or `enabled` is `false`.
 - **`wt` not recognized** — install [Windows Terminal](https://aka.ms/terminal).
-- **Nothing tiles on re-run** — by design, plain `multideck.bat` only positions windows it just opened. Use `multideck-retile.bat` to re-snap windows that were already open.
+- **Nothing tiles on re-run** — by design, a plain run only positions windows it just opened. Use `-RetileAll` (or `multideck-retile.bat`) to re-snap windows that were already open.
 - **Scripts blocked** — the `.bat` files already pass `-ExecutionPolicy Bypass`; run those rather than the `.ps1` directly.
 
 ## License
