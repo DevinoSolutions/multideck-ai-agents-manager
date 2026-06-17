@@ -166,7 +166,7 @@ Tiling preview lines are unchanged.
 
 ## Files touched
 
-- `multideck.ps1` — schema parse, dispatch branch, command builders, dry-run annotation, soft ssh check.
+- `scripts/multideck.ps1` — schema parse, dispatch branch, command builders, dry-run annotation, soft ssh check. (`$repoRoot` is already available in the script after the recent `scripts/` move.)
 - `multideck.config.example.json` — `settings.ssh.shell` + one remote example project.
 - `README.md` — `host` / `remotePath` / `settings.ssh.shell` docs, VS Code Remote-SSH behavior, requirements (OpenSSH client, Remote-SSH extension), troubleshooting entries.
 - `tests/multideck.Tests.ps1` *(new)* — Pester tests for the pure command builders.
