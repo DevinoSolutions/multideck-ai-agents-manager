@@ -19,5 +19,13 @@ function Assert-Eq($actual, $expected, $name) {
 Assert-Eq (Get-MdRemoteDir ([pscustomobject]@{ path = 'api'; remotePath = '/home/u/api' })) '/home/u/api' 'remoteDir uses remotePath when set'
 Assert-Eq (Get-MdRemoteDir ([pscustomobject]@{ path = '/srv/api' })) '/srv/api' 'remoteDir falls back to path'
 
+# --- Build-MdSshCommand ---
+Assert-Eq (Build-MdSshCommand -SshHost 'deploy@10.0.0.5' -RemoteDir '/srv/api' -ToolCmd 'claude --continue') `
+    'ssh -t deploy@10.0.0.5 "bash -lc ''cd /srv/api && claude --continue''"' `
+    'ssh command wraps in login shell by default'
+Assert-Eq (Build-MdSshCommand -SshHost 'deploy@10.0.0.5' -RemoteDir '/srv/api' -ToolCmd 'codex --yolo' -Shell '') `
+    'ssh -t deploy@10.0.0.5 "cd /srv/api && codex --yolo"' `
+    'ssh command runs raw when shell disabled'
+
 if ($script:failures -gt 0) { Write-Host "`n$($script:failures) test(s) failed." -ForegroundColor Red; exit 1 }
 Write-Host "`nAll tests passed." -ForegroundColor Green
