@@ -385,6 +385,47 @@ foreach ($p in $projects) {
     if ($null -ne $p.enabled -and -not $p.enabled) { continue }
     if (-not $p.path) { Write-Host "SKIP: project entry with no 'path'" -ForegroundColor Yellow; continue }
 
+    # ---------------------------------------------------------- remote (SSH) projects
+    if ($p.host) {
+        $tool      = if ($p.tool) { "$($p.tool)" } else { $defaultTool }
+        $remoteDir = Get-MdRemoteDir $p
+
+        if ($tool -eq "code") {
+            # VS Code Remote-SSH. Match by the remote folder basename (what VS Code shows).
+            $name    = if ($p.title) { "$($p.title)" } else { Split-Path ("$remoteDir" -replace '/', '\') -Leaf }
+            $running = [WinPos]::FindByTitleContains($name) -ne [IntPtr]::Zero
+            if (-not $running -and -not $DryRun) {
+                Start-Process cmd -ArgumentList (Build-MdCodeArgs -Dir $remoteDir -SshHost "$($p.host)") -WindowStyle Hidden
+                Start-Sleep -Milliseconds $launchDelay
+            }
+            if (-not $running) { $newCount++ }
+            $targets += @{ name = $name; match = "contains"; new = (-not $running) }
+            Write-Host ("{0} {1} [code @ ssh-remote+{2}:{3}]" -f $(if ($running) { "OPEN:" } else { "NEW: " }), $name, "$($p.host)", $remoteDir) `
+                -ForegroundColor $(if ($running) { "DarkGray" } else { "Green" })
+            continue
+        }
+
+        $name = if ($p.title) { "$($p.title)" } else { Split-Path ("$($p.path)" -replace '/', '\') -Leaf }
+        $cmd  = $tools[$tool]
+        if (-not $cmd) { Write-Host "SKIP: $name - unknown tool '$tool' (add it under settings.tools)" -ForegroundColor Yellow; continue }
+
+        $running = [WinPos]::FindByTitle($name) -ne [IntPtr]::Zero
+        if (-not $running -and -not $DryRun) {
+            $sshCmd = Build-MdSshCommand -SshHost "$($p.host)" -RemoteDir $remoteDir -ToolCmd $cmd -Shell $sshShell
+            $wtArgs = "-w new --title `"$name`""
+            if ($p.color) { $wtArgs += " --tabColor `"$($p.color)`"" }
+            $wtArgs += " --suppressApplicationTitle -- cmd /k $sshCmd"
+            Start-Process wt -ArgumentList $wtArgs
+            Start-Sleep -Milliseconds $launchDelay
+        }
+        if (-not $running) { $newCount++ }
+        $targets += @{ name = $name; match = "exact"; new = (-not $running) }
+        Write-Host ("{0} {1} [{2} @ {3}:{4}]" -f $(if ($running) { "OPEN:" } else { "NEW: " }), $name, $tool, "$($p.host)", $remoteDir) `
+            -ForegroundColor $(if ($running) { "DarkGray" } else { "Green" })
+        continue
+    }
+
+    # ---------------------------------------------------------- local projects
     $raw = Resolve-MdPath "$($p.path)"
     $dir = if ([System.IO.Path]::IsPathRooted($raw)) { $raw } else { Join-Path $baseDir $raw }
     if (-not (Test-Path $dir)) { Write-Host "SKIP: $($p.path) not found ($dir)" -ForegroundColor Yellow; continue }
