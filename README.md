@@ -43,6 +43,7 @@ If you juggle a fleet of repos with terminal AI agents (Claude Code, Codex, aide
 - **[Windows Terminal](https://aka.ms/terminal)** (`wt`) — for terminal-based tools
 - **Windows PowerShell 5.1** (built in) or PowerShell 7+
 - Whatever you launch: the **[Claude Code](https://www.anthropic.com/claude-code)** CLI, **Codex**, **[VS Code](https://code.visualstudio.com/)** (`code` on PATH), etc.
+- For **remote projects**: the **OpenSSH client** (`ssh` on PATH — built into Windows 10/11, enable via *Settings → System → Optional features*), key-based auth set up for the host, and for remote VS Code the **[Remote-SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh)**.
 
 ## Install
 
@@ -143,12 +144,15 @@ Everything lives in `multideck.config.json` (generate it with `-Init`, or copy `
 | `settings.settleSeconds` | settings | `3` | Seconds to wait after launching before tiling (only when something launched). |
 | `settings.launchDelayMs` | settings | `400` | Delay between launches so windows register in order. |
 | `settings.tools` | settings | claude, codex | Map of tool name → command run inside Windows Terminal. |
+| `settings.ssh.shell` | settings | `bash -lc` | Login shell that wraps remote agent commands so the remote `PATH` is sourced. Set `""` to run unwrapped, or e.g. `sh -lc` / `zsh -lc`. |
 | `path` | project | — *(required)* | Absolute, or relative to `baseDir`. Forward slashes OK. |
 | `group` | project | none | Tag for `-Group` subset launches. |
 | `tool` | project | `defaultTool` | Which tool to launch. Use `"code"` to open in VS Code instead of a terminal. |
 | `color` | project | none | Windows Terminal tab color (`#rrggbb`). |
 | `title` | project | folder name | Window title + the key used to find the window for tiling. Keep titles unique. |
 | `enabled` | project | `true` | Set `false` to skip a project without deleting it. |
+| `host` | project | none | SSH target (`user@ip`, `user@host`, or an ssh-config alias). When set, the project runs **remotely** — the agent starts over `ssh`, or VS Code opens via Remote-SSH. |
+| `remotePath` | project | `path` | Remote working directory, only needed when it differs from `path`. For `tool:"code"`, use an absolute remote path. |
 
 ## Layout examples
 
@@ -197,6 +201,26 @@ Anything that runs in a terminal works — add a line to `settings.tools`, then 
 
 The command runs via `cmd /k <command>` inside a fresh Windows Terminal tab opened in the project folder. The special tool name `code` is handled separately — it launches VS Code in its own window and matches that window by title.
 
+## Remote projects over SSH
+
+Any project can run on a remote machine instead of locally — just add a `host`. The same host works for Claude Code, Codex, or VS Code; pick per project with `tool`:
+
+```jsonc
+"projects": [
+  { "host": "deploy@10.0.0.5", "path": "/srv/api", "tool": "claude" },          // claude over ssh
+  { "host": "deploy@10.0.0.5", "path": "/srv/web", "tool": "codex"  },          // codex over ssh
+  { "host": "ubuntu@vm-2", "path": "api", "remotePath": "/home/ubuntu/work/api", "tool": "code" } // VS Code Remote-SSH
+]
+```
+
+- **`host`** is whatever you'd type after `ssh` — `user@ip`, `user@hostname`, or a `~/.ssh/config` alias. Auth uses your existing SSH keys / agent (multideck never handles passwords; a password prompt simply appears in the terminal).
+- **CLI agents** open a Windows Terminal running `ssh -t <host> "bash -lc 'cd <dir> && <tool command>'"`. The login-shell wrap (`settings.ssh.shell`, default `bash -lc`) ensures tools installed via nvm/asdf/Homebrew are found; set it to `""` to disable, or to `sh -lc` / `zsh -lc` for other shells. If SSH drops or the agent exits, the window stays open at a local prompt so the tile isn't lost.
+- **VS Code** opens already connected via Remote-SSH: `code --remote ssh-remote+<host> <remoteDir>`. Requires the [Remote-SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh). Use an **absolute** `remotePath` for `code`.
+- **`remotePath`** overrides the remote directory when it differs from `path`; otherwise `path` is used as the remote directory.
+- Remote windows tile exactly like local ones (by title). Remote `code` connects asynchronously — raise `settleSeconds` if it tiles before the window is ready.
+
+Remote and local projects mix freely in one config, and `-Group remote` launches just your remote set.
+
 ## How the DPI handling works
 
 Naïve window tilers read monitor sizes and call `MoveWindow` from a **DPI-unaware** process. Windows then hands back a *virtualized* 96-DPI coordinate space, so a 4K monitor at 250% reports as `1536×864` and a 1080p screen at 175% reports as `1097×617`. The half-screen math is computed in that fake space, and on any monitor whose scale differs from the primary the rectangle gets mis-scaled — windows land too small, with gaps.
@@ -217,6 +241,9 @@ The grid is then computed in real pixels and is correct on every screen regardle
 - **`Not found: <name>` when tiling** — the window title didn't match. Titles must be unique (`-Init` auto-disambiguates duplicates); if a tool overrides its own title, set a `title` and raise `settleSeconds`.
 - **A project is skipped** — its folder doesn't exist under `baseDir` (the path is printed), or `enabled` is `false`.
 - **`wt` not recognized** — install [Windows Terminal](https://aka.ms/terminal).
+- **Remote window opens then closes / agent "not found"** — the remote tool isn't on the non-login `PATH`. Keep the default `settings.ssh.shell` of `bash -lc` (login-shell wrap), or set it to your remote shell. The window stays at a local prompt so you can read the error.
+- **`ssh` not recognized** — enable the Windows OpenSSH client (*Settings → System → Optional features → Add → OpenSSH Client*).
+- **Remote VS Code doesn't connect** — install the Remote-SSH extension and confirm `ssh <host>` works from a normal terminal first; use an absolute `remotePath`.
 - **Nothing tiles on re-run** — by design, a plain run only positions windows it just opened. Use `-RetileAll` (or `multideck-retile.bat`) to re-snap windows that were already open.
 - **Scripts blocked** — the `.bat` files already pass `-ExecutionPolicy Bypass`; run those rather than the `.ps1` directly.
 
