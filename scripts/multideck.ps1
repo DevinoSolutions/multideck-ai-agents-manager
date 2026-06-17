@@ -62,6 +62,10 @@ param(
     [string]$Config
 )
 
+# Pure command builders for remote/SSH support; kept in a sibling file so they
+# can be unit-tested without running this script. See tests/Test-MdBuilders.ps1.
+. (Join-Path $PSScriptRoot 'multideck.lib.ps1')
+
 # --- Make this launcher Per-Monitor-DPI-Aware (V2) BEFORE any screen/window API.
 #     Without this, PowerShell runs DPI-unaware: Screen bounds and MoveWindow use a
 #     virtualized 96-DPI space, so windows mis-scale on any monitor whose scale
@@ -330,6 +334,10 @@ if ($cfg.settings.tools) {
     foreach ($prop in $cfg.settings.tools.PSObject.Properties) { $tools[$prop.Name] = "$($prop.Value)" }
 }
 
+# Login-shell wrapper for remote agent commands (default 'bash -lc'); "" disables wrapping.
+$sshShell = "bash -lc"
+if ($cfg.settings.ssh -and $null -ne $cfg.settings.ssh.shell) { $sshShell = "$($cfg.settings.ssh.shell)" }
+
 if (-not $cfg.projects) { Write-Host "No 'projects' defined in $Config" -ForegroundColor Yellow; exit 1 }
 
 # ---------------------------------------------------------------- group filter
@@ -342,6 +350,11 @@ if ($Group) {
         exit 1
     }
     Write-Host "Group '$Group': $($projects.Count) project(s)" -ForegroundColor Cyan
+}
+
+# Warn once if remote projects are configured but the OpenSSH client is missing.
+if (@($projects | Where-Object { $_.host }).Count -gt 0 -and -not (Get-Command ssh -ErrorAction SilentlyContinue)) {
+    Write-Host "WARNING: remote projects are configured but 'ssh' is not on PATH. Enable the Windows OpenSSH client (Settings > Optional features)." -ForegroundColor Yellow
 }
 
 # ------------------------------------------------- build the per-monitor grid
