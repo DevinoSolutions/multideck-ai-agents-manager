@@ -503,6 +503,16 @@ if ($toPlace.Count -eq 0) {
         }
 
         if ($hwnd -ne [IntPtr]::Zero) {
+            # Move twice on purpose. A window is born on whatever monitor it opens on
+            # (usually the primary), so the first MoveWindow often drags it onto a monitor
+            # with a DIFFERENT scale. That crossing fires WM_DPICHANGED mid-call, and a
+            # Per-Monitor-DPI window (Windows Terminal, VS Code) rescales itself to Windows'
+            # suggested rect by the source/target DPI ratio - so the size we asked for is
+            # lost (a 960x996 cell on a 175% monitor lands as 837x697 when the window came
+            # from a 250% monitor). The second call runs once the window already lives on
+            # the target monitor at its final DPI, so the requested size sticks. Same-scale
+            # moves never cross a boundary, so the second call is a harmless no-op.
+            [WinPos]::MoveWindow($hwnd, $pos.x, $pos.y, $pos.w, $pos.h, $true) | Out-Null
             [WinPos]::MoveWindow($hwnd, $pos.x, $pos.y, $pos.w, $pos.h, $true) | Out-Null
             Write-Host "  $($entry.name) -> screen $screenNum $($pos.label)" -ForegroundColor Gray
         } else {
