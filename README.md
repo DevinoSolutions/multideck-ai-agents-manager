@@ -149,7 +149,7 @@ Everything lives in `multideck.config.json` (generate it with `-Init`, or copy `
 | `group` | project | none | Tag for `-Group` subset launches. |
 | `tool` | project | `defaultTool` | Which tool to launch. Use `"code"` to open in VS Code instead of a terminal. |
 | `color` | project | none | Windows Terminal tab color (`#rrggbb`). |
-| `title` | project | folder name | Window title + the key used to find the window for tiling. Keep titles unique. |
+| `title` | project | folder name | Window title, and the key used to find the window for tiling — keep these unique. **`code` windows are matched by their folder name instead** (VS Code titles its window after the opened folder), so for `tool:"code"` a `title` is display-only. |
 | `enabled` | project | `true` | Set `false` to skip a project without deleting it. |
 | `host` | project | none | SSH target (`user@ip`, `user@host`, or an ssh-config alias). When set, the project runs **remotely** — the agent starts over `ssh`, or VS Code opens via Remote-SSH. |
 | `remotePath` | project | `path` | Remote working directory, only needed when it differs from `path`. For `tool:"code"`, use an absolute remote path. |
@@ -199,7 +199,7 @@ Anything that runs in a terminal works — add a line to `settings.tools`, then 
 ]
 ```
 
-The command runs via `cmd /k <command>` inside a fresh Windows Terminal tab opened in the project folder. The special tool name `code` is handled separately — it launches VS Code in its own window and matches that window by title.
+The command runs via `cmd /k <command>` inside a fresh Windows Terminal tab opened in the project folder. The special tool name `code` is handled separately — it launches VS Code in its own window and matches that window by the **opened folder's name** (what VS Code puts in its title bar), so any `title` you set is display-only and doesn't affect tiling.
 
 ## Remote projects over SSH
 
@@ -217,7 +217,7 @@ Any project can run on a remote machine instead of locally — just add a `host`
 - **CLI agents** open a Windows Terminal running `ssh -t <host> "bash -lc 'cd <dir> && <tool command>'"`. The login-shell wrap (`settings.ssh.shell`, default `bash -lc`) ensures tools installed via nvm/asdf/Homebrew are found; set it to `""` to disable, or to `sh -lc` / `zsh -lc` for other shells. If SSH drops or the agent exits, the window stays open at a local prompt so the tile isn't lost.
 - **VS Code** opens already connected via Remote-SSH: `code --remote ssh-remote+<host> <remoteDir>`. Requires the [Remote-SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh). Use an **absolute** `remotePath` for `code`.
 - **`remotePath`** overrides the remote directory when it differs from `path`; otherwise `path` is used as the remote directory.
-- Remote windows tile exactly like local ones (by title). Remote `code` connects asynchronously — raise `settleSeconds` if it tiles before the window is ready.
+- Remote terminal windows tile exactly like local ones (by title); remote `code` windows tile by their folder name, same as local VS Code. Remote `code` connects asynchronously — including a one-time remote-server install on the very first connect to a host — so multideck polls a few extra seconds for a freshly opened `code` window (up to ~20 s) before tiling it. You don't normally need to raise `settleSeconds` for `code`.
 
 Remote and local projects mix freely in one config, and `-Group remote` launches just your remote set.
 
@@ -238,7 +238,7 @@ The grid is then computed in real pixels and is correct on every screen regardle
 
 - **`No config found`** — run `multideck -Init -BaseDir <folder>`, or copy `multideck.config.example.json` to `multideck.config.json`.
 - **`multideck` not recognized after install** — open a **new** terminal so the updated PATH loads.
-- **`Not found: <name>` when tiling** — the window title didn't match. Titles must be unique (`-Init` auto-disambiguates duplicates); if a tool overrides its own title, set a `title` and raise `settleSeconds`.
+- **`Not found: <name>` when tiling** — the window title didn't match. Titles must be unique (`-Init` auto-disambiguates duplicates); if a terminal tool overrides its own title after launch, set a `title` and raise `settleSeconds`. (`code` windows are matched by folder name, not `title`, so this applies to terminal tools.)
 - **A project is skipped** — its folder doesn't exist under `baseDir` (the path is printed), or `enabled` is `false`.
 - **`wt` not recognized** — install [Windows Terminal](https://aka.ms/terminal).
 - **Remote window opens then closes / agent "not found"** — the remote tool isn't on the non-login `PATH`. Keep the default `settings.ssh.shell` of `bash -lc` (login-shell wrap), or set it to your remote shell. The window stays at a local prompt so you can read the error.
