@@ -72,4 +72,4 @@ class TestLaunchDryRun:
             capture_output=True, text=True,
         )
         assert result.returncode == 0
-        assert "Nothing to position" in result.stdout
+        assert "All windows already positioned" in result.stdout

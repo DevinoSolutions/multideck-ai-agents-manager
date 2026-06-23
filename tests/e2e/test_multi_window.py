@@ -51,7 +51,7 @@ class TestMultiWindowDryRun:
             capture_output=True, text=True,
         )
         assert result.returncode == 0
-        # code tool ignores windows: either 1 window tiled (if new) or nothing to position (if already open)
-        assert "Tiling 1 window(s)" in result.stdout or "Nothing to position" in result.stdout
+        # code tool ignores windows: either 1 window tiled (if new) or already positioned (if already open)
+        assert "Tiling 1 window(s)" in result.stdout or "All windows already positioned" in result.stdout
         # must NOT have tiled 3 windows
         assert "Tiling 3 window(s)" not in result.stdout

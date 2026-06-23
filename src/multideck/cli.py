@@ -11,6 +11,8 @@ from multideck import __version__
 from multideck.config import load_config
 from multideck.init_config import write_config
 
+S = click.style
+
 
 def _config_dir() -> Path:
     if sys.platform == "win32":
@@ -35,35 +37,50 @@ def _find_config(config_arg: str | None) -> Path:
             if (loc / name).exists():
                 return loc / name
     static = _config_path()
-    if static.exists():
-        return static
     return static
 
 
-def _styled(text: str, **kwargs) -> str:
-    return click.style(text, **kwargs)
+def _banner() -> None:
+    tiles = (
+        f"{S('[', dim=True)}{S('##', fg='cyan')}{S(']', dim=True)}"
+        f"{S('[', dim=True)}{S('##', fg='blue')}{S(']', dim=True)} "
+    )
+    name = S("m u l t i d e c k", bold=True, fg="white")
+    ver = S(f"v{__version__}", dim=True)
+    tag = S("auto-tile your AI workspace", dim=True)
 
-
-def _header() -> None:
     click.echo()
-    click.echo(f"  {_styled('multideck', bold=True)}  {_styled(f'v{__version__}', dim=True)}")
-    click.echo(f"  {_styled('─' * 36, dim=True)}")
+    click.echo(f"  {tiles}  {name}")
+    click.echo(f"  {S('[##]', fg='magenta')}{S('[##]', fg='blue')}   {ver}  {tag}")
+    click.echo()
+
+
+def _divider() -> None:
+    click.echo(f"  {S('-' * 40, dim=True)}")
+
+
+def _menu_item(key: str, label: str, key_fg: str = "cyan", extra: str = "") -> None:
+    click.echo(f"   {S(key, fg=key_fg, bold=True)}   {label}{extra}")
 
 
 def _show_menu(groups: list[str]) -> dict:
     while True:
-        _header()
+        _banner()
+        _divider()
         click.echo()
-        click.echo(f"  {_styled('[1]', fg='cyan')}  Launch & tile new windows")
-        click.echo(f"  {_styled('[2]', fg='cyan')}  Re-tile all open windows")
+        _menu_item("1", "Launch & tile new windows", extra=S("  (default)", dim=True))
+        _menu_item("2", "Re-tile all open windows")
         if groups:
-            group_list = _styled(', '.join(groups), dim=True)
-            click.echo(f"  {_styled('[3]', fg='cyan')}  Launch a group  {_styled('→', dim=True)}  {group_list}")
-        click.echo(f"  {_styled('[e]', fg='yellow')}  Edit config")
-        click.echo(f"  {_styled('[q]', fg='red')}  Quit")
+            group_list = S(f"  {' | '.join(groups)}", dim=True)
+            _menu_item("3", "Launch a group" + group_list)
+        _menu_item("e", "Edit config", key_fg="yellow")
+        _menu_item("q", "Quit", key_fg="red")
         click.echo()
 
-        choice = click.prompt(f"  {_styled('>', fg='green', bold=True)}", default="1", show_default=False, prompt_suffix=" ").strip().lower()
+        choice = click.prompt(
+            f"  {S('>', fg='cyan', bold=True)}",
+            default="1", show_default=False, prompt_suffix=" ",
+        ).strip().lower()
 
         if choice == "1":
             return {"action": "run", "retile_all": False, "group": None}
@@ -72,22 +89,25 @@ def _show_menu(groups: list[str]) -> dict:
         elif choice == "3" and groups:
             click.echo()
             for i, g in enumerate(groups, 1):
-                click.echo(f"    {_styled(str(i), fg='cyan')}  {g}")
+                _menu_item(str(i), g)
             click.echo()
-            idx_str = click.prompt(f"  {_styled('group', fg='green')}", default="1", show_default=False, prompt_suffix=" ").strip()
+            idx_str = click.prompt(
+                f"  {S('group', fg='cyan')}",
+                default="1", show_default=False, prompt_suffix=" ",
+            ).strip()
             try:
                 idx = int(idx_str) - 1
                 if 0 <= idx < len(groups):
                     return {"action": "run", "retile_all": False, "group": groups[idx]}
             except ValueError:
                 pass
-            click.echo(f"  {_styled('Invalid choice.', fg='red')}")
+            click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
         elif choice == "e":
             return {"action": "edit"}
         elif choice == "q":
             return {"action": "quit"}
         else:
-            click.echo(f"  {_styled('Invalid choice.', fg='red')}")
+            click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
 
 
 def _open_in_editor(path: Path) -> None:
@@ -104,40 +124,46 @@ def _open_in_editor(path: Path) -> None:
 
 
 def _run_discovery(config_file: Path) -> bool:
-    """Scan Claude/Codex history to auto-generate a config. Returns True if config was written."""
     from multideck.discover import discover_projects, projects_to_config
 
-    click.echo()
-    click.echo(f"  {_styled('No config found.', fg='yellow')} Scanning your recent projects...")
+    _banner()
+    click.echo(f"  {S('!', fg='yellow', bold=True)} {S('No config found.', fg='yellow')} Scanning session history...")
     click.echo()
 
     projects = discover_projects()
 
     if not projects:
-        click.echo(f"  {_styled('No projects found', dim=True)} in Claude or Codex history.")
-        click.echo(f"  Create a config manually at: {_styled(str(config_file), bold=True)}")
+        click.echo(f"  {S('No projects found', dim=True)} in Claude or Codex history.")
+        click.echo(f"  Create a config manually at: {S(str(config_file), bold=True)}")
         return False
 
-    click.echo(f"  Found {_styled(str(len(projects)), fg='green', bold=True)} projects from your session history:\n")
+    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects:\n")
 
+    tool_colors = {"claude": "magenta", "codex": "cyan"}
     for i, p in enumerate(projects):
         leaf = Path(p["path"]).name
-        tool_badge = _styled(f"[{p['tool']}]", fg='cyan', dim=True)
-        sessions = _styled(f"{p['session_count']} sessions", dim=True)
-        click.echo(f"    {_styled(str(i + 1).rjust(2), dim=True)}  {leaf:<30} {tool_badge}  {sessions}")
+        tc = tool_colors.get(p["tool"], "white")
+        badge = S(f" {p['tool']:<6}", fg=tc)
+        count = S(f"{p['session_count']:>2} sessions", dim=True)
+        num = S(f"{i + 1:>2}", dim=True)
+        click.echo(f"   {num}  {leaf:<32} {badge}  {count}")
 
     click.echo()
+    _divider()
+    click.echo()
+
     if not click.confirm(f"  Generate config with these {len(projects)} projects?", default=True):
-        click.echo(f"\n  {_styled('Cancelled.', dim=True)}")
+        click.echo(f"\n  {S('Cancelled.', dim=True)}")
         return False
 
     config = projects_to_config(projects)
     config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    click.echo(f"\n  {_styled('✓', fg='green', bold=True)} Config saved to {_styled(str(config_file), bold=True)}")
+    click.echo(f"\n  {S('+', fg='green', bold=True)} Saved to {S(str(config_file), fg='cyan')}")
+    click.echo()
 
-    if click.confirm("  Open in your editor?", default=False):
+    if click.confirm(f"  {S('Open in editor?', bold=True)}", default=False):
         _open_in_editor(config_file)
 
     return True
