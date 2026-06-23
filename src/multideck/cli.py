@@ -137,7 +137,8 @@ def _run_discovery(config_file: Path) -> bool:
         click.echo(f"  Create a config manually at: {S(str(config_file), bold=True)}")
         return False
 
-    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects:\n")
+    from multideck.discover import RECENT_DAYS
+    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects active in the last {RECENT_DAYS} days:\n")
 
     tool_colors = {"claude": "magenta", "codex": "cyan"}
     for i, p in enumerate(projects):
