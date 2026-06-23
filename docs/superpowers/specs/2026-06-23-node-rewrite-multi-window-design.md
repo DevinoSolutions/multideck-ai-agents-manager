@@ -1,96 +1,121 @@
-# Multideck Node.js Rewrite + Multi-Window Session Resume
+# Multideck Python Rewrite + Multi-Window Session Resume
 
 **Date:** 2026-06-23
 **Status:** Approved
-**Scope:** Full rewrite from PowerShell to TypeScript/Node.js, add multi-window session resume, cross-platform support (Windows/macOS/Linux), npm publishing, comprehensive CI/CD.
+**Scope:** Full rewrite from PowerShell to Python, add multi-window session resume, cross-platform support (Windows/macOS/Linux), PyPI publishing, comprehensive CI/CD.
 
 ---
 
 ## 1. Overview
 
-Rewrite multideck as a TypeScript CLI tool published on npm. Port all existing functionality (config-driven terminal launching, per-monitor DPI-aware tiling, SSH/remote support) and add a new `windows` config field that opens the same project in multiple named windows, each resuming a different conversation by recency.
+Rewrite multideck as a Python CLI tool published on PyPI. Port all existing functionality (config-driven terminal launching, per-monitor DPI-aware tiling, SSH/remote support) and add a new `windows` config field that opens the same project in multiple named windows, each resuming a different conversation by recency.
 
 ## 2. Project Structure
 
 ```
 multideck/
 ├── src/
-│   ├── cli.ts                  # Entry point, commander-based CLI
-│   ├── config.ts               # Config loading, validation, defaults
-│   ├── launch.ts               # Orchestrator — discover sessions, launch, tile
-│   ├── grid.ts                 # Grid computation — monitors × rows × cols → tile slots
-│   ├── terminals.ts            # Terminal emulator detection + adapter registry
-│   ├── init.ts                 # Folder scanning + config generation (--init)
-│   ├── sessions/
-│   │   ├── index.ts            # Session discovery dispatcher (by tool name)
-│   │   ├── claude.ts           # Claude session discovery
-│   │   └── codex.ts            # Codex session discovery
-│   └── platform/
-│       ├── index.ts            # Platform detection + interface
-│       ├── windows.ts          # Win32 via koffi
-│       ├── macos.ts            # CoreGraphics + AppleScript
-│       └── linux.ts            # xrandr + xdotool/wmctrl
+│   └── multideck/
+│       ├── __init__.py
+│       ├── __main__.py             # python -m multideck entry point
+│       ├── cli.py                  # click-based CLI
+│       ├── config.py               # Config loading, validation, defaults
+│       ├── launch.py               # Orchestrator — discover sessions, launch, tile
+│       ├── grid.py                 # Grid computation — monitors × rows × cols → tile slots
+│       ├── terminals.py            # Terminal emulator detection + adapter registry
+│       ├── init_config.py          # Folder scanning + config generation (--init)
+│       ├── sessions/
+│       │   ├── __init__.py         # Session discovery dispatcher (by tool name)
+│       │   ├── claude.py           # Claude session discovery
+│       │   └── codex.py            # Codex session discovery
+│       └── platform/
+│           ├── __init__.py         # Platform detection + abstract interface
+│           ├── windows.py          # Win32 via ctypes (built-in)
+│           ├── macos.py            # CoreGraphics + AppleScript via subprocess
+│           └── linux.py            # xrandr + xdotool/wmctrl via subprocess
 ├── tests/
-│   ├── unit/                   # Pure logic tests (all OS)
-│   │   ├── config.test.ts
-│   │   ├── grid.test.ts
-│   │   ├── sessions.test.ts
-│   │   ├── titles.test.ts
-│   │   └── commands.test.ts
-│   ├── platform/               # Real OS calls (per-OS)
-│   │   ├── monitors.test.ts
-│   │   ├── windows.test.ts
-│   │   └── terminals.test.ts
-│   ├── e2e/                    # Full pipeline (per-OS)
-│   │   ├── launch.test.ts
-│   │   ├── multi-window.test.ts
-│   │   ├── ssh.test.ts
-│   │   ├── idempotency.test.ts
-│   │   └── cli-flags.test.ts
+│   ├── unit/
+│   │   ├── test_config.py
+│   │   ├── test_grid.py
+│   │   ├── test_sessions.py
+│   │   ├── test_titles.py
+│   │   └── test_commands.py
+│   ├── platform/
+│   │   ├── test_monitors.py
+│   │   ├── test_windows.py
+│   │   └── test_terminals.py
+│   ├── e2e/
+│   │   ├── test_launch.py
+│   │   ├── test_multi_window.py
+│   │   ├── test_ssh.py
+│   │   ├── test_idempotency.py
+│   │   └── test_cli_flags.py
 │   ├── fixtures/
-│   │   ├── claude-sessions/    # Fake .jsonl files with controlled mtimes
-│   │   └── codex-sessions/     # Fake .jsonl files with CWD metadata
+│   │   ├── claude_sessions/        # Fake .jsonl files with controlled mtimes
+│   │   └── codex_sessions/         # Fake .jsonl files with CWD metadata
+│   ├── conftest.py                 # Shared pytest fixtures
 │   └── helpers/
-│       ├── virtual-display.ts  # Setup/teardown virtual monitors in CI
-│       ├── ssh-server.ts       # Setup/teardown local SSH server
-│       └── poll.ts             # Retry-with-timeout for async window discovery
+│       ├── virtual_display.py      # Setup/teardown virtual monitors in CI
+│       ├── ssh_server.py           # Setup/teardown local SSH server
+│       └── poll.py                 # Retry-with-timeout for async window discovery
 ├── .github/
-│   └── workflows/
-│       └── ci.yml              # Matrix: windows/macos/ubuntu × unit/platform/e2e
-├── package.json
-├── tsconfig.json
-└── vitest.config.ts
+│   ├── workflows/
+│   │   └── ci.yml                  # Matrix: windows/macos/ubuntu × unit/platform/e2e
+│   └── actions/
+│       ├── setup-virtual-displays/
+│       ├── setup-ssh-server/
+│       └── install-terminals/
+├── pyproject.toml
+├── README.md
+└── multideck.config.json           # User config (same format, new `windows` field)
 ```
 
 ## 3. Config Schema
 
 Backward-compatible with the existing JSON format. One new field: `windows`.
 
-```typescript
-interface MultideckConfig {
-  baseDir?: string;
-  layout?: { columns?: number; rows?: number };
-  settings?: {
-    defaultTool?: string;          // default: "claude"
-    settleSeconds?: number;        // default: 3
-    launchDelayMs?: number;        // default: 400
-    ssh?: { shell?: string };      // default: "bash -lc"
-    tools?: Record<string, string>;
-  };
-  projects: ProjectConfig[];
-}
+```python
+from dataclasses import dataclass, field
+from typing import Union
 
-interface ProjectConfig {
-  path: string;                    // required — relative to baseDir or absolute
-  group?: string;
-  color?: string;                  // optional — terminal default if omitted
-  tool?: string;                   // defaults to settings.defaultTool
-  title?: string;
-  enabled?: boolean;               // defaults to true
-  host?: string;                   // SSH remote target
-  remotePath?: string;
-  windows?: number | string[];     // NEW
-}
+@dataclass
+class LayoutConfig:
+    columns: int = 2
+    rows: int = 1
+
+@dataclass
+class SSHConfig:
+    shell: str = "bash -lc"
+
+@dataclass
+class Settings:
+    default_tool: str = "claude"
+    settle_seconds: int = 3
+    launch_delay_ms: int = 400
+    ssh: SSHConfig = field(default_factory=SSHConfig)
+    tools: dict[str, str] = field(default_factory=lambda: {
+        "claude": "claude --continue",
+        "codex": "codex",
+    })
+
+@dataclass
+class ProjectConfig:
+    path: str                                       # required
+    group: str | None = None
+    color: str | None = None                        # optional — terminal default if omitted
+    tool: str | None = None                         # defaults to settings.default_tool
+    title: str | None = None
+    enabled: bool = True
+    host: str | None = None                         # SSH remote target
+    remote_path: str | None = None
+    windows: int | list[str] | None = None          # NEW
+
+@dataclass
+class MultideckConfig:
+    projects: list[ProjectConfig]
+    base_dir: str | None = None
+    layout: LayoutConfig = field(default_factory=LayoutConfig)
+    settings: Settings = field(default_factory=Settings)
 ```
 
 ### `windows` field behavior
@@ -129,7 +154,7 @@ interface ProjectConfig {
 
 ## 4. Session Discovery
 
-### 4.1 Claude (`src/sessions/claude.ts`)
+### 4.1 Claude (`sessions/claude.py`)
 
 Claude stores sessions at `~/.claude/projects/<encoded-path>/<uuid>.jsonl`.
 
@@ -147,11 +172,26 @@ C:\Users\amind\OneDrive\Desktop\Projects\CUSTOM MCPs & PRODUCTIVITY\multideck-ai
 3. Sort by file modification time, descending (most recent first).
 4. Return the first N filenames (minus `.jsonl` extension) as session UUIDs.
 
-```typescript
-function getClaudeSessionIds(projectDir: string, count: number): string[]
+```python
+import re
+from pathlib import Path
+
+def encode_claude_project_path(project_dir: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9._-]', '-', project_dir)
+
+def get_claude_session_ids(project_dir: str, count: int) -> list[str | None]:
+    encoded = encode_claude_project_path(project_dir)
+    sess_dir = Path.home() / ".claude" / "projects" / encoded
+    if not sess_dir.is_dir():
+        return [None] * count
+    files = sorted(sess_dir.glob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+    ids: list[str | None] = [f.stem for f in files[:count]]
+    while len(ids) < count:
+        ids.append(None)
+    return ids
 ```
 
-### 4.2 Codex (`src/sessions/codex.ts`)
+### 4.2 Codex (`sessions/codex.py`)
 
 Codex stores sessions at `~/.codex/sessions/YYYY/MM/DD/<name>-<timestamp>-<uuid>.jsonl`. Sessions are organized by date, not project. The first line of each `.jsonl` is a `session_meta` JSON object containing `payload.cwd`.
 
@@ -162,8 +202,35 @@ Codex stores sessions at `~/.codex/sessions/YYYY/MM/DD/<name>-<timestamp>-<uuid>
 4. If `payload.cwd` matches the project directory (case-insensitive on Windows), collect `payload.id`.
 5. Stop after collecting N matches.
 
-```typescript
-function getCodexSessionIds(projectDir: string, count: number): string[]
+```python
+import json
+import sys
+from pathlib import Path
+
+def get_codex_session_ids(project_dir: str, count: int) -> list[str | None]:
+    sess_root = Path.home() / ".codex" / "sessions"
+    if not sess_root.is_dir():
+        return [None] * count
+    case_insensitive = sys.platform == "win32"
+    compare_dir = project_dir.lower() if case_insensitive else project_dir
+    files = sorted(sess_root.rglob("*.jsonl"), key=lambda f: f.stat().st_mtime, reverse=True)
+    ids: list[str | None] = []
+    for f in files:
+        if len(ids) >= count:
+            break
+        try:
+            with open(f) as fh:
+                meta = json.loads(fh.readline())
+            cwd = meta.get("payload", {}).get("cwd", "")
+            if case_insensitive:
+                cwd = cwd.lower()
+            if cwd == compare_dir:
+                ids.append(meta["payload"]["id"])
+        except (json.JSONDecodeError, KeyError, OSError):
+            continue
+    while len(ids) < count:
+        ids.append(None)
+    return ids
 ```
 
 **Performance**: reads only the first line of each file and stops early. Even with hundreds of sessions, this is sub-second.
@@ -172,77 +239,188 @@ function getCodexSessionIds(projectDir: string, count: number): string[]
 
 When `windows > 1`, the configured tool command's resume flags are stripped and replaced per-window:
 
-```typescript
-function buildResumeCommand(tool: string, baseCmd: string, sessionId: string | null): string
+```python
+import re
+
+def build_resume_command(tool: str, base_cmd: str, session_id: str | None) -> str:
+    if tool == "claude":
+        stripped = re.sub(r'--continue\s*', '', base_cmd)
+        stripped = re.sub(r'--resume\s+\S+', '', stripped).strip()
+        if session_id:
+            return f"{stripped} --resume {session_id}"
+        return stripped
+    elif tool == "codex":
+        parts = base_cmd.split(None, 1)
+        binary = parts[0]  # "codex"
+        if session_id:
+            return f"{binary} resume {session_id}"
+        return base_cmd
+    return base_cmd
 ```
 
 | Tool | Session found | No session |
 |---|---|---|
 | claude | Strip `--continue`/`--resume` from baseCmd, append `--resume <id>` | Strip `--continue`/`--resume` from baseCmd (fresh start) |
-| codex | `codex resume <id>` | Strip resume-related args from baseCmd (fresh start) |
+| codex | `codex resume <id>` | Use baseCmd as-is (fresh start) |
 
 When `windows` is omitted (single window), the tool command is used exactly as configured — no modification.
 
 ## 5. Platform Interface
 
-```typescript
-interface Rect { x: number; y: number; w: number; h: number }
-type WindowHandle = unknown;  // platform-specific opaque handle
+```python
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
 
-interface Platform {
-  setDpiAware(): void;
-  listMonitors(): MonitorRect[];
-  findWindow(title: string, mode: 'exact' | 'contains'): WindowHandle | null;
-  moveWindow(handle: WindowHandle, rect: Rect): void;
-  launchTerminal(opts: TerminalLaunchOpts): void;
-  launchVSCode(opts: VSCodeLaunchOpts): void;
-}
+@dataclass
+class Rect:
+    x: int
+    y: int
+    w: int
+    h: int
 
-interface MonitorRect extends Rect {
-  isPrimary: boolean;
-  scaleFactor: number;          // 1.0 = 96 DPI, 1.5 = 144 DPI, etc.
-}
+@dataclass
+class MonitorRect(Rect):
+    is_primary: bool = False
+    scale_factor: float = 1.0       # 1.0 = 96 DPI, 1.5 = 144 DPI, etc.
 
-interface TerminalLaunchOpts {
-  title: string;
-  cwd: string;
-  command: string;
-  color?: string;
-  ssh?: { host: string; remoteDir: string; shell: string };
-}
+@dataclass
+class TerminalLaunchOpts:
+    title: str
+    cwd: str
+    command: str
+    color: str | None = None
+    ssh_host: str | None = None
+    ssh_remote_dir: str | None = None
+    ssh_shell: str = "bash -lc"
 
-interface VSCodeLaunchOpts {
-  dir: string;
-  sshHost?: string;             // triggers --remote ssh-remote+<host>
-}
+@dataclass
+class VSCodeLaunchOpts:
+    dir: str
+    ssh_host: str | None = None     # triggers --remote ssh-remote+<host>
+
+class Platform(ABC):
+    @abstractmethod
+    def set_dpi_aware(self) -> None: ...
+
+    @abstractmethod
+    def list_monitors(self) -> list[MonitorRect]: ...
+
+    @abstractmethod
+    def find_window(self, title: str, mode: str = "exact") -> Any | None: ...
+
+    @abstractmethod
+    def move_window(self, handle: Any, rect: Rect) -> None: ...
+
+    @abstractmethod
+    def launch_terminal(self, opts: TerminalLaunchOpts) -> None: ...
+
+    @abstractmethod
+    def launch_vscode(self, opts: VSCodeLaunchOpts) -> None: ...
 ```
 
-### 5.1 Windows (`platform/windows.ts`)
+### 5.1 Windows (`platform/windows.py`)
 
-Uses `koffi` for Win32 FFI. No native compilation, no node-gyp.
+Uses `ctypes` (built-in). Zero external dependencies.
 
-| Operation | Win32 API |
+| Operation | Win32 API via ctypes |
 |---|---|
-| DPI awareness | `SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)` with fallbacks to `SetProcessDpiAwareness(2)` and `SetProcessDPIAware()` |
-| Monitor enumeration | `EnumDisplayMonitors` + `GetMonitorInfoW` for working areas |
+| DPI awareness | `ctypes.windll.user32.SetProcessDpiAwarenessContext(-4)` with fallbacks to `ctypes.windll.shcore.SetProcessDpiAwareness(2)` and `ctypes.windll.user32.SetProcessDPIAware()` |
+| Monitor enumeration | `EnumDisplayMonitors` callback + `GetMonitorInfoW` for working areas |
 | DPI per monitor | `GetDpiForMonitor` (shcore.dll) |
-| Window finding | `EnumWindows` + `GetWindowText` + `IsWindowVisible` |
+| Window finding | `EnumWindows` callback + `GetWindowTextW` + `IsWindowVisible` |
 | Window moving | `MoveWindow` called twice (cross-DPI correction) |
-| Terminal launch | `child_process.spawn('wt', [...args])` |
-| VS Code launch | `child_process.spawn('cmd', ['/c', 'code', dir])` |
+| Terminal launch | `subprocess.Popen(['wt', ...args])` |
+| VS Code launch | `subprocess.Popen(['cmd', '/c', 'code', dir])` |
+
+**ctypes setup** (example):
+
+```python
+import ctypes
+import ctypes.wintypes
+from ctypes import windll, POINTER, WINFUNCTYPE, byref, create_unicode_buffer
+
+user32 = windll.user32
+shcore = windll.shcore
+
+# DPI awareness
+def set_dpi_aware():
+    try:
+        user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
+        return
+    except (OSError, AttributeError):
+        pass
+    try:
+        shcore.SetProcessDpiAwareness(2)
+        return
+    except (OSError, AttributeError):
+        pass
+    try:
+        user32.SetProcessDPIAware()
+    except (OSError, AttributeError):
+        pass
+
+# Window enumeration
+WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+def find_window_by_title(title: str, mode: str = "exact") -> int | None:
+    result = None
+    def callback(hwnd, _):
+        nonlocal result
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        buf = create_unicode_buffer(512)
+        user32.GetWindowTextW(hwnd, buf, 512)
+        if mode == "exact" and buf.value == title:
+            result = hwnd
+            return False
+        if mode == "contains" and title.lower() in buf.value.lower():
+            result = hwnd
+            return False
+        return True
+    user32.EnumWindows(WNDENUMPROC(callback), 0)
+    return result
+
+# Move window (called twice for cross-DPI correction)
+def move_window(hwnd: int, x: int, y: int, w: int, h: int):
+    user32.MoveWindow(hwnd, x, y, w, h, True)
+    user32.MoveWindow(hwnd, x, y, w, h, True)
+```
 
 **Dual-MoveWindow for DPI**: when a window moves from monitor A to monitor B with a different scale factor, Windows fires `WM_DPICHANGED` and the window rescales itself mid-move. The first `MoveWindow` gets the window onto the target monitor; the second applies the correct size now that the window lives at the target DPI. Same-scale moves make the second call a no-op.
 
-### 5.2 macOS (`platform/macos.ts`)
+### 5.2 macOS (`platform/macos.py`)
+
+Uses `subprocess` to call `osascript` (AppleScript) and small Swift snippets. Zero external dependencies.
 
 | Operation | Implementation |
 |---|---|
 | DPI awareness | No-op (Retina handled by OS) |
-| Monitor enumeration | Run Swift snippet via `child_process`: `NSScreen.screens` → JSON with `frame` and `visibleFrame` (working area) and `backingScaleFactor` |
+| Monitor enumeration | Run Swift snippet via `subprocess`: `NSScreen.screens` → JSON with `frame`, `visibleFrame` (working area), and `backingScaleFactor` |
 | Window finding | `osascript`: `tell application "System Events" to get name of every window of every process whose visible is true` |
 | Window moving | `osascript`: `tell application "System Events" to tell process <P> to set position of window <W> to {x, y}` + `set size of window <W> to {w, h}` |
-| Terminal launch | Detect installed terminal in priority order: iTerm2, Kitty, Warp, Terminal.app. Each adapter knows its CLI flags for title, cwd, and command execution. |
-| VS Code launch | `child_process.spawn('code', [dir])` or `code --remote ssh-remote+<host> <dir>` |
+| Terminal launch | Detect installed terminal in priority order: iTerm2, Kitty, Warp, Terminal.app. Each adapter knows its CLI/AppleScript invocation. |
+| VS Code launch | `subprocess.Popen(['code', dir])` or `code --remote ssh-remote+<host> <dir>` |
+
+**Monitor enumeration Swift snippet** (run via `swift -e`):
+
+```swift
+import AppKit
+import Foundation
+var monitors: [[String: Any]] = []
+for screen in NSScreen.screens {
+    let f = screen.frame
+    let v = screen.visibleFrame
+    monitors.append([
+        "x": Int(f.origin.x), "y": Int(f.origin.y),
+        "w": Int(f.size.width), "h": Int(f.size.height),
+        "work_x": Int(v.origin.x), "work_y": Int(v.origin.y),
+        "work_w": Int(v.size.width), "work_h": Int(v.size.height),
+        "scale": screen.backingScaleFactor
+    ])
+}
+print(String(data: try! JSONSerialization.data(withJSONObject: monitors), encoding: .utf8)!)
+```
 
 **Terminal adapters (macOS)**:
 - **iTerm2**: `osascript` to create new window with profile, set title, send command.
@@ -250,18 +428,18 @@ Uses `koffi` for Win32 FFI. No native compilation, no node-gyp.
 - **Warp**: `open -a Warp` + AppleScript for title/dir.
 - **Terminal.app** (fallback): `osascript` to open new window, set cwd, run command.
 
-### 5.3 Linux (`platform/linux.ts`)
+### 5.3 Linux (`platform/linux.py`)
 
 Requires X11 (Wayland support deferred — most CI and tiling use cases are X11). Dependencies: `xdotool`, `wmctrl`, `xrandr` (standard on most desktops; installed in CI).
 
 | Operation | Implementation |
 |---|---|
-| DPI awareness | Read `Xft.dpi` via `xrdb -query` or `GDK_SCALE` env var. Compute scale factor. |
+| DPI awareness | Read `Xft.dpi` via `subprocess.run(['xrdb', '-query'])` or `GDK_SCALE` env var. Compute scale factor. |
 | Monitor enumeration | Parse `xrandr --query` for connected outputs: resolution, offset, physical size (mm) → compute DPI per monitor. Also support `xrandr --listmonitors` for virtual monitor setups. |
-| Window finding | `xdotool search --name <title>` (exact) or `wmctrl -l` + string matching (contains) |
-| Window moving | `wmctrl -i -r <handle> -e 0,x,y,w,h` |
+| Window finding | `subprocess.run(['xdotool', 'search', '--name', title])` (exact) or `wmctrl -l` + string matching (contains) |
+| Window moving | `subprocess.run(['wmctrl', '-i', '-r', handle, '-e', f'0,{x},{y},{w},{h}'])` |
 | Terminal launch | Detect installed terminal in priority order: kitty, alacritty, gnome-terminal, konsole, xterm. Each adapter knows its CLI flags. |
-| VS Code launch | `child_process.spawn('code', [dir])` |
+| VS Code launch | `subprocess.Popen(['code', dir])` |
 
 **Terminal adapters (Linux)**:
 - **kitty**: `kitty --title <t> --directory <d> <cmd>`
@@ -272,29 +450,54 @@ Requires X11 (Wayland support deferred — most CI and tiling use cases are X11)
 
 ### 5.4 Terminal Detection
 
-Shared logic across macOS and Linux. Checks for terminal emulators in a priority-ordered list, returns the first found:
+Shared logic across macOS and Linux. Checks for terminal emulators in a priority-ordered list, returns the first found via `shutil.which()`:
 
-```typescript
-interface TerminalAdapter {
-  name: string;
-  detect(): boolean;              // is the binary on PATH?
-  buildLaunchArgs(opts: TerminalLaunchOpts): { bin: string; args: string[] };
-}
+```python
+import shutil
+from dataclasses import dataclass
+
+@dataclass
+class TerminalAdapter:
+    name: str
+
+    def detect(self) -> bool:
+        return shutil.which(self.name) is not None
+
+    def build_launch_args(self, opts: TerminalLaunchOpts) -> tuple[str, list[str]]:
+        raise NotImplementedError
 ```
 
-Windows always uses Windows Terminal (`wt`). macOS and Linux use the adapter registry. The detection result is cached for the duration of a run.
+Windows always uses Windows Terminal (`wt`). macOS and Linux use the adapter registry. The detection result is cached for the duration of a run (via `functools.cache`).
 
-## 6. Grid Computation (`src/grid.ts`)
+## 6. Grid Computation (`grid.py`)
 
 Pure function, no platform dependency. Takes monitor list + layout config, returns tile slots.
 
-```typescript
-interface TileSlot extends Rect {
-  monitorIndex: number;
-  label: string;                  // "r1c1", "r1c2", etc.
-}
+```python
+from dataclasses import dataclass
 
-function computeGrid(monitors: MonitorRect[], cols: number, rows: number): TileSlot[]
+@dataclass
+class TileSlot(Rect):
+    monitor_index: int = 0
+    label: str = ""                 # "r1c1", "r1c2", etc.
+
+def compute_grid(monitors: list[MonitorRect], cols: int, rows: int) -> list[TileSlot]:
+    monitors_sorted = sorted(monitors, key=lambda m: m.x)
+    slots: list[TileSlot] = []
+    for i, m in enumerate(monitors_sorted):
+        cell_w = m.w // cols
+        cell_h = m.h // rows
+        for r in range(rows):
+            for c in range(cols):
+                slots.append(TileSlot(
+                    x=m.x + c * cell_w,
+                    y=m.y + r * cell_h,
+                    w=cell_w,
+                    h=cell_h,
+                    monitor_index=i,
+                    label=f"r{r+1}c{c+1}",
+                ))
+    return slots
 ```
 
 Logic:
@@ -303,83 +506,94 @@ Logic:
 3. Return all cells as `TileSlot` objects.
 4. Windows wrap around to slot 0 when there are more windows than slots.
 
-## 7. Launch Orchestrator (`src/launch.ts`)
+## 7. Launch Orchestrator (`launch.py`)
 
 Central function that ties everything together:
 
-```typescript
-async function runMultideck(config: MultideckConfig, opts: RunOpts): Promise<void>
+```python
+def run_multideck(config: MultideckConfig, opts: RunOpts) -> None
 ```
 
 **Flow**:
-1. Detect platform, call `setDpiAware()`.
-2. Call `listMonitors()`, compute grid via `computeGrid()`.
+1. Detect platform, call `set_dpi_aware()`.
+2. Call `list_monitors()`, compute grid via `compute_grid()`.
 3. Iterate projects (filtered by group/enabled):
-   a. Resolve project path (relative to baseDir, env vars, `~`).
+   a. Resolve project path (relative to base_dir, env vars, `~`).
    b. Determine window count from `windows` field (default 1).
    c. If multi-window and tool is `claude`/`codex`: discover session IDs via `sessions/`.
    d. For each window instance:
       - Compute title (auto or custom).
       - Build tool command (with `--resume <id>` or fresh).
-      - Check if window already exists via `findWindow()`.
-      - If not found and not dry-run: call `launchTerminal()` or `launchVSCode()`.
+      - Check if window already exists via `find_window()`.
+      - If not found and not dry-run: call `launch_terminal()` or `launch_vscode()`.
       - Add to tile queue.
-4. Wait `settleSeconds` for new windows to appear.
-5. Tile: for each window in the tile queue, call `findWindow()` (with retry/polling) then `moveWindow()`.
+4. Wait `settle_seconds` for new windows to appear.
+5. Tile: for each window in the tile queue, call `find_window()` (with retry/polling) then `move_window()`.
 
 **Idempotency**: windows already open (found by title) are skipped for launch but included in the tile queue when `--retile-all` is set.
 
-## 8. CLI (`src/cli.ts`)
+## 8. CLI (`cli.py`)
 
-Same flags as the PowerShell version, implemented with `commander`:
+Same flags as the PowerShell version, implemented with `click`:
 
 ```
-Usage: multideck [options]
+Usage: multideck [OPTIONS]
 
 Options:
   --go                    Skip interactive menu, launch + tile
   --retile-all            Re-tile every matching window
   --dry-run               Preview plan without launching or moving
-  --group, -g <name>      Launch only projects in this group
+  -g, --group TEXT        Launch only projects in this group
   --init                  Generate config by scanning a folder
-  --base-dir <path>       Folder to scan with --init
-  --config <path>         Path to config file (default: ./multideck.config.json)
+  --base-dir PATH         Folder to scan with --init
+  --config PATH           Path to config file (default: ./multideck.config.json)
   --force                 With --init, overwrite existing config
-  --version, -v           Print version
-  --help, -h              Show help
+  --version               Print version
+  --help                  Show help
 ```
 
-Interactive menu when run with no flags (same choices as current PowerShell version). Uses `readline` for input in TTY mode.
+Interactive menu when run with no flags (same choices as current PowerShell version). Uses Python's built-in `input()` for prompts in TTY mode.
 
-## 9. npm Packaging
+## 9. PyPI Packaging
 
-```json
-{
-  "name": "multideck",
-  "bin": { "multideck": "./dist/cli.js" },
-  "engines": { "node": ">=18" },
-  "files": ["dist"],
-  "dependencies": {
-    "commander": "^13.0.0",
-    "koffi": "^2.9.0"
-  },
-  "devDependencies": {
-    "vitest": "^3.0.0",
-    "typescript": "^5.7.0",
-    "node-pty": "^1.0.0"
-  }
-}
+```toml
+[project]
+name = "multideck"
+version = "1.0.0"
+description = "Open every project in its own terminal and auto-tile across all monitors"
+requires-python = ">=3.10"
+dependencies = ["click>=8.0"]
+
+[project.scripts]
+multideck = "multideck.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "platform: platform integration tests (require virtual displays)",
+    "e2e: end-to-end tests (full pipeline)",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/multideck"]
 ```
 
-`koffi` is a runtime dependency but only loaded on Windows (dynamic import). macOS and Linux have zero native dependencies — they shell out to OS tools.
+**Zero native dependencies.** The only runtime dependency is `click`. Everything else (`ctypes`, `subprocess`, `json`, `pathlib`, `re`, `shutil`, `os`) is in Python's standard library.
 
 Install and run:
-```
-npm install -g multideck
+```bash
+pip install multideck
 multideck --go
 
-# or without global install:
-npx multideck --go
+# or without install:
+pipx run multideck --go
+
+# or from source:
+python -m multideck --go
 ```
 
 ## 10. CI/CD Pipeline
@@ -395,13 +609,15 @@ jobs:
     strategy:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
+        python: ["3.10", "3.11", "3.12", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: npm ci
-      - run: npm run test:unit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/unit/ -v
 
   platform:
     strategy:
@@ -410,14 +626,15 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
       - name: Setup virtual displays
         uses: ./.github/actions/setup-virtual-displays
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
-      - run: npm run test:platform
+      - run: pytest tests/platform/ -v -m platform
 
   e2e:
     strategy:
@@ -426,26 +643,28 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
       - name: Setup virtual displays
         uses: ./.github/actions/setup-virtual-displays
       - name: Setup SSH server
         uses: ./.github/actions/setup-ssh-server
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
-      - run: npm run test:e2e
+      - run: pytest tests/e2e/ -v -m e2e
 
   packaging:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22 }
-      - run: npm ci && npm run build
-      - run: npm pack
-      - run: npm install -g ./multideck-*.tgz
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - run: pip install dist/multideck-*.whl
       - run: multideck --help
       - run: multideck --version
 ```
@@ -472,7 +691,7 @@ jobs:
 
 ### 10.3 Complete Test Matrix
 
-#### Unit Tests (all 3 OS, no special setup)
+#### Unit Tests (all 3 OS × Python 3.10-3.13, no special setup)
 
 | Area | Tests |
 |---|---|
@@ -518,14 +737,14 @@ jobs:
 
 | Area | Tests |
 |---|---|
-| `listMonitors()` ≥ 1 | At least 1 monitor with valid bounds |
-| `listMonitors()` multi-monitor | Virtual monitors → correct count and geometries |
-| `listMonitors()` DPI per monitor | Different physical sizes → different scale factors |
-| `findWindow()` exact match | Launch window, find by exact title |
-| `findWindow()` contains match | Launch with compound title, find by substring |
-| `findWindow()` miss | Non-existent title → null |
-| `moveWindow()` reposition | Move window, re-query, assert new position |
-| `moveWindow()` cross-DPI | Move from 96 DPI to 180 DPI monitor, verify correct final size |
+| `list_monitors()` ≥ 1 | At least 1 monitor with valid bounds |
+| `list_monitors()` multi-monitor | Virtual monitors → correct count and geometries |
+| `list_monitors()` DPI per monitor | Different physical sizes → different scale factors |
+| `find_window()` exact match | Launch window, find by exact title |
+| `find_window()` contains match | Launch with compound title, find by substring |
+| `find_window()` miss | Non-existent title → None |
+| `move_window()` reposition | Move window, re-query, assert new position |
+| `move_window()` cross-DPI | Move from 96 DPI to 180 DPI monitor, verify correct final size |
 | Terminal launch: primary | Launch with OS default terminal, verify window appears with title |
 | Terminal launch: each adapter | Launch with each installed terminal, verify title and cwd |
 | Terminal detection | With multiple installed, correct priority order |
@@ -555,7 +774,7 @@ jobs:
 | `--init` | Scans temp folder, writes valid config |
 | `--config <path>` | Uses alternate config file |
 | `--force` with `--init` | Overwrites existing config |
-| Interactive menu | Use `node-pty` to simulate TTY + keypress sequences |
+| Interactive menu | Use `pexpect` to simulate TTY + keypress sequences |
 | No config found | Error message + prompt |
 | SSH launch | Real SSH to localhost, terminal opens with remote command |
 | SSH `cmd /k` persistence (Windows) | Window stays open after SSH session ends |
@@ -569,50 +788,59 @@ jobs:
 
 | Area | Tests |
 |---|---|
-| `npm pack` | Produces tarball without error |
-| Install from tarball | `npm install -g ./multideck-*.tgz` succeeds |
+| `python -m build` | Produces wheel + sdist |
+| Install from wheel | `pip install dist/multideck-*.whl` succeeds |
 | `multideck --help` | Exits 0, shows usage text |
 | `multideck --version` | Prints version string |
-| bin resolves | `which multideck` points to installed binary |
+| Entry point resolves | `which multideck` points to installed script |
 
 ## 11. Migration from PowerShell
 
-The Node.js version reads the same `multideck.config.json` format. Existing configs work without modification. The `windows` field is optional and additive.
+The Python version reads the same `multideck.config.json` format. Existing configs work without modification. The `windows` field is optional and additive. JSON keys use `camelCase` in the config file (matching the existing format); Python dataclasses use `snake_case` internally with conversion during parsing.
 
 Users replace:
 ```
-.\multideck.bat           →  npx multideck
-.\multideck.bat -Go       →  npx multideck --go
-.\multideck.bat -Group x  →  npx multideck -g x
+.\multideck.bat           →  multideck
+.\multideck.bat -Go       →  multideck --go
+.\multideck.bat -Group x  →  multideck -g x
 ```
 
 The PowerShell scripts (`scripts/multideck.ps1`, `scripts/multideck.lib.ps1`) and batch launcher (`multideck.bat`) remain in the repo but are deprecated. They can be removed in a future release.
 
 ## 12. Dependencies
 
-| Package | Purpose | Platform |
-|---|---|---|
-| `commander` | CLI parsing | all |
-| `koffi` | Win32 FFI (dynamic import) | Windows only |
-| `vitest` (dev) | Test framework | all |
-| `node-pty` (dev) | Interactive menu testing | all |
-| `typescript` (dev) | Build | all |
+### Runtime
 
-macOS and Linux have zero native runtime dependencies — they use `child_process.execSync/spawn` to call OS tools (`osascript`, `xrandr`, `wmctrl`, `xdotool`, `code`, terminal CLIs).
+| Package | Purpose | Notes |
+|---|---|---|
+| `click` | CLI parsing | Pure Python, mature, widely used |
+
+Everything else is Python standard library: `ctypes` (Win32), `subprocess` (process launching), `json` (config/session parsing), `pathlib` (file operations), `re` (string processing), `shutil` (terminal detection), `os`/`sys` (platform detection), `functools` (caching), `dataclasses` (data structures).
+
+### Development
+
+| Package | Purpose |
+|---|---|
+| `pytest` | Test framework |
+| `pexpect` | Interactive menu testing (TTY simulation) |
+| `pyright` | Static type checking |
 
 ## 13. Decisions & Trade-offs
 
 | Decision | Rationale |
 |---|---|
-| `koffi` over `ffi-napi` | No node-gyp, no build tools needed on install |
-| `commander` over `yargs` | Lighter, sufficient for this CLI's complexity |
-| `vitest` over `jest` | Faster, native TypeScript, built-in mocking |
-| Dynamic import for `koffi` | Avoids crash on macOS/Linux where koffi isn't needed |
-| `xdotool`/`wmctrl` over X11 bindings | Simpler, no native deps, sufficient for tiling |
-| AppleScript over Accessibility API | No native addon needed, works for window find/move |
-| File scanning over CLI introspection | Neither Claude nor Codex has a non-interactive session list command |
+| `ctypes` over `pywin32` | Built-in, zero install, sufficient for the Win32 APIs we need |
+| `click` over `argparse` | Cleaner API, better UX for interactive prompts, well-maintained |
+| `pytest` over `unittest` | Fixtures, parameterize, markers, cleaner syntax |
+| `subprocess` over native bindings | No native deps on macOS/Linux, sufficient for AppleScript + xdotool/wmctrl |
+| Swift snippet for macOS monitors | `NSScreen` is the authoritative source; a 10-line snippet is simpler than `pyobjc` |
+| `xdotool`/`wmctrl` for Linux | Standard desktop tools, no native deps, sufficient for tiling |
+| AppleScript for macOS window ops | No native addon needed, works for find/move |
+| File scanning for sessions | Neither Claude nor Codex has a non-interactive session list command |
 | Resume all windows with `--resume <id>` | Consistent ordering controlled by our scan, avoids `--continue` mismatch |
-| X11 only (no Wayland) for v1 | Most tiling use cases and CI environments use X11; Wayland tiling is WM-dependent |
+| X11 only (no Wayland) for v1 | Most tiling use cases and CI environments use X11; Wayland is WM-dependent |
+| Python 3.10+ minimum | Required for `match` statements, `X | Y` union types, `dataclass(slots=True)` |
+| `hatchling` build backend | Fast, minimal config, widely adopted |
 
 ## 14. Future Work (out of scope for this implementation)
 
