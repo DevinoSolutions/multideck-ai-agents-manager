@@ -139,7 +139,7 @@ def _run_discovery(config_file: Path) -> bool:
 
     click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects active in the last {days} days:\n")
 
-    tool_colors = {"claude": "magenta", "codex": "cyan", "code": "blue"}
+    tool_colors = {"claude": "magenta", "codex": "cyan", "vscode": "blue"}
     for i, p in enumerate(projects):
         leaf = Path(p["path"]).name
         tc = tool_colors.get(p["tool"], "white")

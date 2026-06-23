@@ -100,7 +100,7 @@ def _discover_vscode_projects() -> list[dict]:
         mtime = d.stat().st_mtime
         results.append({
             "path": folder,
-            "tool": "code",
+            "tool": "vscode",
             "session_count": 1,
             "last_active": mtime,
         })
