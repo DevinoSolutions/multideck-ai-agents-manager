@@ -23,9 +23,9 @@ class TestCliFlags:
         assert result.returncode == 0
         assert "--go" in result.stdout
         assert "--retile-all" in result.stdout
-        assert "--dry-run" in result.stdout
         assert "--group" in result.stdout
         assert "--init" in result.stdout
+        assert "--edit" in result.stdout
 
     def test_no_config_exits_nonzero(self, tmp_path):
         result = subprocess.run(
@@ -56,15 +56,18 @@ class TestCliFlags:
         )
         assert result.returncode == 0
 
-    def test_init_dry_run(self, tmp_path):
+    def test_init_with_base_dir(self, tmp_path):
         (tmp_path / "proj" / ".git").mkdir(parents=True)
+        out = tmp_path / "init_out.json"
         result = subprocess.run(
             [sys.executable, "-m", "multideck", "--init", "--base-dir", str(tmp_path),
-             "--dry-run", "--config", str(tmp_path / "out.json")],
+             "--config", str(out)],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
-        assert "proj" in result.stdout
+        assert out.exists()
+        data = json.loads(out.read_text())
+        assert any("proj" in p["path"] for p in data["projects"])
 
     def test_init_writes_config(self, tmp_path):
         (tmp_path / "proj" / ".git").mkdir(parents=True)
