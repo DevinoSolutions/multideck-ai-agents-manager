@@ -130,24 +130,22 @@ def _run_discovery(config_file: Path) -> bool:
     click.echo(f"  {S('!', fg='yellow', bold=True)} {S('No config found.', fg='yellow')} Scanning session history...")
     click.echo()
 
-    projects = discover_projects()
+    projects, days = discover_projects()
 
     if not projects:
         click.echo(f"  {S('No projects found', dim=True)} in Claude or Codex history.")
         click.echo(f"  Create a config manually at: {S(str(config_file), bold=True)}")
         return False
 
-    from multideck.discover import RECENT_DAYS
-    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects active in the last {RECENT_DAYS} days:\n")
+    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects active in the last {days} days:\n")
 
     tool_colors = {"claude": "magenta", "codex": "cyan"}
     for i, p in enumerate(projects):
         leaf = Path(p["path"]).name
         tc = tool_colors.get(p["tool"], "white")
-        badge = S(f" {p['tool']:<6}", fg=tc)
-        count = S(f"{p['session_count']:>2} sessions", dim=True)
+        badge = S(f"[{p['tool']}]", fg=tc, dim=True)
         num = S(f"{i + 1:>2}", dim=True)
-        click.echo(f"   {num}  {leaf:<32} {badge}  {count}")
+        click.echo(f"   {num}  {leaf:<34} {badge}")
 
     click.echo()
     _divider()
