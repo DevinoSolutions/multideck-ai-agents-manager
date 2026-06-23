@@ -127,17 +127,21 @@ def _run_discovery(config_file: Path) -> bool:
     from multideck.discover import discover_projects, projects_to_config
 
     _banner()
-    click.echo(f"  {S('!', fg='yellow', bold=True)} {S('No config found.', fg='yellow')} Scanning session history...")
+    click.echo(f"  {S('Welcome!', fg='green', bold=True)} multideck opens a terminal for each of your")
+    click.echo(f"  projects, launches your AI agent inside it, and tiles")
+    click.echo(f"  all windows neatly across your screens.")
+    click.echo()
+    click.echo(f"  Scanning your recent sessions to find your projects...")
     click.echo()
 
     projects, days = discover_projects()
 
     if not projects:
-        click.echo(f"  {S('No projects found', dim=True)} in Claude or Codex history.")
+        click.echo(f"  {S('No projects found', dim=True)} in Claude, Codex, or VS Code history.")
         click.echo(f"  Create a config manually at: {S(str(config_file), bold=True)}")
         return False
 
-    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects active in the last {days} days:\n")
+    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects from the last {days} days:\n")
 
     tool_colors = {"claude": "magenta", "codex": "cyan", "vscode": "blue"}
     for i, p in enumerate(projects):
