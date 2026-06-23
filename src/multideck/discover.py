@@ -96,12 +96,21 @@ def _is_real_project(path: str) -> bool:
     return True
 
 
-def discover_projects(home: Path | None = None) -> list[dict]:
+RECENT_DAYS = 30
+
+
+def discover_projects(
+    home: Path | None = None,
+    recent_days: int = RECENT_DAYS,
+) -> list[dict]:
     """Find projects from Claude and Codex session history.
 
     Returns a de-duplicated list sorted by most recently active first.
+    Only includes projects active within `recent_days`, with a minimum of 5.
     Each entry has: path, tool, session_count, last_active.
     """
+    import time
+
     claude = _discover_claude_projects(home)
     codex = _discover_codex_projects(home)
 
@@ -113,7 +122,17 @@ def discover_projects(home: Path | None = None) -> list[dict]:
         if key not in by_path or p["last_active"] > by_path[key]["last_active"]:
             by_path[key] = p
 
-    return sorted(by_path.values(), key=lambda p: p["last_active"], reverse=True)
+    all_projects = sorted(by_path.values(), key=lambda p: p["last_active"], reverse=True)
+
+    if not all_projects:
+        return []
+
+    cutoff = time.time() - (recent_days * 86400)
+    recent = [p for p in all_projects if p["last_active"] >= cutoff]
+
+    if len(recent) >= 5:
+        return recent
+    return all_projects[:max(5, len(recent))]
 
 
 def projects_to_config(projects: list[dict]) -> dict:
