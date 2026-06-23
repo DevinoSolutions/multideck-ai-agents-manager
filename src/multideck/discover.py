@@ -115,18 +115,18 @@ def _is_real_project(path: str) -> bool:
     return True
 
 
-RECENT_DAYS = 30
+STEP_DAYS = 3
+MIN_PROJECTS = 3
+MAX_STEPS = 20
 
 
-def discover_projects(
-    home: Path | None = None,
-    recent_days: int = RECENT_DAYS,
-) -> list[dict]:
+def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
     """Find projects from Claude and Codex session history.
 
-    Strategy: discover paths from Codex (reliable), then cross-reference
-    each path against Claude sessions. Claude projects not found via Codex
-    are decoded with best-effort fallback.
+    Expands the time window (3 days, 6, 9, ...) until at least
+    MIN_PROJECTS are found or MAX_STEPS is reached.
+
+    Returns (projects, days_searched).
     """
     import time
 
@@ -165,14 +165,17 @@ def discover_projects(
 
     all_projects = sorted(by_path.values(), key=lambda p: p["last_active"], reverse=True)
     if not all_projects:
-        return []
+        return [], 0
 
-    cutoff = time.time() - (recent_days * 86400)
-    recent = [p for p in all_projects if p["last_active"] >= cutoff]
+    now = time.time()
+    for step in range(1, MAX_STEPS + 1):
+        days = step * STEP_DAYS
+        cutoff = now - (days * 86400)
+        recent = [p for p in all_projects if p["last_active"] >= cutoff]
+        if len(recent) >= MIN_PROJECTS:
+            return recent, days
 
-    if len(recent) >= 5:
-        return recent
-    return all_projects[:max(5, len(recent))]
+    return all_projects, MAX_STEPS * STEP_DAYS
 
 
 def projects_to_config(projects: list[dict]) -> dict:
