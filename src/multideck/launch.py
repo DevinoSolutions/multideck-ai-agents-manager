@@ -101,7 +101,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         tool = proj.tool or config.settings.default_tool
         is_remote = bool(proj.host)
 
-        if tool == "code":
+        if tool in ("code", "vscode"):
             key = get_leaf_name(proj.remote_path or proj.path) if is_remote else get_leaf_name(proj.path)
             name = proj.title or key
             running = plat.find_window(key, mode="contains") is not None
@@ -119,7 +119,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             continue
 
         windows_cfg = proj.windows
-        if is_remote or tool == "code":
+        if is_remote or tool in ("code", "vscode"):
             windows_cfg = None
         titles = generate_titles(proj.title, proj.path, windows_cfg)
         window_count = len(titles)
