@@ -62,3 +62,63 @@ class TestGetClaudeSessionIds:
         fake_claude_sessions(encoded, [("uuid-1", 1000.0), ("uuid-2", 2000.0)])
         ids = get_claude_session_ids("test-project", 1, home_override=home)
         assert ids == ["uuid-2"]
+
+
+import sys
+from multideck.sessions.codex import get_codex_session_ids
+
+
+class TestGetCodexSessionIds:
+    def test_returns_matching_sessions_sorted_by_mtime(self, fake_codex_sessions):
+        fake_codex_sessions([
+            ("/home/user/api", "uuid-oldest", 1000.0),
+            ("/home/user/api", "uuid-newest", 3000.0),
+            ("/home/user/other", "uuid-other", 2000.0),
+            ("/home/user/api", "uuid-middle", 2000.0),
+        ])
+        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        ids = get_codex_session_ids("/home/user/api", 3, home_override=home)
+        assert ids == ["uuid-newest", "uuid-middle", "uuid-oldest"]
+
+    def test_case_insensitive_on_windows(self, fake_codex_sessions, monkeypatch):
+        monkeypatch.setattr(sys, "platform", "win32")
+        fake_codex_sessions([
+            ("C:\\Users\\User\\api", "uuid-1", 1000.0),
+        ])
+        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        ids = get_codex_session_ids("c:\\users\\user\\api", 1, home_override=home)
+        assert ids == ["uuid-1"]
+
+    def test_fewer_than_requested(self, fake_codex_sessions):
+        fake_codex_sessions([
+            ("/home/user/api", "uuid-1", 1000.0),
+        ])
+        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        ids = get_codex_session_ids("/home/user/api", 3, home_override=home)
+        assert ids == ["uuid-1", None, None]
+
+    def test_no_matching_sessions(self, fake_codex_sessions):
+        fake_codex_sessions([
+            ("/home/user/other", "uuid-1", 1000.0),
+        ])
+        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        ids = get_codex_session_ids("/home/user/api", 2, home_override=home)
+        assert ids == [None, None]
+
+    def test_no_sessions_dir(self, tmp_path):
+        ids = get_codex_session_ids("/any", 2, home_override=tmp_path)
+        assert ids == [None, None]
+
+    def test_malformed_jsonl_skipped(self, fake_codex_sessions, tmp_path):
+        fake_codex_sessions([
+            ("/home/user/api", "uuid-good", 2000.0),
+        ])
+        bad_dir = tmp_path / ".codex" / "sessions" / "2026" / "06" / "30"
+        bad_dir.mkdir(parents=True, exist_ok=True)
+        bad_file = bad_dir / "bad.jsonl"
+        bad_file.write_text("not json\n")
+        import os
+        os.utime(bad_file, (3000.0, 3000.0))
+        ids = get_codex_session_ids("/home/user/api", 2, home_override=tmp_path)
+        assert ids[0] == "uuid-good"
+        assert ids[1] is None
