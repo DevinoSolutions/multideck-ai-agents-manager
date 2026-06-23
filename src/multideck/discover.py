@@ -6,6 +6,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+from urllib.parse import unquote, urlparse
+
 from multideck.sessions.claude import encode_claude_project_path
 
 
@@ -52,6 +54,58 @@ def _discover_codex_projects(home: Path | None = None) -> list[dict]:
             continue
 
     return list(seen.values())
+
+
+def _vscode_storage_dir() -> Path | None:
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", ""))
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+    d = base / "Code" / "User" / "workspaceStorage"
+    return d if d.is_dir() else None
+
+
+def _uri_to_path(uri: str) -> str | None:
+    parsed = urlparse(uri)
+    if parsed.scheme != "file":
+        return None
+    path = unquote(parsed.path)
+    if sys.platform == "win32" and path.startswith("/"):
+        path = path[1:]
+    return path
+
+
+def _discover_vscode_projects() -> list[dict]:
+    storage = _vscode_storage_dir()
+    if not storage:
+        return []
+
+    results = []
+    for d in storage.iterdir():
+        wj = d / "workspace.json"
+        if not wj.is_file():
+            continue
+        try:
+            data = json.loads(wj.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        folder_uri = data.get("folder", "")
+        if not folder_uri:
+            continue
+        folder = _uri_to_path(folder_uri)
+        if not folder or not os.path.isdir(folder):
+            continue
+        mtime = d.stat().st_mtime
+        results.append({
+            "path": folder,
+            "tool": "code",
+            "session_count": 1,
+            "last_active": mtime,
+        })
+
+    return results
 
 
 def _discover_claude_standalone(home: Path | None = None, known_encoded: set[str] | None = None) -> list[dict]:
@@ -132,20 +186,26 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
 
     home = home or Path.home()
     codex = _discover_codex_projects(home)
+    vscode = _discover_vscode_projects()
 
     by_path: dict[str, dict] = {}
     matched_encoded: set[str] = set()
 
-    for p in codex:
+    def _norm_key(path: str) -> str:
+        k = os.path.normpath(path)
+        return k.lower() if sys.platform == "win32" else k
+
+    for p in codex + vscode:
         if not _is_real_project(p["path"]):
             continue
-        key = p["path"].lower() if sys.platform == "win32" else p["path"]
+        p["path"] = os.path.normpath(p["path"])
+        key = _norm_key(p["path"])
 
         claude_info = _claude_sessions_for_path(p["path"], home)
         if claude_info:
             encoded = encode_claude_project_path(p["path"])
             matched_encoded.add(encoded)
-            if claude_info["last_active"] >= p["last_active"]:
+            if claude_info["last_active"] >= p.get("last_active", 0):
                 by_path[key] = {
                     "path": p["path"],
                     "tool": "claude",
@@ -154,12 +214,14 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
                 }
                 continue
 
-        by_path[key] = p
+        if key not in by_path or p["last_active"] > by_path[key]["last_active"]:
+            by_path[key] = p
 
     for p in _discover_claude_standalone(home, matched_encoded):
         if not _is_real_project(p["path"]):
             continue
-        key = p["path"].lower() if sys.platform == "win32" else p["path"]
+        p["path"] = os.path.normpath(p["path"])
+        key = _norm_key(p["path"])
         if key not in by_path or p["last_active"] > by_path[key]["last_active"]:
             by_path[key] = p
 
