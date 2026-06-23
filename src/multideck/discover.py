@@ -6,51 +6,23 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-
-def _decode_claude_dir_name(encoded: str) -> str | None:
-    """Try to reconstruct an absolute path from a Claude project directory name."""
-    if sys.platform == "win32":
-        if encoded.startswith("C--"):
-            reconstructed = "C:\\" + encoded[3:].replace("-", "\\")
-            if os.path.isdir(reconstructed):
-                return reconstructed
-            for sep_char in ("/", "\\"):
-                candidate = "C:" + sep_char + encoded[3:].replace("-", sep_char)
-                if os.path.isdir(candidate):
-                    return candidate
-    else:
-        if encoded.startswith("-"):
-            candidate = "/" + encoded[1:].replace("-", "/")
-            if os.path.isdir(candidate):
-                return candidate
-    return None
+from multideck.sessions.claude import encode_claude_project_path
 
 
-def _discover_claude_projects(home: Path | None = None) -> list[dict]:
+def _claude_sessions_for_path(project_path: str, home: Path | None = None) -> dict | None:
+    """Check if Claude has sessions for a given project path."""
     home = home or Path.home()
-    projects_dir = home / ".claude" / "projects"
-    if not projects_dir.is_dir():
-        return []
-
-    results = []
-    for d in projects_dir.iterdir():
-        if not d.is_dir():
-            continue
-        sessions = list(d.glob("*.jsonl"))
-        if not sessions:
-            continue
-        decoded = _decode_claude_dir_name(d.name)
-        if not decoded:
-            continue
-        latest = max(f.stat().st_mtime for f in sessions)
-        results.append({
-            "path": decoded,
-            "tool": "claude",
-            "session_count": len(sessions),
-            "last_active": latest,
-        })
-
-    return results
+    encoded = encode_claude_project_path(project_path)
+    sess_dir = home / ".claude" / "projects" / encoded
+    if not sess_dir.is_dir():
+        return None
+    sessions = list(sess_dir.glob("*.jsonl"))
+    if not sessions:
+        return None
+    return {
+        "session_count": len(sessions),
+        "last_active": max(f.stat().st_mtime for f in sessions),
+    }
 
 
 def _discover_codex_projects(home: Path | None = None) -> list[dict]:
@@ -68,24 +40,71 @@ def _discover_codex_projects(home: Path | None = None) -> list[dict]:
             if not cwd or not os.path.isdir(cwd):
                 continue
             mtime = f.stat().st_mtime
-            if cwd not in seen or mtime > seen[cwd]["last_active"]:
-                seen[cwd] = {
-                    "path": cwd,
-                    "tool": "codex",
-                    "session_count": seen.get(cwd, {}).get("session_count", 0) + 1,
-                    "last_active": mtime,
-                }
+            key = cwd.lower() if sys.platform == "win32" else cwd
+            prev = seen.get(key)
+            seen[key] = {
+                "path": cwd,
+                "tool": "codex",
+                "session_count": (prev["session_count"] if prev else 0) + 1,
+                "last_active": max(mtime, prev["last_active"] if prev else 0),
+            }
         except (json.JSONDecodeError, KeyError, OSError):
             continue
 
     return list(seen.values())
 
 
+def _discover_claude_standalone(home: Path | None = None, known_encoded: set[str] | None = None) -> list[dict]:
+    """Discover Claude projects that weren't found via Codex (brute-force decode)."""
+    home = home or Path.home()
+    projects_dir = home / ".claude" / "projects"
+    if not projects_dir.is_dir():
+        return []
+
+    known_encoded = known_encoded or set()
+    results = []
+
+    for d in projects_dir.iterdir():
+        if not d.is_dir() or d.name in known_encoded:
+            continue
+        sessions = list(d.glob("*.jsonl"))
+        if not sessions:
+            continue
+        decoded = _try_decode(d.name)
+        if not decoded:
+            continue
+        results.append({
+            "path": decoded,
+            "tool": "claude",
+            "session_count": len(sessions),
+            "last_active": max(f.stat().st_mtime for f in sessions),
+        })
+
+    return results
+
+
+def _try_decode(encoded: str) -> str | None:
+    """Best-effort decode of a Claude project directory name."""
+    if sys.platform == "win32":
+        if not encoded.startswith("C--"):
+            return None
+        rest = encoded[3:]
+        candidate = "C:\\" + rest.replace("-", "\\")
+        if os.path.isdir(candidate):
+            return candidate
+    else:
+        if not encoded.startswith("-"):
+            return None
+        candidate = "/" + encoded[1:].replace("-", "/")
+        if os.path.isdir(candidate):
+            return candidate
+    return None
+
+
 GENERIC_DIRS = {"desktop", "documents", "downloads", "projects", "repos", "src", "home", "work"}
 
 
 def _is_real_project(path: str) -> bool:
-    """Filter out shallow paths and generic directories that aren't real projects."""
     p = Path(path)
     parts = p.parts
     min_depth = 5 if sys.platform == "win32" else 4
@@ -105,17 +124,39 @@ def discover_projects(
 ) -> list[dict]:
     """Find projects from Claude and Codex session history.
 
-    Returns a de-duplicated list sorted by most recently active first.
-    Only includes projects active within `recent_days`, with a minimum of 5.
-    Each entry has: path, tool, session_count, last_active.
+    Strategy: discover paths from Codex (reliable), then cross-reference
+    each path against Claude sessions. Claude projects not found via Codex
+    are decoded with best-effort fallback.
     """
     import time
 
-    claude = _discover_claude_projects(home)
+    home = home or Path.home()
     codex = _discover_codex_projects(home)
 
     by_path: dict[str, dict] = {}
-    for p in claude + codex:
+    matched_encoded: set[str] = set()
+
+    for p in codex:
+        if not _is_real_project(p["path"]):
+            continue
+        key = p["path"].lower() if sys.platform == "win32" else p["path"]
+
+        claude_info = _claude_sessions_for_path(p["path"], home)
+        if claude_info:
+            encoded = encode_claude_project_path(p["path"])
+            matched_encoded.add(encoded)
+            if claude_info["last_active"] >= p["last_active"]:
+                by_path[key] = {
+                    "path": p["path"],
+                    "tool": "claude",
+                    "session_count": claude_info["session_count"],
+                    "last_active": claude_info["last_active"],
+                }
+                continue
+
+        by_path[key] = p
+
+    for p in _discover_claude_standalone(home, matched_encoded):
         if not _is_real_project(p["path"]):
             continue
         key = p["path"].lower() if sys.platform == "win32" else p["path"]
@@ -123,7 +164,6 @@ def discover_projects(
             by_path[key] = p
 
     all_projects = sorted(by_path.values(), key=lambda p: p["last_active"], reverse=True)
-
     if not all_projects:
         return []
 
@@ -136,7 +176,6 @@ def discover_projects(
 
 
 def projects_to_config(projects: list[dict]) -> dict:
-    """Convert discovered projects into a multideck config dict."""
     common_prefix = os.path.commonpath([p["path"] for p in projects]) if projects else ""
 
     leaf_counts = Counter(Path(p["path"]).name for p in projects)
