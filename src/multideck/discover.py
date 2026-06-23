@@ -117,7 +117,7 @@ def _is_real_project(path: str) -> bool:
 
 STEP_DAYS = 3
 MIN_PROJECTS = 3
-MAX_STEPS = 20
+MAX_STEPS = 160
 
 
 def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
