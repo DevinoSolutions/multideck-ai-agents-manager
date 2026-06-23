@@ -2119,7 +2119,7 @@ git commit -m "feat: --init folder scanning with group detection and duplicate l
 ### Task 14: CLI + Interactive Menu
 
 **Files:**
-- Create: `src/multideck/cli.py`
+- Create: `src/multideck/cli.py` — click CLI with `--go`, `--retile-all`, `--dry-run`, `--group`, `--init`, `--base-dir`, `--config`, `--force`, `--version`
 - Create: `tests/e2e/test_cli_flags.py`
 
 - [ ] **Step 1: Implement `cli.py`**
@@ -2793,7 +2793,7 @@ class TestMultiWindowDryRun:
         assert "Tiling 1 window(s)" in result.stdout
 ```
 
-- [ ] **Step 5: Write idempotency placeholder test**
+- [ ] **Step 5: Write idempotency test**
 
 `tests/e2e/test_idempotency.py`:
 
