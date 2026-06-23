@@ -37,10 +37,13 @@ class TestFindWindow:
             yield "Untitled - Notepad"
             proc.kill()
         elif sys.platform == "darwin":
-            r = subprocess.run(
-                ["osascript", "-e", 'tell application "TextEdit" to make new document'],
-                capture_output=True, timeout=30,
-            )
+            try:
+                r = subprocess.run(
+                    ["osascript", "-e", 'tell application "TextEdit" to make new document'],
+                    capture_output=True, timeout=10,
+                )
+            except subprocess.TimeoutExpired:
+                pytest.skip("TextEdit timed out in headless CI")
             if r.returncode != 0:
                 pytest.skip("TextEdit unavailable in headless CI")
             time.sleep(2)
