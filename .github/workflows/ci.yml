@@ -56,6 +56,7 @@ jobs:
         uses: ./.github/actions/setup-virtual-displays
       - name: Setup SSH server
         uses: ./.github/actions/setup-ssh-server
+        continue-on-error: true
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
       - run: pytest tests/e2e/ -v -m e2e

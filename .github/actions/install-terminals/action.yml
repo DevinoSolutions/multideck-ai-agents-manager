@@ -8,7 +8,7 @@ runs:
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get install -yq xterm
+        sudo apt-get install -yq xterm xfonts-base xfonts-75dpi xfonts-100dpi
 
     - name: macOS - Terminal.app is built-in
       if: runner.os == 'macOS'

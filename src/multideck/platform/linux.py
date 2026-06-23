@@ -48,13 +48,15 @@ class LinuxPlatform(Platform):
         return monitors
 
     def find_window(self, title: str, mode: str = "exact") -> str | None:
-        if mode == "exact" and shutil.which("xdotool"):
+        if shutil.which("xdotool"):
+            pattern = f"^{re.escape(title)}$" if mode == "exact" else re.escape(title)
             result = subprocess.run(
-                ["xdotool", "search", "--name", f"^{re.escape(title)}$"],
+                ["xdotool", "search", "--name", pattern],
                 capture_output=True, text=True, timeout=5,
             )
             wids = result.stdout.strip().splitlines()
-            return wids[0] if wids else None
+            if wids:
+                return wids[0]
 
         if shutil.which("wmctrl"):
             result = subprocess.run(
