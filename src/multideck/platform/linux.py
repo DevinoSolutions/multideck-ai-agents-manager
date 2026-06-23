@@ -14,6 +14,8 @@ class LinuxPlatform(Platform):
         pass
 
     def list_monitors(self) -> list[MonitorRect]:
+        if not shutil.which("xrandr"):
+            return []
         result = subprocess.run(
             ["xrandr", "--query"],
             capture_output=True, text=True, timeout=10,
