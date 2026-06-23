@@ -52,24 +52,29 @@ def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None
     return [None] * count
 
 
+S = click.style
+
+
 def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     plat = get_platform()
     plat.set_dpi_aware()
 
     monitors = plat.list_monitors()
     if not monitors:
-        click.echo("No monitors detected.", err=True)
+        click.echo(f"  {S('✗', fg='red')} No monitors detected.", err=True)
         return
 
     slots = compute_grid(monitors, config.layout.columns, config.layout.rows)
     per_screen = config.layout.columns * config.layout.rows
 
+    grid_label = f"{config.layout.columns}x{config.layout.rows}"
     click.echo(
-        f"Detected {len(monitors)} screen(s) -> {len(slots)} tile slot(s) "
-        f"({config.layout.columns} x {config.layout.rows} per screen)"
+        f"\n  {S('#', fg='cyan')} {S(str(len(monitors)), fg='cyan', bold=True)} screen(s)  "
+        f"{S('->', dim=True)}  {S(str(len(slots)), fg='green', bold=True)} tile slots  "
+        f"{S(f'({grid_label} per screen)', dim=True)}"
     )
     if opts.dry_run:
-        click.echo("DRY RUN — nothing will be launched or moved.\n")
+        click.echo(f"  {S('! DRY RUN', fg='yellow', bold=True)} {S('-- nothing will be launched or moved.', dim=True)}\n")
 
     base_dir = config.base_dir
     if base_dir:
@@ -86,7 +91,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
 
     has_remote = any(p.host for p in projects)
     if has_remote and not shutil.which("ssh"):
-        click.echo("WARNING: remote projects configured but 'ssh' not on PATH.")
+        click.echo(S("  ! Remote projects configured but 'ssh' not on PATH.", fg="yellow"))
 
     targets: list[_Target] = []
     new_count = 0
@@ -171,11 +176,11 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 
     if not to_place:
-        click.echo("\nNothing to position.")
+        click.echo(f"\n  {S('+', fg='green')} All windows already positioned.")
         return
 
-    label = " [retile all]" if opts.retile_all else (" [dry run]" if opts.dry_run else "")
-    click.echo(f"\nTiling {len(to_place)} window(s){label}...")
+    mode_label = S(" retile all", fg="yellow") if opts.retile_all else (S(" dry run", fg="yellow") if opts.dry_run else "")
+    click.echo(f"\n  {S('#', fg='cyan')} Tiling {S(str(len(to_place)), fg='cyan', bold=True)} window(s)...{mode_label}")
 
     if not opts.dry_run and new_count > 0:
         time.sleep(config.settings.settle_seconds)
@@ -185,7 +190,9 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         screen_num = (slot_idx % len(slots)) // per_screen + 1
 
         if opts.dry_run:
-            click.echo(f"  {target.name:<30} -> screen {screen_num} {pos.label}   {pos.w}x{pos.h} @ ({pos.x},{pos.y})")
+            dims = S(f"{pos.w}x{pos.h}", dim=True)
+            at = S(f"({pos.x},{pos.y})", dim=True)
+            click.echo(f"    {S('>', fg='cyan')} {target.name:<28} {S('->', dim=True)} screen {screen_num}  {dims} {at}")
             continue
 
         handle = plat.find_window(target.key, mode=target.mode)
@@ -199,14 +206,20 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
 
         if handle is not None:
             plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
-            click.echo(f"  {target.name} -> screen {screen_num} {pos.label}")
+            click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
         else:
-            click.echo(f"  Not found: {target.name}")
+            click.echo(f"    {S('x', fg='red')} {target.name} {S('not found', dim=True)}")
 
-    click.echo("\nDone!")
+    click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
 
 
 def _log_project(name: str, tool: str, running: bool, host: str | None) -> None:
-    status = "OPEN:" if running else "NEW: "
-    loc = f" @ {host}" if host else ""
-    click.echo(f"{status} {name} [{tool}{loc}]")
+    if running:
+        icon = S("*", fg="green")
+        label = S("open", dim=True)
+    else:
+        icon = S("o", fg="cyan")
+        label = S("new", fg="cyan")
+    loc = S(f" @ {host}", dim=True) if host else ""
+    tool_badge = S(f"[{tool}]", dim=True)
+    click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{loc}")
