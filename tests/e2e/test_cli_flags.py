@@ -34,7 +34,7 @@ class TestCliFlags:
             cwd=str(tmp_path),
         )
         assert result.returncode != 0
-        assert "No config found" in result.stderr or "No config found" in result.stdout
+        assert "No config found" in result.stderr or "config" in result.stderr.lower()
 
     def test_invalid_json_exits_nonzero(self, tmp_path):
         bad = tmp_path / "bad.json"

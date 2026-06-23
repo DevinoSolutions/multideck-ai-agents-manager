@@ -40,18 +40,19 @@ def _find_config(config_arg: str | None) -> Path:
     return static
 
 
-def _banner() -> None:
-    tiles = (
-        f"{S('[', dim=True)}{S('##', fg='cyan')}{S(']', dim=True)}"
-        f"{S('[', dim=True)}{S('##', fg='blue')}{S(']', dim=True)} "
-    )
-    name = S("m u l t i d e c k", bold=True, fg="white")
-    ver = S(f"v{__version__}", dim=True)
-    tag = S("auto-tile your AI workspace", dim=True)
+LOGO_LINES = [
+    r"           _ _   _    _        _   ",
+    r" _ __ _  _| | |_(_)__| |___ __| |__",
+    r"| '  \ || | |  _| / _` / -_) _| / /",
+    r"|_|_|_\_,_|_|\__|_\__,_\___\__|_\_\\",
+]
 
+
+def _banner() -> None:
     click.echo()
-    click.echo(f"  {tiles}  {name}")
-    click.echo(f"  {S('[##]', fg='magenta')}{S('[##]', fg='blue')}   {ver}  {tag}")
+    for line in LOGO_LINES:
+        click.echo(f"  {S(line, fg='cyan')}")
+    click.echo(f"  {S(f'v{__version__}', dim=True)}  {S('auto-tile your AI workspace', dim=True)}")
     click.echo()
 
 
@@ -165,9 +166,11 @@ def _run_discovery(config_file: Path) -> bool:
 
     click.echo(f"\n  {S('+', fg='green', bold=True)} Saved to {S(str(config_file), fg='cyan')}")
     click.echo()
-
-    if click.confirm(f"  {S('Open in editor?', bold=True)}", default=False):
-        _open_in_editor(config_file)
+    click.echo(f"  Run {S('multideck', bold=True)} again to launch all your projects")
+    click.echo(f"  and tile them across your screens.")
+    click.echo()
+    click.echo(f"  To tweak the config: {S('multideck --edit', fg='cyan')}")
+    click.echo()
 
     return True
 
@@ -224,11 +227,14 @@ def main(
         return
 
     if not config_file.exists():
-        if sys.stdin.isatty():
+        if config_path:
+            click.echo(f"No config found at: {config_file}", err=True)
+            sys.exit(1)
+        if sys.stdin.isatty() and not go:
             wrote = _run_discovery(config_file)
             if not wrote:
                 sys.exit(1)
-        else:
+        elif not config_file.exists():
             click.echo(f"No config found. Run: multideck --init", err=True)
             sys.exit(1)
 

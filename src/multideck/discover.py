@@ -240,8 +240,36 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
     return all_projects, MAX_STEPS * STEP_DAYS
 
 
+def _find_base_dir(paths: list[str]) -> str:
+    """Find the deepest directory shared by at least 60% of projects."""
+    if not paths:
+        return ""
+    threshold = max(3, int(len(paths) * 0.6))
+    candidate = os.path.commonpath(paths)
+
+    while True:
+        children: dict[str, int] = {}
+        for p in paths:
+            try:
+                rel = os.path.relpath(p, candidate)
+            except ValueError:
+                continue
+            first = rel.split(os.sep)[0]
+            if first and first != ".":
+                children[first] = children.get(first, 0) + 1
+
+        best = max(children, key=children.get) if children else None
+        if best and children[best] >= threshold:
+            candidate = os.path.join(candidate, best)
+        else:
+            break
+
+    return candidate
+
+
 def projects_to_config(projects: list[dict]) -> dict:
-    common_prefix = os.path.commonpath([p["path"] for p in projects]) if projects else ""
+    paths = [p["path"] for p in projects]
+    base_dir = _find_base_dir(paths) if projects else ""
 
     leaf_counts = Counter(Path(p["path"]).name for p in projects)
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
@@ -254,23 +282,27 @@ def projects_to_config(projects: list[dict]) -> dict:
     config_projects = []
     for i, p in enumerate(projects):
         try:
-            rel = os.path.relpath(p["path"], common_prefix).replace("\\", "/")
+            rel = os.path.relpath(p["path"], base_dir).replace("\\", "/")
         except ValueError:
             rel = p["path"].replace("\\", "/")
 
         entry: dict = {"path": rel}
-        parts = rel.split("/")
-        if len(parts) > 1:
-            entry["group"] = parts[0]
-        if parts[-1] in dup_leaves:
-            entry["title"] = rel.replace("/", "-")
+
+        parent = Path(p["path"]).parent.name.lower()
+        if parent and parent not in GENERIC_DIRS and parent != Path(base_dir).name.lower():
+            entry["group"] = Path(p["path"]).parent.name
+
+        if parts := rel.split("/"):
+            if parts[-1] in dup_leaves:
+                entry["title"] = rel.replace("/", "-")
+
         if p["tool"] != "claude":
             entry["tool"] = p["tool"]
         entry["color"] = palette[i % len(palette)]
         config_projects.append(entry)
 
     return {
-        "baseDir": common_prefix.replace("\\", "/"),
+        "baseDir": base_dir.replace("\\", "/"),
         "layout": {"columns": 2, "rows": 1},
         "settings": {
             "defaultTool": "claude",
