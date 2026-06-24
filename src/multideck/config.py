@@ -25,6 +25,7 @@ class Settings:
     tools: dict[str, str] = field(default_factory=lambda: {
         "claude": "claude --continue",
         "codex": "codex",
+        "agy": "agy",
     })
 
 
@@ -63,7 +64,11 @@ def _parse_settings(raw: dict | None) -> Settings:
         settle_seconds=raw.get("settleSeconds", 3),
         launch_delay_ms=raw.get("launchDelayMs", 400),
         ssh=_parse_ssh(raw.get("ssh")),
-        tools=raw.get("tools", {"claude": "claude --continue", "codex": "codex"}),
+        tools=raw.get("tools", {
+            "claude": "claude --continue",
+            "codex": "codex",
+            "agy": "agy",
+        }),
     )
 
 

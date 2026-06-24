@@ -23,6 +23,7 @@ class TerminalLaunchOpts:
 class VSCodeLaunchOpts:
     dir: str
     ssh_host: str | None = None
+    command: str = "code"
 
 
 class Platform(ABC):

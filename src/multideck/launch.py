@@ -101,15 +101,17 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         tool = proj.tool or config.settings.default_tool
         is_remote = bool(proj.host)
 
-        if tool in ("code", "vscode"):
+        if tool in ("code", "vscode", "cursor"):
             key = get_leaf_name(proj.remote_path or proj.path) if is_remote else get_leaf_name(proj.path)
             name = proj.title or key
             running = plat.find_window(key, mode="contains") is not None
             if not running and not opts.dry_run:
                 vsc_dir = proj.remote_path or proj.path if is_remote else (_resolve_path(proj.path, base_dir) or proj.path)
+                ide_cmd = "cursor" if tool == "cursor" else "code"
                 plat.launch_vscode(VSCodeLaunchOpts(
                     dir=vsc_dir,
                     ssh_host=proj.host if is_remote else None,
+                    command=ide_cmd,
                 ))
                 time.sleep(config.settings.launch_delay_ms / 1000)
             if not running:
@@ -119,7 +121,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             continue
 
         windows_cfg = proj.windows
-        if is_remote or tool in ("code", "vscode"):
+        if is_remote or tool in ("code", "vscode", "cursor"):
             windows_cfg = None
         titles = generate_titles(proj.title, proj.path, windows_cfg)
         window_count = len(titles)
