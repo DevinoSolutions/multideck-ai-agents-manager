@@ -90,6 +90,28 @@ def _parse_project(raw: dict) -> ProjectConfig:
     )
 
 
+TAB_COLORS = [
+    "#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4",
+    "#ec4899", "#84cc16", "#f97316", "#14b8a6", "#6366f1", "#eab308",
+    "#0ea5e9", "#10b981", "#d946ef", "#f43f5e", "#8b5cf6", "#059669",
+    "#e11d48", "#7c3aed", "#0891b2", "#c026d3", "#ea580c", "#4f46e5",
+    "#16a34a", "#db2777", "#2563eb", "#65a30d", "#9333ea", "#0d9488",
+]
+
+
+def _backfill_colors(projects: list[ProjectConfig]) -> None:
+    used = {p.color for p in projects if p.color}
+    available = [c for c in TAB_COLORS if c not in used]
+    idx = 0
+    for p in projects:
+        if not p.color:
+            if not available:
+                available = list(TAB_COLORS)
+                idx = 0
+            p.color = available[idx % len(available)]
+            idx += 1
+
+
 def load_config(path: str) -> MultideckConfig:
     config_path = Path(path)
     if not config_path.exists():
@@ -110,8 +132,11 @@ def load_config(path: str) -> MultideckConfig:
         rows=max(1, layout_raw.get("rows", 1)),
     )
 
+    projects = [_parse_project(p) for p in raw["projects"]]
+    _backfill_colors(projects)
+
     return MultideckConfig(
-        projects=[_parse_project(p) for p in raw["projects"]],
+        projects=projects,
         base_dir=raw.get("baseDir"),
         layout=layout,
         settings=_parse_settings(raw.get("settings")),

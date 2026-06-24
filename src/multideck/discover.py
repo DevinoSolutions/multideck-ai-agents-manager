@@ -274,7 +274,7 @@ def projects_to_config(projects: list[dict]) -> dict:
     leaf_counts = Counter(Path(p["path"]).name for p in projects)
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
 
-    from multideck.cli import TAB_COLORS as palette
+    from multideck.config import TAB_COLORS as palette
 
     config_projects = []
     for i, p in enumerate(projects):
