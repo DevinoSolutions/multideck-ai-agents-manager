@@ -13,6 +13,13 @@ from multideck.init_config import write_config
 
 S = click.style
 
+LOGO_LINES = [
+    r"           _ _   _    _        _   ",
+    r" _ __ _  _| | |_(_)__| |___ __| |__",
+    r"| '  \ || | |  _| / _` / -_) _| / /",
+    r"|_|_|_\_,_|_|\__|_\__,_\___\__|_\_\\",
+]
+
 
 def _config_dir() -> Path:
     if sys.platform == "win32":
@@ -36,16 +43,7 @@ def _find_config(config_arg: str | None) -> Path:
         for loc in (cwd, cwd / "scripts"):
             if (loc / name).exists():
                 return loc / name
-    static = _config_path()
-    return static
-
-
-LOGO_LINES = [
-    r"           _ _   _    _        _   ",
-    r" _ __ _  _| | |_(_)__| |___ __| |__",
-    r"| '  \ || | |  _| / _` / -_) _| / /",
-    r"|_|_|_\_,_|_|\__|_\__,_\___\__|_\_\\",
-]
+    return _config_path()
 
 
 def _banner() -> None:
@@ -62,6 +60,33 @@ def _divider() -> None:
 
 def _menu_item(key: str, label: str, key_fg: str = "cyan", extra: str = "") -> None:
     click.echo(f"   {S(key, fg=key_fg, bold=True)}   {label}{extra}")
+
+
+def _open_in_editor(path: Path) -> None:
+    path_str = str(path)
+    if sys.platform == "win32":
+        os.startfile(path_str)
+    elif sys.platform == "darwin":
+        import subprocess
+        subprocess.Popen(["open", path_str])
+    else:
+        import subprocess
+        editor = os.environ.get("EDITOR", "xdg-open")
+        subprocess.Popen([editor, path_str])
+
+
+def _load_raw_config(path: Path) -> dict:
+    if not path.exists():
+        click.echo(f"No config found at: {path}", err=True)
+        click.echo(f"Run {S('multideck', bold=True)} to generate one.", err=True)
+        sys.exit(1)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _save_raw_config(path: Path, data: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    click.echo(f"  {S('+', fg='green', bold=True)} Saved.")
 
 
 def _show_menu(groups: list[str]) -> dict:
@@ -111,19 +136,6 @@ def _show_menu(groups: list[str]) -> dict:
             click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
 
 
-def _open_in_editor(path: Path) -> None:
-    path_str = str(path)
-    if sys.platform == "win32":
-        os.startfile(path_str)
-    elif sys.platform == "darwin":
-        import subprocess
-        subprocess.Popen(["open", path_str])
-    else:
-        import subprocess
-        editor = os.environ.get("EDITOR", "xdg-open")
-        subprocess.Popen([editor, path_str])
-
-
 def _run_discovery(config_file: Path) -> bool:
     from multideck.discover import discover_projects, projects_to_config
 
@@ -169,13 +181,17 @@ def _run_discovery(config_file: Path) -> bool:
     click.echo(f"  Run {S('multideck', bold=True)} again to launch all your projects")
     click.echo(f"  and tile them across your screens.")
     click.echo()
-    click.echo(f"  To tweak the config: {S('multideck --edit', fg='cyan')}")
+    click.echo(f"  To tweak the config: {S('multideck config show', fg='cyan')}")
     click.echo()
 
     return True
 
 
-@click.command()
+# ---------------------------------------------------------------------------
+# CLI entry point
+# ---------------------------------------------------------------------------
+
+@click.group(invoke_without_command=True)
 @click.option("--go", is_flag=True, help="Skip interactive menu, launch + tile")
 @click.option("--retile-all", is_flag=True, help="Re-tile every matching window")
 @click.option("--dry-run", is_flag=True, hidden=True)
@@ -186,7 +202,9 @@ def _run_discovery(config_file: Path) -> bool:
 @click.option("--force", is_flag=True, help="With --init, overwrite existing config")
 @click.option("--edit", "do_edit", is_flag=True, help="Open config in your default editor")
 @click.version_option(__version__)
+@click.pass_context
 def main(
+    ctx: click.Context,
     go: bool,
     retile_all: bool,
     dry_run: bool,
@@ -198,6 +216,12 @@ def main(
     do_edit: bool,
 ) -> None:
     """Open every project in its own terminal and auto-tile across all monitors."""
+    ctx.ensure_object(dict)
+    ctx.obj["config_path"] = config_path
+
+    if ctx.invoked_subcommand is not None:
+        return
+
     config_file = _find_config(config_path)
 
     if do_edit:
@@ -217,11 +241,11 @@ def main(
             if success:
                 click.echo(f"Wrote config to {config_file}")
             else:
-                click.echo(f"{config_file} exists — use --force to overwrite.", err=True)
+                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
                 sys.exit(1)
         else:
             if config_file.exists() and not force:
-                click.echo(f"{config_file} exists — use --force to overwrite.", err=True)
+                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
                 sys.exit(1)
             _run_discovery(config_file)
         return
@@ -263,3 +287,278 @@ def main(
         group=group,
         config_path=str(config_file),
     ))
+
+
+# ---------------------------------------------------------------------------
+# multideck config ...
+# ---------------------------------------------------------------------------
+
+@main.group()
+@click.pass_context
+def config(ctx: click.Context) -> None:
+    """View and modify your multideck configuration."""
+    pass
+
+
+@config.command("show")
+@click.pass_context
+def config_show(ctx: click.Context) -> None:
+    """Display current configuration."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+
+    _banner()
+    click.echo(f"  {S('Config:', bold=True)} {S(str(config_file), dim=True)}")
+    click.echo()
+
+    click.echo(f"  {S('Base dir:', bold=True)}     {data.get('baseDir', S('(not set)', dim=True))}")
+
+    layout = data.get("layout", {})
+    cols, rows = layout.get("columns", 2), layout.get("rows", 1)
+    click.echo(f"  {S('Layout:', bold=True)}       {cols} x {rows}")
+
+    settings = data.get("settings", {})
+    click.echo(f"  {S('Default tool:', bold=True)} {settings.get('defaultTool', 'claude')}")
+    click.echo()
+
+    tools = settings.get("tools", {})
+    if tools:
+        click.echo(f"  {S('Tools:', bold=True)}")
+        for name, cmd in tools.items():
+            click.echo(f"    {S(name, fg='cyan'):<20} {S(cmd, dim=True)}")
+        click.echo()
+
+    projects = data.get("projects", [])
+    click.echo(f"  {S('Projects:', bold=True)} {len(projects)}")
+    for p in projects:
+        path = p.get("path", "?")
+        tool = p.get("tool", "")
+        group = p.get("group", "")
+        enabled = p.get("enabled", True)
+
+        leaf = Path(path).name
+        parts = []
+        if tool:
+            parts.append(S(tool, fg="cyan"))
+        if group:
+            parts.append(S(group, dim=True))
+        if not enabled:
+            parts.append(S("disabled", fg="red"))
+        extra = f"  {' | '.join(parts)}" if parts else ""
+        click.echo(f"    {leaf:<30}{extra}")
+
+    click.echo()
+
+
+@config.command("layout")
+@click.argument("columns", type=int)
+@click.argument("rows", type=int)
+@click.pass_context
+def config_layout(ctx: click.Context, columns: int, rows: int) -> None:
+    """Set grid layout. Usage: multideck config layout 3 2"""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("layout", {})
+    data["layout"]["columns"] = max(1, columns)
+    data["layout"]["rows"] = max(1, rows)
+    _save_raw_config(config_file, data)
+    click.echo(f"  Layout set to {columns} x {rows}")
+
+
+@config.command("base-dir")
+@click.argument("path", type=click.Path(exists=True, file_okay=False))
+@click.pass_context
+def config_base_dir(ctx: click.Context, path: str) -> None:
+    """Set the base directory for project paths."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    resolved = str(Path(path).resolve()).replace("\\", "/")
+    data["baseDir"] = resolved
+    _save_raw_config(config_file, data)
+    click.echo(f"  Base dir set to {resolved}")
+
+
+@config.command("default-tool")
+@click.argument("tool")
+@click.pass_context
+def config_default_tool(ctx: click.Context, tool: str) -> None:
+    """Set the default tool for new projects."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("settings", {})
+    data["settings"]["defaultTool"] = tool
+    _save_raw_config(config_file, data)
+    click.echo(f"  Default tool set to {S(tool, fg='cyan')}")
+
+
+@config.command("tool")
+@click.argument("name")
+@click.argument("command")
+@click.pass_context
+def config_tool(ctx: click.Context, name: str, command: str) -> None:
+    """Add or update a tool command. Usage: multideck config tool aider 'aider --model sonnet'"""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("settings", {}).setdefault("tools", {})
+    data["settings"]["tools"][name] = command
+    _save_raw_config(config_file, data)
+    click.echo(f"  Tool {S(name, fg='cyan')} = {S(command, dim=True)}")
+
+
+@config.command("remove-tool")
+@click.argument("name")
+@click.pass_context
+def config_remove_tool(ctx: click.Context, name: str) -> None:
+    """Remove a tool."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    tools = data.get("settings", {}).get("tools", {})
+    if name not in tools:
+        click.echo(f"  Tool '{name}' not found.", err=True)
+        sys.exit(1)
+    del tools[name]
+    _save_raw_config(config_file, data)
+    click.echo(f"  Removed tool {S(name, fg='cyan')}")
+
+
+@config.command("add")
+@click.argument("path")
+@click.option("--group", "-g", default=None, help="Group name")
+@click.option("--tool", "-t", default=None, help="Tool (claude, codex, vscode, ...)")
+@click.option("--color", "-c", default=None, help="Tab color (#rrggbb)")
+@click.option("--title", default=None, help="Custom window title")
+@click.option("--host", default=None, help="SSH host for remote projects")
+@click.option("--windows", "-w", default=None, type=int, help="Number of windows")
+@click.pass_context
+def config_add(
+    ctx: click.Context,
+    path: str,
+    group: str | None,
+    tool: str | None,
+    color: str | None,
+    title: str | None,
+    host: str | None,
+    windows: int | None,
+) -> None:
+    """Add a project. Usage: multideck config add ./myapp -g INTERNAL -t claude"""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("projects", [])
+
+    entry: dict = {"path": path.replace("\\", "/")}
+    if group:
+        entry["group"] = group
+    if tool:
+        entry["tool"] = tool
+    if color:
+        entry["color"] = color
+    if title:
+        entry["title"] = title
+    if host:
+        entry["host"] = host
+    if windows:
+        entry["windows"] = windows
+
+    data["projects"].append(entry)
+    _save_raw_config(config_file, data)
+    click.echo(f"  Added {S(path, fg='cyan')}")
+
+
+@config.command("remove")
+@click.argument("path")
+@click.pass_context
+def config_remove(ctx: click.Context, path: str) -> None:
+    """Remove a project by path (or leaf name)."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    projects = data.get("projects", [])
+    normalized = path.replace("\\", "/")
+
+    before = len(projects)
+    data["projects"] = [
+        p for p in projects
+        if p.get("path", "") != normalized and Path(p.get("path", "")).name != path
+    ]
+
+    removed = before - len(data["projects"])
+    if removed == 0:
+        click.echo(f"  No project matching '{path}' found.", err=True)
+        sys.exit(1)
+
+    _save_raw_config(config_file, data)
+    click.echo(f"  Removed {removed} project(s) matching {S(path, fg='cyan')}")
+
+
+@config.command("enable")
+@click.argument("path")
+@click.pass_context
+def config_enable(ctx: click.Context, path: str) -> None:
+    """Enable a disabled project."""
+    _set_project_field(ctx, path, "enabled", True)
+    click.echo(f"  Enabled {S(path, fg='cyan')}")
+
+
+@config.command("disable")
+@click.argument("path")
+@click.pass_context
+def config_disable(ctx: click.Context, path: str) -> None:
+    """Disable a project without removing it."""
+    _set_project_field(ctx, path, "enabled", False)
+    click.echo(f"  Disabled {S(path, fg='cyan')}")
+
+
+@config.command("set")
+@click.argument("path")
+@click.argument("field")
+@click.argument("value")
+@click.pass_context
+def config_set(ctx: click.Context, path: str, field: str, value: str) -> None:
+    """Set a field on a project. Usage: multideck config set myapp group INTERNAL"""
+    parsed: str | int | bool = value
+    if value.lower() in ("true", "false"):
+        parsed = value.lower() == "true"
+    else:
+        try:
+            parsed = int(value)
+        except ValueError:
+            pass
+    _set_project_field(ctx, path, field, parsed)
+    click.echo(f"  Set {S(field, bold=True)} = {S(str(value), fg='cyan')} on {path}")
+
+
+@config.command("open")
+@click.pass_context
+def config_open(ctx: click.Context) -> None:
+    """Open config file in your default editor."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    if not config_file.exists():
+        click.echo(f"No config at {config_file}. Run multideck first.", err=True)
+        sys.exit(1)
+    _open_in_editor(config_file)
+    click.echo(f"  Opened {S(str(config_file), dim=True)}")
+
+
+@config.command("path")
+@click.pass_context
+def config_path_cmd(ctx: click.Context) -> None:
+    """Print the config file path."""
+    click.echo(str(_find_config(ctx.obj.get("config_path"))))
+
+
+def _set_project_field(ctx: click.Context, path: str, field: str, value: object) -> None:
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    normalized = path.replace("\\", "/")
+
+    found = False
+    for p in data.get("projects", []):
+        if p.get("path", "") == normalized or Path(p.get("path", "")).name == path:
+            p[field] = value
+            found = True
+            break
+
+    if not found:
+        click.echo(f"  No project matching '{path}' found.", err=True)
+        sys.exit(1)
+
+    _save_raw_config(config_file, data)
