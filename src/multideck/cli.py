@@ -112,6 +112,8 @@ def _save_raw_config(path: Path, data: dict) -> None:
 def _config_menu(config_file: Path) -> None:
     """Interactive config editor accessed from the main menu."""
     while True:
+        click.clear()
+        _banner()
         data = _load_raw_config(config_file)
         layout = data.get("layout", {})
         settings = data.get("settings", {})
@@ -252,7 +254,8 @@ def _config_menu(config_file: Path) -> None:
 def _tools_menu(config_file: Path, data: dict) -> None:
     tools = data.get("settings", {}).get("tools", {})
     while True:
-        click.echo()
+        click.clear()
+        _banner()
         click.echo(f"  {S('Tool Commands', bold=True)}")
         click.echo(f"  {S('Each tool name maps to the shell command that runs inside', dim=True)}")
         click.echo(f"  {S('the terminal. e.g. \"claude\" runs \"claude --continue\".', dim=True)}")
@@ -313,7 +316,8 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
         click.echo(f"  {S('No projects to remove.', dim=True)}")
         return
 
-    click.echo()
+    click.clear()
+    _banner()
     for i, p in enumerate(projects, 1):
         leaf = Path(p.get("path", "?")).name
         extra = ""
@@ -342,6 +346,7 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
 def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
     config_changed = False
     while True:
+        click.clear()
         _banner()
         _divider()
         click.echo()
