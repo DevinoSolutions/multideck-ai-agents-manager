@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -12,6 +13,14 @@ from multideck.config import load_config
 from multideck.init_config import write_config
 
 S = click.style
+
+TAB_COLORS = [
+    "#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4",
+    "#ec4899", "#84cc16", "#f97316", "#14b8a6", "#6366f1", "#eab308",
+    "#0ea5e9", "#10b981", "#d946ef", "#f43f5e", "#8b5cf6", "#059669",
+    "#e11d48", "#7c3aed", "#0891b2", "#c026d3", "#ea580c", "#4f46e5",
+    "#16a34a", "#db2777", "#2563eb", "#65a30d", "#9333ea", "#0d9488",
+]
 
 LOGO_LINES = [
     r"           _ _   _    _        _   ",
@@ -270,12 +279,15 @@ def _config_menu(config_file: Path) -> None:
                 continue
             if tool:
                 entry["tool"] = tool
-            color = _prompt_or_back(f"Color {S('-- terminal tab color, e.g. #3b82f6', dim=True)}",
+            color = _prompt_or_back(f"Color {S('-- terminal tab color, Enter for random', dim=True)}",
                                     default="", show_default=False)
             if color is None:
                 continue
-            if color:
-                entry["color"] = color
+            if not color:
+                used = {p.get("color") for p in data.get("projects", []) if p.get("color")}
+                available = [c for c in TAB_COLORS if c not in used] or TAB_COLORS
+                color = random.choice(available)
+            entry["color"] = color
             data.setdefault("projects", []).append(entry)
             _save_raw_config(config_file, data)
             _confirm_change(f"Added project {S(path, fg='green')}.")
