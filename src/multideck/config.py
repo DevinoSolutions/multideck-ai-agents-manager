@@ -25,6 +25,7 @@ class Settings:
     tools: dict[str, str] = field(default_factory=lambda: {
         "claude": "claude --continue",
         "codex": "codex",
+        "cursor-agent": "cursor-agent",
         "agy": "agy",
     })
 
@@ -67,6 +68,7 @@ def _parse_settings(raw: dict | None) -> Settings:
         tools=raw.get("tools", {
             "claude": "claude --continue",
             "codex": "codex",
+            "cursor-agent": "cursor-agent",
             "agy": "agy",
         }),
     )

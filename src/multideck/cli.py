@@ -892,7 +892,7 @@ def _set_project_field(ctx: click.Context, path: str, field: str, value: object)
 _PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("path", "string", "*(required)*", "Absolute, or relative to `baseDir`."),
     ("group", "string", "none", "Tag for group launches (`-g`)."),
-    ("tool", "string", "`defaultTool`", "`claude`, `codex`, `agy`, `vscode`, `cursor`, or any custom tool."),
+    ("tool", "string", "`defaultTool`", "`claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool."),
     ("color", "string", "random", "Terminal tab color (`#rrggbb`)."),
     ("title", "string", "folder name", "Window title for matching."),
     ("enabled", "boolean", "`true`", "Set `false` to skip without deleting."),
@@ -905,7 +905,7 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("defaultTool", "string", "`\"claude\"`", "AI tool launched in each project unless overridden."),
     ("settleSeconds", "int", "`3`", "Seconds to wait for windows to appear before tiling."),
     ("launchDelayMs", "int", "`400`", "Delay between launching each terminal (ms)."),
-    ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"agy\": ...}`",
+    ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"cursor-agent\": ..., \"agy\": ...}`",
      "Map of tool names to shell commands. Add custom tools here."),
     ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),
 ]
@@ -1023,6 +1023,7 @@ def _generate_docs() -> str:
     w('"tools": {')
     w('  "claude": "claude --continue",')
     w('  "codex": "codex",')
+    w('  "cursor-agent": "cursor-agent",')
     w('  "agy": "agy",')
     w('  "aider": "aider --model sonnet",')
     w('  "shell": "bash"')

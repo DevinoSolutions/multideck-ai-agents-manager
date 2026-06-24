@@ -64,6 +64,13 @@ On first run, multideck scans your Claude, Codex, and VS Code history, finds you
     <td align="center">Yes</td>
   </tr>
   <tr>
+    <td><strong>Cursor Agent</strong></td>
+    <td>CLI agent</td>
+    <td><code>cursor-agent</code></td>
+    <td align="center">--</td>
+    <td align="center">--</td>
+  </tr>
+  <tr>
     <td><strong>Antigravity (agy)</strong></td>
     <td>CLI agent</td>
     <td><code>agy</code></td>
@@ -78,7 +85,7 @@ On first run, multideck scans your Claude, Codex, and VS Code history, finds you
     <td align="center">--</td>
   </tr>
   <tr>
-    <td><strong>Cursor</strong></td>
+    <td><strong>Cursor IDE</strong></td>
     <td>IDE</td>
     <td><code>cursor</code></td>
     <td align="center">--</td>
@@ -149,6 +156,7 @@ Or place `multideck.config.json` in your working directory.
     "tools": {
       "claude": "claude --continue",
       "codex": "codex",
+      "cursor-agent": "cursor-agent",
       "agy": "agy",
       "aider": "aider --model sonnet"
     }
@@ -169,7 +177,7 @@ Or place `multideck.config.json` in your working directory.
 | --- | --- | --- |
 | `path` | *(required)* | Absolute, or relative to `baseDir`. |
 | `group` | none | Tag for group launches (`-g`). |
-| `tool` | `defaultTool` | `claude`, `codex`, `agy`, `vscode`, `cursor`, or any custom tool. |
+| `tool` | `defaultTool` | `claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool. |
 | `color` | random | Terminal tab color (`#rrggbb`). |
 | `title` | folder name | Window title for matching. |
 | `enabled` | `true` | Set `false` to skip without deleting. |
@@ -201,6 +209,7 @@ CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
 "tools": {
   "claude": "claude --continue",
   "codex": "codex",
+  "cursor-agent": "cursor-agent",
   "agy": "agy",
   "aider": "aider --model sonnet",
   "shell": "bash"

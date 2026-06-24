@@ -77,6 +77,20 @@ class TestVSCodeToolAlias:
         assert result.returncode == 0
         assert "Tiling 2 window(s)" not in result.stdout
 
+    def test_cursor_agent_tool_accepted(self, tmp_path):
+        (tmp_path / "myapp").mkdir()
+        cfg = tmp_path / "multideck.config.json"
+        cfg.write_text(json.dumps({
+            "baseDir": str(tmp_path),
+            "projects": [{"path": "myapp", "tool": "cursor-agent"}],
+        }))
+        result = subprocess.run(
+            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "unknown tool" not in result.stdout
+
     def test_agy_tool_accepted(self, tmp_path):
         (tmp_path / "myapp").mkdir()
         cfg = tmp_path / "multideck.config.json"
