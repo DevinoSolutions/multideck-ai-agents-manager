@@ -274,10 +274,11 @@ def projects_to_config(projects: list[dict]) -> dict:
     leaf_counts = Counter(Path(p["path"]).name for p in projects)
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
 
-    from multideck.config import TAB_COLORS as palette
+    from multideck.config import _random_tab_color
 
+    used: set[str] = set()
     config_projects = []
-    for i, p in enumerate(projects):
+    for p in projects:
         try:
             rel = os.path.relpath(p["path"], base_dir).replace("\\", "/")
         except ValueError:
@@ -295,7 +296,9 @@ def projects_to_config(projects: list[dict]) -> dict:
 
         if p["tool"] != "claude":
             entry["tool"] = p["tool"]
-        entry["color"] = palette[i % len(palette)]
+        color = _random_tab_color(used)
+        used.add(color)
+        entry["color"] = color
         config_projects.append(entry)
 
     return {

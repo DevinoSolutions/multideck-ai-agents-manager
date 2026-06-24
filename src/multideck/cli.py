@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import json
 import os
-import random
 import sys
 from pathlib import Path
 
 import click
 
 from multideck import __version__
-from multideck.config import TAB_COLORS, load_config
+from multideck.config import _random_tab_color, load_config
 from multideck.init_config import write_config
 
 S = click.style
@@ -277,8 +276,7 @@ def _config_menu(config_file: Path) -> None:
                 continue
             if not color:
                 used = {p.get("color") for p in data.get("projects", []) if p.get("color")}
-                available = [c for c in TAB_COLORS if c not in used] or TAB_COLORS
-                color = random.choice(available)
+                color = _random_tab_color(used)
             entry["color"] = color
             data.setdefault("projects", []).append(entry)
             _save_raw_config(config_file, data)
