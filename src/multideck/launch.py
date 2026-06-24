@@ -52,7 +52,16 @@ def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None
     return [None] * count
 
 
+HAPPY_AGENTS = {"claude", "codex"}
+
 S = click.style
+
+
+def _wrap_happy(tool: str, cmd: str) -> str:
+    """Wrap a CLI agent command with Happy for mobile/web access."""
+    if tool in HAPPY_AGENTS:
+        return f"happy {tool}"
+    return cmd
 
 
 def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
@@ -117,7 +126,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             if not running:
                 new_count += 1
             targets.append(_Target(name=name, key=key, mode="contains", is_new=not running))
-            _log_project(name, tool, running, proj.host)
+            _log_project(name, tool, running, proj.host, happy=False)
             continue
 
         windows_cfg = proj.windows
@@ -137,10 +146,14 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             click.echo(f"SKIP: {titles[0]} — unknown tool '{tool}' (add under settings.tools)")
             continue
 
+        use_happy = proj.happy if proj.happy is not None else config.settings.happy
+        if use_happy:
+            base_cmd = _wrap_happy(tool, base_cmd)
+
         for i, win_title in enumerate(titles):
-            if window_count > 1 and session_ids[i] is not None:
+            if window_count > 1 and not use_happy and session_ids[i] is not None:
                 cmd = build_resume_command(tool, base_cmd, session_ids[i])
-            elif window_count > 1:
+            elif window_count > 1 and not use_happy:
                 cmd = build_resume_command(tool, base_cmd, None)
             else:
                 cmd = base_cmd
@@ -173,7 +186,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             if not running:
                 new_count += 1
             targets.append(_Target(name=win_title, key=win_title, mode="exact", is_new=not running))
-            _log_project(win_title, tool, running, proj.host)
+            _log_project(win_title, tool, running, proj.host, happy=use_happy)
 
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 
@@ -215,7 +228,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
 
 
-def _log_project(name: str, tool: str, running: bool, host: str | None) -> None:
+def _log_project(name: str, tool: str, running: bool, host: str | None, happy: bool = False) -> None:
     if running:
         icon = S("*", fg="green")
         label = S("open", dim=True)
@@ -224,4 +237,5 @@ def _log_project(name: str, tool: str, running: bool, host: str | None) -> None:
         label = S("new", fg="cyan")
     loc = S(f" @ {host}", dim=True) if host else ""
     tool_badge = S(f"[{tool}]", dim=True)
-    click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{loc}")
+    happy_badge = S(" [happy]", fg="magenta") if happy else ""
+    click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{happy_badge}{loc}")

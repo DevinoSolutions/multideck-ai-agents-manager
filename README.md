@@ -102,6 +102,16 @@ On first run, multideck scans your Claude, Codex, and VS Code history, finds you
 
 Add any tool by mapping a name to a shell command in `settings.tools`. CLI agents open in a terminal; IDE tools open via their native CLI (`code`, `cursor`).
 
+### Happy (mobile/web access)
+
+Enable [Happy](https://github.com/slopus/happy) to monitor and control all your AI sessions from your phone or browser with end-to-end encryption:
+
+```json
+"settings": { "happy": true }
+```
+
+Requires `npm install -g happy`. Supported agents: Claude, Codex. Per-project override with `"happy": true/false`.
+
 ## Usage
 
 Run `multideck` with no arguments for the interactive menu:
@@ -153,6 +163,7 @@ Or place `multideck.config.json` in your working directory.
     "defaultTool": "claude",
     "settleSeconds": 3,
     "launchDelayMs": 400,
+    "happy": false,
     "tools": {
       "claude": "claude --continue",
       "codex": "codex",
@@ -181,6 +192,7 @@ Or place `multideck.config.json` in your working directory.
 | `color` | random | Terminal tab color (`#rrggbb`). |
 | `title` | folder name | Window title for matching. |
 | `enabled` | `true` | Set `false` to skip without deleting. |
+| `happy` | inherit | Override global Happy setting for this project. |
 | `host` | none | SSH target for remote projects. |
 | `remotePath` | `path` | Remote directory when different from `path`. |
 | `windows` | none | `int` or `["name1", "name2"]` for multi-window sessions. |

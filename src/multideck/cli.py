@@ -158,14 +158,18 @@ def _config_menu(config_file: Path) -> None:
             _menu_item("3", f"Projects folder   {S('(not set -- using absolute paths)', dim=True)}")
         _menu_item("4", f"Tool commands     {S(', '.join(tools.keys()) or '(none)', dim=True)}"
                    f"  {S('-- what runs in the terminal', dim=True)}")
+        happy_on = settings.get("happy", False)
+        happy_label = S("ON", fg="green", bold=True) if happy_on else S("off", dim=True)
+        _menu_item("5", f"Happy mobile      {happy_label}"
+                   f"  {S('-- monitor sessions from phone/web', dim=True)}")
         click.echo()
         click.echo(f"  {S('Projects', bold=True)}")
         _divider()
         click.echo()
-        _menu_item("5", f"Add a project     {S('-- register a new folder', dim=True)}")
-        _menu_item("6", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        _menu_item("6", f"Add a project     {S('-- register a new folder', dim=True)}")
+        _menu_item("7", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
         click.echo()
-        _menu_item("7", f"Open config file in editor", key_fg="green")
+        _menu_item("8", f"Open config file in editor", key_fg="green")
         _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
@@ -245,6 +249,18 @@ def _config_menu(config_file: Path) -> None:
             _tools_menu(config_file, data)
 
         elif choice == "5":
+            data.setdefault("settings", {})
+            new_val = not data["settings"].get("happy", False)
+            data["settings"]["happy"] = new_val
+            _save_raw_config(config_file, data)
+            if new_val:
+                _confirm_change(f"Happy mobile {S('enabled', fg='green')}. "
+                                f"Sessions will be accessible from your phone via the Happy app.")
+            else:
+                _confirm_change(f"Happy mobile {S('disabled', dim=True)}. "
+                                f"Sessions launch directly without Happy.")
+
+        elif choice == "6":
             cwd = str(Path.cwd()).replace("\\", "/")
             click.echo()
             click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
@@ -282,10 +298,10 @@ def _config_menu(config_file: Path) -> None:
             _save_raw_config(config_file, data)
             _confirm_change(f"Added project {S(path, fg='green')}.")
 
-        elif choice == "6":
+        elif choice == "7":
             _remove_project_menu(config_file, data)
 
-        elif choice == "7":
+        elif choice == "8":
             _open_in_editor(config_file)
             return
 
@@ -886,6 +902,7 @@ _PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("color", "string", "random", "Terminal tab color (`#rrggbb`)."),
     ("title", "string", "folder name", "Window title for matching."),
     ("enabled", "boolean", "`true`", "Set `false` to skip without deleting."),
+    ("happy", "boolean", "inherit", "Override global Happy setting for this project."),
     ("host", "string", "none", "SSH target for remote projects."),
     ("remotePath", "string", "`path`", "Remote directory when different from `path`."),
     ("windows", "int or list", "none", "`int` or `[\"name1\", \"name2\"]` for multi-window sessions."),
@@ -895,6 +912,7 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("defaultTool", "string", "`\"claude\"`", "AI tool launched in each project unless overridden."),
     ("settleSeconds", "int", "`3`", "Seconds to wait for windows to appear before tiling."),
     ("launchDelayMs", "int", "`400`", "Delay between launching each terminal (ms)."),
+    ("happy", "boolean", "`false`", "Enable [Happy](https://github.com/slopus/happy) to access sessions from mobile/web."),
     ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"cursor-agent\": ..., \"agy\": ...}`",
      "Map of tool names to shell commands. Add custom tools here."),
     ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),
@@ -1003,6 +1021,26 @@ def _generate_docs() -> str:
     w("```")
     w("")
     w("CLI agents run over SSH. VS Code projects open via Remote-SSH.")
+    w("")
+
+    w("## Happy (mobile/web access)")
+    w("")
+    w("Enable [Happy](https://github.com/slopus/happy) to monitor and control your AI sessions")
+    w("from your phone or any browser. Happy wraps supported agents (claude, codex) and relays")
+    w("encrypted session data to the Happy mobile/web app.")
+    w("")
+    w("```json")
+    w('"settings": {')
+    w('  "happy": true')
+    w("}")
+    w("```")
+    w("")
+    w("Requires `npm install -g happy`. Per-project override:")
+    w("")
+    w("```json")
+    w('{ "path": "api", "happy": true }')
+    w('{ "path": "docs", "tool": "vscode", "happy": false }')
+    w("```")
     w("")
 
     w("## Custom tools")
