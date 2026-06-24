@@ -62,6 +62,26 @@ def _menu_item(key: str, label: str, key_fg: str = "cyan", extra: str = "") -> N
     click.echo(f"   {S(key, fg=key_fg, bold=True)}   {label}{extra}")
 
 
+def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
+    cell_w = 10
+    lines: list[str] = []
+    border = "+" + (f"{'-' * cell_w}+") * cols
+    for r in range(rows):
+        lines.append(f"{indent}{S(border, dim=True)}")
+        cells = ""
+        for c in range(cols):
+            n = r * cols + c + 1
+            label = f"win {n}"
+            pad = cell_w - len(label)
+            left = pad // 2
+            right = pad - left
+            cells += S("|", dim=True) + " " * left + S(label, fg="cyan") + " " * right
+        cells += S("|", dim=True)
+        lines.append(f"{indent}{cells}")
+    lines.append(f"{indent}{S(border, dim=True)}")
+    return lines
+
+
 def _open_in_editor(path: Path) -> None:
     path_str = str(path)
     if sys.platform == "win32":
@@ -105,6 +125,11 @@ def _config_menu(config_file: Path) -> None:
         click.echo(f"  {S('Settings', bold=True)}")
         _divider()
         click.echo()
+        click.echo(f"  {S('Each screen is tiled like this:', dim=True)}")
+        click.echo()
+        for line in _grid_preview(cols, rows, indent="      "):
+            click.echo(line)
+        click.echo()
         _menu_item("1", f"Window grid      {S(f'{cols} cols x {rows} rows', fg='green')}"
                    f"  {S(f'= {total_slots} windows per screen', dim=True)}")
         _menu_item("2", f"Default AI tool   {S(dtool, fg='green')}"
@@ -134,16 +159,20 @@ def _config_menu(config_file: Path) -> None:
             click.echo()
             click.echo(f"  {S('How many windows per screen?', bold=True)}")
             click.echo(f"  {S('Columns = side by side, Rows = stacked.', dim=True)}")
-            click.echo(f"  {S('Example: 2 cols x 1 row = two windows side by side.', dim=True)}")
             click.echo()
             new_cols = click.prompt(f"  Columns (side by side)", default=cols, type=int)
             new_rows = click.prompt(f"  Rows (stacked)", default=rows, type=int)
             new_cols, new_rows = max(1, new_cols), max(1, new_rows)
+            click.echo()
+            click.echo(f"  {S('Your screens will look like:', bold=True)}")
+            click.echo()
+            for line in _grid_preview(new_cols, new_rows, indent="      "):
+                click.echo(line)
+            click.echo()
             data.setdefault("layout", {})
             data["layout"]["columns"] = new_cols
             data["layout"]["rows"] = new_rows
             _save_raw_config(config_file, data)
-            click.echo(f"  {S('+', fg='green')} {new_cols * new_rows} windows per screen ({new_cols} x {new_rows})")
 
         elif choice == "2":
             click.echo()
