@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import colorsys
 import json
+import random
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -90,26 +92,27 @@ def _parse_project(raw: dict) -> ProjectConfig:
     )
 
 
-TAB_COLORS = [
-    "#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4",
-    "#ec4899", "#84cc16", "#f97316", "#14b8a6", "#6366f1", "#eab308",
-    "#0ea5e9", "#10b981", "#d946ef", "#f43f5e", "#8b5cf6", "#059669",
-    "#e11d48", "#7c3aed", "#0891b2", "#c026d3", "#ea580c", "#4f46e5",
-    "#16a34a", "#db2777", "#2563eb", "#65a30d", "#9333ea", "#0d9488",
-]
+def _random_tab_color(used: set[str]) -> str:
+    for _ in range(200):
+        h = random.random()
+        s = random.uniform(0.55, 0.95)
+        l = random.uniform(0.40, 0.65)
+        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+        if color not in used:
+            return color
+    return f"#{random.randint(0, 0xFFFFFF):06x}"
 
 
-def _backfill_colors(projects: list[ProjectConfig]) -> None:
+def _backfill_colors(projects: list[ProjectConfig]) -> bool:
     used = {p.color for p in projects if p.color}
-    available = [c for c in TAB_COLORS if c not in used]
-    idx = 0
+    changed = False
     for p in projects:
         if not p.color:
-            if not available:
-                available = list(TAB_COLORS)
-                idx = 0
-            p.color = available[idx % len(available)]
-            idx += 1
+            p.color = _random_tab_color(used)
+            used.add(p.color)
+            changed = True
+    return changed
 
 
 def load_config(path: str) -> MultideckConfig:
@@ -133,7 +136,10 @@ def load_config(path: str) -> MultideckConfig:
     )
 
     projects = [_parse_project(p) for p in raw["projects"]]
-    _backfill_colors(projects)
+    if _backfill_colors(projects):
+        for i, p in enumerate(projects):
+            raw["projects"][i].setdefault("color", p.color)
+        config_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
 
     return MultideckConfig(
         projects=projects,
