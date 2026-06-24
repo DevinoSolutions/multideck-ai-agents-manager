@@ -2,11 +2,14 @@ from multideck.launch import _wrap_happy, HAPPY_AGENTS
 
 
 class TestWrapHappy:
-    def test_wraps_claude(self):
-        assert _wrap_happy("claude", "claude --continue") == "happy claude"
+    def test_wraps_claude_preserves_flags(self):
+        assert _wrap_happy("claude", "claude --continue") == "happy claude --continue"
 
     def test_wraps_codex(self):
         assert _wrap_happy("codex", "codex") == "happy codex"
+
+    def test_wraps_claude_with_resume_id(self):
+        assert _wrap_happy("claude", "claude --resume abc123") == "happy claude --resume abc123"
 
     def test_passthrough_unsupported_tool(self):
         assert _wrap_happy("agy", "agy") == "agy"

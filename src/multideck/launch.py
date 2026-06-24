@@ -60,7 +60,7 @@ S = click.style
 def _wrap_happy(tool: str, cmd: str) -> str:
     """Wrap a CLI agent command with Happy for mobile/web access."""
     if tool in HAPPY_AGENTS:
-        return f"happy {tool}"
+        return f"happy {cmd}"
     return cmd
 
 
@@ -147,16 +147,17 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             continue
 
         use_happy = proj.happy if proj.happy is not None else config.settings.happy
-        if use_happy:
-            base_cmd = _wrap_happy(tool, base_cmd)
 
         for i, win_title in enumerate(titles):
-            if window_count > 1 and not use_happy and session_ids[i] is not None:
+            if window_count > 1 and session_ids[i] is not None:
                 cmd = build_resume_command(tool, base_cmd, session_ids[i])
-            elif window_count > 1 and not use_happy:
+            elif window_count > 1:
                 cmd = build_resume_command(tool, base_cmd, None)
             else:
                 cmd = base_cmd
+
+            if use_happy:
+                cmd = _wrap_happy(tool, cmd)
 
             running = plat.find_window(win_title, mode="exact") is not None
             if not running and not opts.dry_run:
