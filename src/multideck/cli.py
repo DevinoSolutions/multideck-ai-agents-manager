@@ -99,40 +99,63 @@ def _config_menu(config_file: Path) -> None:
         tools = settings.get("tools", {})
         cols, rows = layout.get("columns", 2), layout.get("rows", 1)
         dtool = settings.get("defaultTool", "claude")
+        total_slots = cols * rows
 
         click.echo()
-        click.echo(f"  {S('Config', bold=True)}")
+        click.echo(f"  {S('Settings', bold=True)}")
         _divider()
         click.echo()
-        _menu_item("1", f"Layout           {S(f'{cols} x {rows}', fg='green')}")
-        _menu_item("2", f"Default tool     {S(dtool, fg='green')}")
-        _menu_item("3", f"Base directory   {S(data.get('baseDir', '(not set)'), fg='green')}")
-        _menu_item("4", f"Tools            {S(', '.join(tools.keys()), dim=True)}")
-        _menu_item("5", f"Add a project")
-        _menu_item("6", f"Remove a project {S(f'({len(projects)} total)', dim=True)}")
-        _menu_item("7", f"Open in editor")
-        _menu_item("b", "Back", key_fg="yellow")
+        _menu_item("1", f"Window grid      {S(f'{cols} cols x {rows} rows', fg='green')}"
+                   f"  {S(f'= {total_slots} windows per screen', dim=True)}")
+        _menu_item("2", f"Default AI tool   {S(dtool, fg='green')}"
+                   f"  {S('-- launched in each project', dim=True)}")
+        base = data.get("baseDir")
+        if base:
+            short = base if len(base) <= 35 else "..." + base[-32:]
+            _menu_item("3", f"Projects folder   {S(short, fg='green')}")
+        else:
+            _menu_item("3", f"Projects folder   {S('(not set -- using absolute paths)', dim=True)}")
+        _menu_item("4", f"Tool commands     {S(', '.join(tools.keys()) or '(none)', dim=True)}"
+                   f"  {S('-- what runs in the terminal', dim=True)}")
+        click.echo()
+        click.echo(f"  {S('Projects', bold=True)}")
+        _divider()
+        click.echo()
+        _menu_item("5", f"Add a project     {S('-- register a new folder', dim=True)}")
+        _menu_item("6", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        click.echo()
+        _menu_item("7", f"Open config file in editor", key_fg="green")
+        _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
         choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
 
         if choice == "1":
-            new_cols = click.prompt(f"  Columns", default=cols, type=int)
-            new_rows = click.prompt(f"  Rows", default=rows, type=int)
+            click.echo()
+            click.echo(f"  {S('How many windows per screen?', bold=True)}")
+            click.echo(f"  {S('Columns = side by side, Rows = stacked.', dim=True)}")
+            click.echo(f"  {S('Example: 2 cols x 1 row = two windows side by side.', dim=True)}")
+            click.echo()
+            new_cols = click.prompt(f"  Columns (side by side)", default=cols, type=int)
+            new_rows = click.prompt(f"  Rows (stacked)", default=rows, type=int)
+            new_cols, new_rows = max(1, new_cols), max(1, new_rows)
             data.setdefault("layout", {})
-            data["layout"]["columns"] = max(1, new_cols)
-            data["layout"]["rows"] = max(1, new_rows)
+            data["layout"]["columns"] = new_cols
+            data["layout"]["rows"] = new_rows
             _save_raw_config(config_file, data)
-            click.echo(f"  Layout set to {new_cols} x {new_rows}")
+            click.echo(f"  {S('+', fg='green')} {new_cols * new_rows} windows per screen ({new_cols} x {new_rows})")
 
         elif choice == "2":
-            available = list(tools.keys()) or ["claude", "codex"]
             click.echo()
+            click.echo(f"  {S('Which AI tool should open in each project by default?', bold=True)}")
+            click.echo(f"  {S('Individual projects can override this.', dim=True)}")
+            click.echo()
+            available = list(tools.keys()) or ["claude", "codex"]
             for i, t in enumerate(available, 1):
-                marker = S(" (current)", dim=True) if t == dtool else ""
+                marker = S(" <-- current", dim=True) if t == dtool else ""
                 _menu_item(str(i), f"{t}{marker}")
             click.echo()
-            idx_str = click.prompt(f"  Choose or type a name", default=dtool, show_default=False).strip()
+            idx_str = click.prompt(f"  Pick a number or type a name", default=dtool, show_default=False).strip()
             try:
                 idx = int(idx_str) - 1
                 if 0 <= idx < len(available):
@@ -144,7 +167,13 @@ def _config_menu(config_file: Path) -> None:
             _save_raw_config(config_file, data)
 
         elif choice == "3":
-            new_dir = click.prompt(f"  Base directory", default=data.get("baseDir", "")).strip()
+            click.echo()
+            click.echo(f"  {S('Where are your projects?', bold=True)}")
+            click.echo(f"  {S('Project paths in your config are relative to this folder.', dim=True)}")
+            click.echo(f"  {S('Example: if base is C:/projects and a project path is', dim=True)}")
+            click.echo(f"  {S('api/backend, it opens C:/projects/api/backend.', dim=True)}")
+            click.echo()
+            new_dir = click.prompt(f"  Projects folder", default=data.get("baseDir", "")).strip()
             if new_dir:
                 data["baseDir"] = new_dir.replace("\\", "/")
                 _save_raw_config(config_file, data)
@@ -153,22 +182,32 @@ def _config_menu(config_file: Path) -> None:
             _tools_menu(config_file, data)
 
         elif choice == "5":
-            path = click.prompt(f"  Project path").strip()
+            click.echo()
+            click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
+            click.echo(f"  {S('Path can be absolute or relative to your projects folder.', dim=True)}")
+            click.echo()
+            path = click.prompt(f"  Folder path").strip()
             if not path:
                 continue
             entry: dict = {"path": path.replace("\\", "/")}
-            group = click.prompt(f"  Group {S('(blank to skip)', dim=True)}", default="", show_default=False).strip()
+            click.echo()
+            click.echo(f"  {S('Optional settings (press Enter to skip each):', dim=True)}")
+            click.echo()
+            group = click.prompt(f"  Group {S('-- for launching subsets, e.g. INTERNAL', dim=True)}",
+                                 default="", show_default=False).strip()
             if group:
                 entry["group"] = group
-            tool = click.prompt(f"  Tool {S('(blank for default)', dim=True)}", default="", show_default=False).strip()
+            tool = click.prompt(f"  Tool  {S('-- override default, e.g. codex, vscode', dim=True)}",
+                                default="", show_default=False).strip()
             if tool:
                 entry["tool"] = tool
-            color = click.prompt(f"  Color {S('#hex (blank to skip)', dim=True)}", default="", show_default=False).strip()
+            color = click.prompt(f"  Color {S('-- terminal tab color, e.g. #3b82f6', dim=True)}",
+                                 default="", show_default=False).strip()
             if color:
                 entry["color"] = color
             data.setdefault("projects", []).append(entry)
             _save_raw_config(config_file, data)
-            click.echo(f"  Added {S(path, fg='cyan')}")
+            click.echo(f"  {S('+', fg='green')} Added {S(path, fg='cyan')}")
 
         elif choice == "6":
             _remove_project_menu(config_file, data)
@@ -185,13 +224,17 @@ def _tools_menu(config_file: Path, data: dict) -> None:
     tools = data.get("settings", {}).get("tools", {})
     while True:
         click.echo()
-        click.echo(f"  {S('Tools', bold=True)}")
+        click.echo(f"  {S('Tool Commands', bold=True)}")
+        click.echo(f"  {S('Each tool name maps to the shell command that runs inside', dim=True)}")
+        click.echo(f"  {S('the terminal. e.g. \"claude\" runs \"claude --continue\".', dim=True)}")
         _divider()
         click.echo()
         for name, cmd in tools.items():
-            click.echo(f"    {S(name, fg='cyan'):<20} {S(cmd, dim=True)}")
+            click.echo(f"    {S(name, fg='cyan'):<20} -> {S(cmd, dim=True)}")
+        if not tools:
+            click.echo(f"    {S('(no tools configured)', dim=True)}")
         click.echo()
-        _menu_item("a", "Add / edit a tool")
+        _menu_item("a", "Add or edit a tool")
         _menu_item("r", "Remove a tool")
         _menu_item("b", "Back", key_fg="yellow")
         click.echo()
@@ -199,11 +242,15 @@ def _tools_menu(config_file: Path, data: dict) -> None:
         choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
 
         if choice == "a":
+            click.echo()
+            click.echo(f"  {S('Name is a short label (e.g. aider, shell).', dim=True)}")
+            click.echo(f"  {S('Command is what runs in the terminal (e.g. aider --model sonnet).', dim=True)}")
+            click.echo()
             name = click.prompt(f"  Tool name").strip()
             if not name:
                 continue
             existing = tools.get(name, "")
-            cmd = click.prompt(f"  Command", default=existing).strip()
+            cmd = click.prompt(f"  Shell command to run", default=existing).strip()
             data.setdefault("settings", {}).setdefault("tools", {})
             data["settings"]["tools"][name] = cmd
             tools = data["settings"]["tools"]
