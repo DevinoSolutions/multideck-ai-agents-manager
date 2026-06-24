@@ -883,3 +883,185 @@ def _set_project_field(ctx: click.Context, path: str, field: str, value: object)
         sys.exit(1)
 
     _save_raw_config(config_file, data)
+
+
+# ---------------------------------------------------------------------------
+# multideck docs
+# ---------------------------------------------------------------------------
+
+_PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
+    ("path", "string", "*(required)*", "Absolute, or relative to `baseDir`."),
+    ("group", "string", "none", "Tag for group launches (`-g`)."),
+    ("tool", "string", "`defaultTool`", "`claude`, `codex`, `vscode`/`code`, or any custom tool."),
+    ("color", "string", "random", "Terminal tab color (`#rrggbb`)."),
+    ("title", "string", "folder name", "Window title for matching."),
+    ("enabled", "boolean", "`true`", "Set `false` to skip without deleting."),
+    ("host", "string", "none", "SSH target for remote projects."),
+    ("remotePath", "string", "`path`", "Remote directory when different from `path`."),
+    ("windows", "int or list", "none", "`int` or `[\"name1\", \"name2\"]` for multi-window sessions."),
+]
+
+_SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
+    ("defaultTool", "string", "`\"claude\"`", "AI tool launched in each project unless overridden."),
+    ("settleSeconds", "int", "`3`", "Seconds to wait for windows to appear before tiling."),
+    ("launchDelayMs", "int", "`400`", "Delay between launching each terminal (ms)."),
+    ("tools", "object", "`{\"claude\": ..., \"codex\": ...}`",
+     "Map of tool names to shell commands. Add custom tools here."),
+    ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),
+]
+
+
+def _generate_docs() -> str:
+    from multideck.config import LayoutConfig, Settings
+
+    defaults_layout = LayoutConfig()
+    defaults_settings = Settings()
+
+    config_locations = {
+        "Windows": r"`%APPDATA%\multideck\config.json`",
+        "macOS": "`~/Library/Application Support/multideck/config.json`",
+        "Linux": "`~/.config/multideck/config.json`",
+    }
+
+    lines: list[str] = []
+    w = lines.append
+
+    w("# multideck Configuration Reference")
+    w("")
+    w(f"*Generated from multideck v{__version__} schema.*")
+    w("")
+
+    w("## Config file location")
+    w("")
+    for platform, loc in config_locations.items():
+        w(f"- **{platform}:** {loc}")
+    w("")
+    w("Or place `multideck.config.json` in your working directory (takes priority).")
+    w("")
+
+    w("## Top-level fields")
+    w("")
+    w("| Field | Type | Default | Description |")
+    w("| --- | --- | --- | --- |")
+    w("| `baseDir` | string | none | Root folder. Project paths are relative to this. |")
+    w(f"| `layout.columns` | int | `{defaults_layout.columns}` | Windows side by side per screen. |")
+    w(f"| `layout.rows` | int | `{defaults_layout.rows}` | Windows stacked per screen. |")
+    w("| `projects` | array | *(required)* | List of project entries (see below). |")
+    w("| `settings` | object | see below | Global settings. |")
+    w("")
+
+    w("## Settings")
+    w("")
+    w("All fields under `\"settings\"` in config.json:")
+    w("")
+    w("| Field | Type | Default | Description |")
+    w("| --- | --- | --- | --- |")
+    for name, type_, default, desc in _SETTINGS_FIELD_DOCS:
+        w(f"| `{name}` | {type_} | {default} | {desc} |")
+    w("")
+
+    w("## Project fields")
+    w("")
+    w("Each entry in the `\"projects\"` array:")
+    w("")
+    w("| Field | Type | Default | Description |")
+    w("| --- | --- | --- | --- |")
+    for name, type_, default, desc in _PROJECT_FIELD_DOCS:
+        w(f"| `{name}` | {type_} | {default} | {desc} |")
+    w("")
+
+    w("## Example config")
+    w("")
+    w("```json")
+    w("{")
+    w('  "baseDir": "C:/Users/you/projects",')
+    w('  "layout": { "columns": 2, "rows": 1 },')
+    w('  "settings": {')
+    w(f'    "defaultTool": "{defaults_settings.default_tool}",')
+    w(f'    "settleSeconds": {defaults_settings.settle_seconds},')
+    w(f'    "launchDelayMs": {defaults_settings.launch_delay_ms},')
+    w('    "tools": {')
+    for name, cmd in defaults_settings.tools.items():
+        w(f'      "{name}": "{cmd}",')
+    w('      "aider": "aider --model sonnet"')
+    w("    }")
+    w("  },")
+    w('  "projects": [')
+    w('    { "path": "api", "group": "INTERNAL", "color": "#3b82f6" },')
+    w('    { "path": "web", "group": "INTERNAL", "tool": "codex" },')
+    w('    { "path": "docs", "tool": "vscode" }')
+    w("  ]")
+    w("}")
+    w("```")
+    w("")
+
+    w("## Multi-window sessions")
+    w("")
+    w("Open the same project in multiple windows, each resuming a different conversation:")
+    w("")
+    w("```json")
+    w('{ "path": "api", "windows": 3 }')
+    w("```")
+    w("")
+    w("Opens 3 windows (`api`, `api-2`, `api-3`), each resuming the Nth most recent session.")
+    w("")
+
+    w("## Remote projects (SSH)")
+    w("")
+    w("```json")
+    w('{ "host": "deploy@server", "path": "/srv/api", "tool": "claude" }')
+    w("```")
+    w("")
+    w("CLI agents run over SSH. VS Code projects open via Remote-SSH.")
+    w("")
+
+    w("## Custom tools")
+    w("")
+    w("Add any command under `settings.tools`:")
+    w("")
+    w("```json")
+    w('"tools": {')
+    w('  "claude": "claude --continue",')
+    w('  "codex": "codex",')
+    w('  "aider": "aider --model sonnet",')
+    w('  "shell": "bash"')
+    w("}")
+    w("```")
+    w("")
+    w("Then use `\"tool\": \"aider\"` on any project, or set it as `defaultTool`.")
+    w("")
+
+    w("## CLI commands")
+    w("")
+    w("| Command | Description |")
+    w("| --- | --- |")
+    w("| `multideck` | Interactive menu. |")
+    w("| `multideck --go` | Launch + tile, skip menu. |")
+    w("| `multideck --retile-all` | Re-tile every matching window. |")
+    w("| `multideck -g <name>` | Launch only projects in a group. |")
+    w("| `multideck --init` | Re-scan sessions and regenerate config. |")
+    w("| `multideck --init --base-dir <dir>` | Generate config from a folder of repos. |")
+    w("| `multideck --edit` | Open config in your default editor. |")
+    w("| `multideck docs` | Print this reference (pipe to file for AI context). |")
+    w("| `multideck config show` | Display current config. |")
+    w("| `multideck config layout <cols> <rows>` | Set window grid. |")
+    w("| `multideck config base-dir <path>` | Set projects folder. |")
+    w("| `multideck config default-tool <tool>` | Set default AI tool. |")
+    w("| `multideck config tool <name> <cmd>` | Add/update a tool command. |")
+    w("| `multideck config remove-tool <name>` | Remove a tool. |")
+    w("| `multideck config add <path> [-g GROUP] [-t TOOL]` | Add a project. |")
+    w("| `multideck config remove <path>` | Remove a project. |")
+    w("| `multideck config enable <path>` | Enable a project. |")
+    w("| `multideck config disable <path>` | Disable a project. |")
+    w("| `multideck config set <path> <field> <value>` | Set a project field. |")
+    w("| `multideck config open` | Open config in editor. |")
+    w("| `multideck config path` | Print config file path. |")
+    w("")
+
+    return "\n".join(lines)
+
+
+@main.command("docs")
+def docs_cmd() -> None:
+    """Print the full configuration reference (Markdown). Pipe to a file or feed to an AI."""
+    click.echo(_generate_docs())
