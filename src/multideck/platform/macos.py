@@ -133,7 +133,7 @@ class MacOSPlatform(Platform):
             subprocess.Popen(["osascript", "-e", script])
 
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None:
-        args = ["code"]
+        args = [opts.command]
         if opts.ssh_host:
             args.extend(["--remote", f"ssh-remote+{opts.ssh_host}"])
         args.append(opts.dir)

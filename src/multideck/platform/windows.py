@@ -130,7 +130,7 @@ class WindowsPlatform(Platform):
         subprocess.Popen(args)
 
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None:
-        args = ["cmd", "/c", "code"]
+        args = ["cmd", "/c", opts.command]
         if opts.ssh_host:
             args.extend(["--remote", f"ssh-remote+{opts.ssh_host}"])
         args.append(opts.dir)
