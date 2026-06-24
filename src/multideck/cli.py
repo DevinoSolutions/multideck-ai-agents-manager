@@ -89,7 +89,182 @@ def _save_raw_config(path: Path, data: dict) -> None:
     click.echo(f"  {S('+', fg='green', bold=True)} Saved.")
 
 
-def _show_menu(groups: list[str]) -> dict:
+def _config_menu(config_file: Path) -> None:
+    """Interactive config editor accessed from the main menu."""
+    while True:
+        data = _load_raw_config(config_file)
+        layout = data.get("layout", {})
+        settings = data.get("settings", {})
+        projects = data.get("projects", [])
+        tools = settings.get("tools", {})
+        cols, rows = layout.get("columns", 2), layout.get("rows", 1)
+        dtool = settings.get("defaultTool", "claude")
+
+        click.echo()
+        click.echo(f"  {S('Config', bold=True)}")
+        _divider()
+        click.echo()
+        _menu_item("1", f"Layout           {S(f'{cols} x {rows}', fg='green')}")
+        _menu_item("2", f"Default tool     {S(dtool, fg='green')}")
+        _menu_item("3", f"Base directory   {S(data.get('baseDir', '(not set)'), fg='green')}")
+        _menu_item("4", f"Tools            {S(', '.join(tools.keys()), dim=True)}")
+        _menu_item("5", f"Add a project")
+        _menu_item("6", f"Remove a project {S(f'({len(projects)} total)', dim=True)}")
+        _menu_item("7", f"Open in editor")
+        _menu_item("b", "Back", key_fg="yellow")
+        click.echo()
+
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
+
+        if choice == "1":
+            new_cols = click.prompt(f"  Columns", default=cols, type=int)
+            new_rows = click.prompt(f"  Rows", default=rows, type=int)
+            data.setdefault("layout", {})
+            data["layout"]["columns"] = max(1, new_cols)
+            data["layout"]["rows"] = max(1, new_rows)
+            _save_raw_config(config_file, data)
+            click.echo(f"  Layout set to {new_cols} x {new_rows}")
+
+        elif choice == "2":
+            available = list(tools.keys()) or ["claude", "codex"]
+            click.echo()
+            for i, t in enumerate(available, 1):
+                marker = S(" (current)", dim=True) if t == dtool else ""
+                _menu_item(str(i), f"{t}{marker}")
+            click.echo()
+            idx_str = click.prompt(f"  Choose or type a name", default=dtool, show_default=False).strip()
+            try:
+                idx = int(idx_str) - 1
+                if 0 <= idx < len(available):
+                    idx_str = available[idx]
+            except ValueError:
+                pass
+            data.setdefault("settings", {})
+            data["settings"]["defaultTool"] = idx_str
+            _save_raw_config(config_file, data)
+
+        elif choice == "3":
+            new_dir = click.prompt(f"  Base directory", default=data.get("baseDir", "")).strip()
+            if new_dir:
+                data["baseDir"] = new_dir.replace("\\", "/")
+                _save_raw_config(config_file, data)
+
+        elif choice == "4":
+            _tools_menu(config_file, data)
+
+        elif choice == "5":
+            path = click.prompt(f"  Project path").strip()
+            if not path:
+                continue
+            entry: dict = {"path": path.replace("\\", "/")}
+            group = click.prompt(f"  Group {S('(blank to skip)', dim=True)}", default="", show_default=False).strip()
+            if group:
+                entry["group"] = group
+            tool = click.prompt(f"  Tool {S('(blank for default)', dim=True)}", default="", show_default=False).strip()
+            if tool:
+                entry["tool"] = tool
+            color = click.prompt(f"  Color {S('#hex (blank to skip)', dim=True)}", default="", show_default=False).strip()
+            if color:
+                entry["color"] = color
+            data.setdefault("projects", []).append(entry)
+            _save_raw_config(config_file, data)
+            click.echo(f"  Added {S(path, fg='cyan')}")
+
+        elif choice == "6":
+            _remove_project_menu(config_file, data)
+
+        elif choice == "7":
+            _open_in_editor(config_file)
+            return
+
+        elif choice == "b":
+            return
+
+
+def _tools_menu(config_file: Path, data: dict) -> None:
+    tools = data.get("settings", {}).get("tools", {})
+    while True:
+        click.echo()
+        click.echo(f"  {S('Tools', bold=True)}")
+        _divider()
+        click.echo()
+        for name, cmd in tools.items():
+            click.echo(f"    {S(name, fg='cyan'):<20} {S(cmd, dim=True)}")
+        click.echo()
+        _menu_item("a", "Add / edit a tool")
+        _menu_item("r", "Remove a tool")
+        _menu_item("b", "Back", key_fg="yellow")
+        click.echo()
+
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
+
+        if choice == "a":
+            name = click.prompt(f"  Tool name").strip()
+            if not name:
+                continue
+            existing = tools.get(name, "")
+            cmd = click.prompt(f"  Command", default=existing).strip()
+            data.setdefault("settings", {}).setdefault("tools", {})
+            data["settings"]["tools"][name] = cmd
+            tools = data["settings"]["tools"]
+            _save_raw_config(config_file, data)
+
+        elif choice == "r":
+            if not tools:
+                click.echo(f"  {S('No tools to remove.', dim=True)}")
+                continue
+            click.echo()
+            tool_names = list(tools.keys())
+            for i, name in enumerate(tool_names, 1):
+                _menu_item(str(i), name)
+            click.echo()
+            idx_str = click.prompt(f"  Remove which?", default="").strip()
+            try:
+                idx = int(idx_str) - 1
+                if 0 <= idx < len(tool_names):
+                    del tools[tool_names[idx]]
+                    _save_raw_config(config_file, data)
+            except (ValueError, IndexError):
+                click.echo(f"  {S('x', fg='red')} Invalid choice.")
+
+        elif choice == "b":
+            return
+
+
+def _remove_project_menu(config_file: Path, data: dict) -> None:
+    projects = data.get("projects", [])
+    if not projects:
+        click.echo(f"  {S('No projects to remove.', dim=True)}")
+        return
+
+    click.echo()
+    for i, p in enumerate(projects, 1):
+        leaf = Path(p.get("path", "?")).name
+        extra = ""
+        if p.get("group"):
+            extra = f"  {S(p['group'], dim=True)}"
+        if not p.get("enabled", True):
+            extra += f"  {S('disabled', fg='red')}"
+        click.echo(f"   {S(str(i).rjust(2), dim=True)}  {leaf:<30}{extra}")
+
+    click.echo()
+    idx_str = click.prompt(f"  Remove which? {S('(number or b to cancel)', dim=True)}", default="b", show_default=False).strip()
+    if idx_str.lower() == "b":
+        return
+    try:
+        idx = int(idx_str) - 1
+        if 0 <= idx < len(projects):
+            removed = projects.pop(idx)
+            _save_raw_config(config_file, data)
+            click.echo(f"  Removed {S(Path(removed.get('path', '?')).name, fg='cyan')}")
+        else:
+            click.echo(f"  {S('x', fg='red')} Invalid number.")
+    except ValueError:
+        click.echo(f"  {S('x', fg='red')} Invalid choice.")
+
+
+def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
+    config_changed = False
     while True:
         _banner()
         _divider()
@@ -109,9 +284,9 @@ def _show_menu(groups: list[str]) -> dict:
         ).strip().lower()
 
         if choice == "1":
-            return {"action": "run", "retile_all": False, "group": None}
+            return {"action": "run", "retile_all": False, "group": None, "reload": config_changed}
         elif choice == "2":
-            return {"action": "run", "retile_all": True, "group": None}
+            return {"action": "run", "retile_all": True, "group": None, "reload": config_changed}
         elif choice == "3" and groups:
             click.echo()
             for i, g in enumerate(groups, 1):
@@ -124,14 +299,21 @@ def _show_menu(groups: list[str]) -> dict:
             try:
                 idx = int(idx_str) - 1
                 if 0 <= idx < len(groups):
-                    return {"action": "run", "retile_all": False, "group": groups[idx]}
+                    return {"action": "run", "retile_all": False, "group": groups[idx], "reload": config_changed}
             except ValueError:
                 pass
             click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
         elif choice == "e":
-            return {"action": "edit"}
+            if config_file and config_file.exists():
+                _config_menu(config_file)
+                data = json.loads(config_file.read_text(encoding="utf-8"))
+                projects = data.get("projects", [])
+                groups = sorted({p.get("group", "") for p in projects if p.get("group")})
+                config_changed = True
+            else:
+                _open_in_editor(config_file or _config_path())
         elif choice == "q":
-            return {"action": "quit"}
+            return {"action": "quit", "reload": False}
         else:
             click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
 
@@ -271,12 +453,11 @@ def main(
     has_directive = go or retile_all or dry_run or group
     if not has_directive and sys.stdin.isatty():
         groups = sorted({p.group for p in cfg.projects if p.group})
-        menu = _show_menu(list(groups))
+        menu = _show_menu(list(groups), config_file)
         if menu["action"] == "quit":
             return
-        if menu["action"] == "edit":
-            _open_in_editor(config_file)
-            return
+        if menu.get("reload"):
+            cfg = load_config(str(config_file))
         retile_all = menu["retile_all"]
         group = menu.get("group")
 
