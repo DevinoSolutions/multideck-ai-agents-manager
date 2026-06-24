@@ -224,11 +224,13 @@ def _config_menu(config_file: Path) -> None:
             _tools_menu(config_file, data)
 
         elif choice == "5":
+            cwd = str(Path.cwd()).replace("\\", "/")
             click.echo()
             click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
             click.echo(f"  {S('Path can be absolute or relative to your projects folder.', dim=True)}")
+            click.echo(f"  {S(f'Press Enter to use the current folder.', dim=True)}")
             click.echo()
-            path = click.prompt(f"  Folder path").strip()
+            path = click.prompt(f"  Folder path", default=cwd).strip()
             if not path:
                 continue
             entry: dict = {"path": path.replace("\\", "/")}
