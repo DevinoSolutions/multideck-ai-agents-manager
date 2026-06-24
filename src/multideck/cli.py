@@ -106,7 +106,13 @@ def _load_raw_config(path: Path) -> dict:
 def _save_raw_config(path: Path, data: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    click.echo(f"  {S('+', fg='green', bold=True)} Saved.")
+
+
+def _confirm_change(message: str) -> None:
+    click.echo(f"\n  {S('+', fg='green', bold=True)} {message}")
+    click.echo(f"  {S('Press Enter to continue...', dim=True)}", nl=False)
+    click.getchar()
+    click.echo()
 
 
 def _config_menu(config_file: Path) -> None:
@@ -175,6 +181,8 @@ def _config_menu(config_file: Path) -> None:
             data["layout"]["columns"] = new_cols
             data["layout"]["rows"] = new_rows
             _save_raw_config(config_file, data)
+            _confirm_change(f"Window grid set to {S(f'{new_cols} x {new_rows}', fg='green')}"
+                            f" ({new_cols * new_rows} windows per screen).")
 
         elif choice == "2":
             click.echo()
@@ -196,6 +204,7 @@ def _config_menu(config_file: Path) -> None:
             data.setdefault("settings", {})
             data["settings"]["defaultTool"] = idx_str
             _save_raw_config(config_file, data)
+            _confirm_change(f"Default tool set to {S(idx_str, fg='green')}.")
 
         elif choice == "3":
             click.echo()
@@ -206,8 +215,10 @@ def _config_menu(config_file: Path) -> None:
             click.echo()
             new_dir = click.prompt(f"  Projects folder", default=data.get("baseDir", "")).strip()
             if new_dir:
-                data["baseDir"] = new_dir.replace("\\", "/")
+                normalized = new_dir.replace("\\", "/")
+                data["baseDir"] = normalized
                 _save_raw_config(config_file, data)
+                _confirm_change(f"Projects folder set to {S(normalized, fg='green')}.")
 
         elif choice == "4":
             _tools_menu(config_file, data)
@@ -238,7 +249,7 @@ def _config_menu(config_file: Path) -> None:
                 entry["color"] = color
             data.setdefault("projects", []).append(entry)
             _save_raw_config(config_file, data)
-            click.echo(f"  {S('+', fg='green')} Added {S(path, fg='cyan')}")
+            _confirm_change(f"Added project {S(path, fg='green')}.")
 
         elif choice == "6":
             _remove_project_menu(config_file, data)
@@ -287,6 +298,7 @@ def _tools_menu(config_file: Path, data: dict) -> None:
             data["settings"]["tools"][name] = cmd
             tools = data["settings"]["tools"]
             _save_raw_config(config_file, data)
+            _confirm_change(f"Tool {S(name, fg='green')} set to {S(cmd, dim=True)}.")
 
         elif choice == "r":
             if not tools:
@@ -301,8 +313,10 @@ def _tools_menu(config_file: Path, data: dict) -> None:
             try:
                 idx = int(idx_str) - 1
                 if 0 <= idx < len(tool_names):
-                    del tools[tool_names[idx]]
+                    removed_name = tool_names[idx]
+                    del tools[removed_name]
                     _save_raw_config(config_file, data)
+                    _confirm_change(f"Removed tool {S(removed_name, fg='green')}.")
             except (ValueError, IndexError):
                 click.echo(f"  {S('x', fg='red')} Invalid choice.")
 
@@ -336,7 +350,7 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
         if 0 <= idx < len(projects):
             removed = projects.pop(idx)
             _save_raw_config(config_file, data)
-            click.echo(f"  Removed {S(Path(removed.get('path', '?')).name, fg='cyan')}")
+            _confirm_change(f"Removed project {S(Path(removed.get('path', '?')).name, fg='green')}.")
         else:
             click.echo(f"  {S('x', fg='red')} Invalid number.")
     except ValueError:
