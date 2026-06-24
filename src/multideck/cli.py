@@ -115,6 +115,14 @@ def _confirm_change(message: str) -> None:
     click.echo()
 
 
+def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
+    hint = S("  (b to go back)", dim=True)
+    value = click.prompt(f"  {label}{hint}", default=default, **kwargs).strip()
+    if value.lower() == "b":
+        return None
+    return value
+
+
 def _config_menu(config_file: Path) -> None:
     """Interactive config editor accessed from the main menu."""
     while True:
@@ -168,15 +176,25 @@ def _config_menu(config_file: Path) -> None:
             click.echo(f"  {S('How many windows per screen?', bold=True)}")
             click.echo(f"  {S('Columns = side by side, Rows = stacked.', dim=True)}")
             click.echo()
-            new_cols = click.prompt(f"  Columns (side by side)", default=cols, type=int)
-            new_rows = click.prompt(f"  Rows (stacked)", default=rows, type=int)
-            new_cols, new_rows = max(1, new_cols), max(1, new_rows)
+            val = _prompt_or_back("Columns (side by side)", default=str(cols))
+            if val is None:
+                continue
+            try:
+                new_cols = max(1, int(val))
+            except ValueError:
+                continue
+            val = _prompt_or_back("Rows (stacked)", default=str(rows))
+            if val is None:
+                continue
+            try:
+                new_rows = max(1, int(val))
+            except ValueError:
+                continue
             click.echo()
             click.echo(f"  {S('Your screens will look like:', bold=True)}")
             click.echo()
             for line in _grid_preview(new_cols, new_rows, indent="      "):
                 click.echo(line)
-            click.echo()
             data.setdefault("layout", {})
             data["layout"]["columns"] = new_cols
             data["layout"]["rows"] = new_rows
@@ -194,17 +212,19 @@ def _config_menu(config_file: Path) -> None:
                 marker = S(" <-- current", dim=True) if t == dtool else ""
                 _menu_item(str(i), f"{t}{marker}")
             click.echo()
-            idx_str = click.prompt(f"  Pick a number or type a name", default=dtool, show_default=False).strip()
+            val = _prompt_or_back("Pick a number or type a name", default=dtool, show_default=False)
+            if val is None:
+                continue
             try:
-                idx = int(idx_str) - 1
+                idx = int(val) - 1
                 if 0 <= idx < len(available):
-                    idx_str = available[idx]
+                    val = available[idx]
             except ValueError:
                 pass
             data.setdefault("settings", {})
-            data["settings"]["defaultTool"] = idx_str
+            data["settings"]["defaultTool"] = val
             _save_raw_config(config_file, data)
-            _confirm_change(f"Default tool set to {S(idx_str, fg='green')}.")
+            _confirm_change(f"Default tool set to {S(val, fg='green')}.")
 
         elif choice == "3":
             click.echo()
@@ -213,12 +233,13 @@ def _config_menu(config_file: Path) -> None:
             click.echo(f"  {S('Example: if base is C:/projects and a project path is', dim=True)}")
             click.echo(f"  {S('api/backend, it opens C:/projects/api/backend.', dim=True)}")
             click.echo()
-            new_dir = click.prompt(f"  Projects folder", default=data.get("baseDir", "")).strip()
-            if new_dir:
-                normalized = new_dir.replace("\\", "/")
-                data["baseDir"] = normalized
-                _save_raw_config(config_file, data)
-                _confirm_change(f"Projects folder set to {S(normalized, fg='green')}.")
+            val = _prompt_or_back("Projects folder", default=data.get("baseDir", ""))
+            if val is None or not val:
+                continue
+            normalized = val.replace("\\", "/")
+            data["baseDir"] = normalized
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Projects folder set to {S(normalized, fg='green')}.")
 
         elif choice == "4":
             _tools_menu(config_file, data)
@@ -230,23 +251,29 @@ def _config_menu(config_file: Path) -> None:
             click.echo(f"  {S('Path can be absolute or relative to your projects folder.', dim=True)}")
             click.echo(f"  {S(f'Press Enter to use the current folder.', dim=True)}")
             click.echo()
-            path = click.prompt(f"  Folder path", default=cwd).strip()
-            if not path:
+            path = _prompt_or_back("Folder path", default=cwd)
+            if path is None or not path:
                 continue
             entry: dict = {"path": path.replace("\\", "/")}
             click.echo()
-            click.echo(f"  {S('Optional settings (press Enter to skip each):', dim=True)}")
+            click.echo(f"  {S('Optional settings (Enter to skip, b to cancel):', dim=True)}")
             click.echo()
-            group = click.prompt(f"  Group {S('-- for launching subsets, e.g. INTERNAL', dim=True)}",
-                                 default="", show_default=False).strip()
+            group = _prompt_or_back(f"Group {S('-- for launching subsets, e.g. INTERNAL', dim=True)}",
+                                    default="", show_default=False)
+            if group is None:
+                continue
             if group:
                 entry["group"] = group
-            tool = click.prompt(f"  Tool  {S('-- override default, e.g. codex, vscode', dim=True)}",
-                                default="", show_default=False).strip()
+            tool = _prompt_or_back(f"Tool  {S('-- override default, e.g. codex, vscode', dim=True)}",
+                                   default="", show_default=False)
+            if tool is None:
+                continue
             if tool:
                 entry["tool"] = tool
-            color = click.prompt(f"  Color {S('-- terminal tab color, e.g. #3b82f6', dim=True)}",
-                                 default="", show_default=False).strip()
+            color = _prompt_or_back(f"Color {S('-- terminal tab color, e.g. #3b82f6', dim=True)}",
+                                    default="", show_default=False)
+            if color is None:
+                continue
             if color:
                 entry["color"] = color
             data.setdefault("projects", []).append(entry)
@@ -291,11 +318,13 @@ def _tools_menu(config_file: Path, data: dict) -> None:
             click.echo(f"  {S('Name is a short label (e.g. aider, shell).', dim=True)}")
             click.echo(f"  {S('Command is what runs in the terminal (e.g. aider --model sonnet).', dim=True)}")
             click.echo()
-            name = click.prompt(f"  Tool name").strip()
+            name = _prompt_or_back("Tool name")
             if not name:
                 continue
             existing = tools.get(name, "")
-            cmd = click.prompt(f"  Shell command to run", default=existing).strip()
+            cmd = _prompt_or_back("Shell command to run", default=existing)
+            if cmd is None:
+                continue
             data.setdefault("settings", {}).setdefault("tools", {})
             data["settings"]["tools"][name] = cmd
             tools = data["settings"]["tools"]
@@ -311,9 +340,11 @@ def _tools_menu(config_file: Path, data: dict) -> None:
             for i, name in enumerate(tool_names, 1):
                 _menu_item(str(i), name)
             click.echo()
-            idx_str = click.prompt(f"  Remove which?", default="").strip()
+            val = _prompt_or_back("Remove which?")
+            if val is None:
+                continue
             try:
-                idx = int(idx_str) - 1
+                idx = int(val) - 1
                 if 0 <= idx < len(tool_names):
                     removed_name = tool_names[idx]
                     del tools[removed_name]
@@ -344,11 +375,11 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
         click.echo(f"   {S(str(i).rjust(2), dim=True)}  {leaf:<30}{extra}")
 
     click.echo()
-    idx_str = click.prompt(f"  Remove which? {S('(number or b to cancel)', dim=True)}", default="b", show_default=False).strip()
-    if idx_str.lower() == "b":
+    val = _prompt_or_back("Remove which?")
+    if val is None:
         return
     try:
-        idx = int(idx_str) - 1
+        idx = int(val) - 1
         if 0 <= idx < len(projects):
             removed = projects.pop(idx)
             _save_raw_config(config_file, data)
