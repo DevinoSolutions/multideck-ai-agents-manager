@@ -23,6 +23,7 @@ class Settings:
     default_tool: str = "claude"
     settle_seconds: int = 3
     launch_delay_ms: int = 400
+    happy: bool = False
     ssh: SSHConfig = field(default_factory=SSHConfig)
     tools: dict[str, str] = field(default_factory=lambda: {
         "claude": "claude --continue",
@@ -40,6 +41,7 @@ class ProjectConfig:
     tool: str | None = None
     title: str | None = None
     enabled: bool = True
+    happy: bool | None = None
     host: str | None = None
     remote_path: str | None = None
     windows: int | list[str] | None = None
@@ -66,6 +68,7 @@ def _parse_settings(raw: dict | None) -> Settings:
         default_tool=raw.get("defaultTool", "claude"),
         settle_seconds=raw.get("settleSeconds", 3),
         launch_delay_ms=raw.get("launchDelayMs", 400),
+        happy=raw.get("happy", False),
         ssh=_parse_ssh(raw.get("ssh")),
         tools=raw.get("tools", {
             "claude": "claude --continue",
@@ -86,6 +89,7 @@ def _parse_project(raw: dict) -> ProjectConfig:
         tool=raw.get("tool"),
         title=raw.get("title"),
         enabled=raw.get("enabled", True),
+        happy=raw.get("happy"),
         host=raw.get("host"),
         remote_path=raw.get("remotePath"),
         windows=raw.get("windows"),

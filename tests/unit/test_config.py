@@ -94,6 +94,33 @@ class TestLoadConfig:
         with pytest.raises(FileNotFoundError):
             load_config("/nonexistent/config.json")
 
+    def test_happy_defaults_false(self, tmp_config):
+        path = tmp_config({"projects": [{"path": "x"}]})
+        cfg = load_config(path)
+        assert cfg.settings.happy is False
+
+    def test_happy_enabled_globally(self, tmp_config):
+        path = tmp_config({
+            "settings": {"happy": True},
+            "projects": [{"path": "x"}],
+        })
+        cfg = load_config(path)
+        assert cfg.settings.happy is True
+
+    def test_happy_per_project(self, tmp_config):
+        path = tmp_config({
+            "settings": {"happy": False},
+            "projects": [
+                {"path": "a", "happy": True},
+                {"path": "b"},
+                {"path": "c", "happy": False},
+            ],
+        })
+        cfg = load_config(path)
+        assert cfg.projects[0].happy is True
+        assert cfg.projects[1].happy is None
+        assert cfg.projects[2].happy is False
+
 
 class TestPathResolution:
     def test_resolve_relative(self, tmp_config):
