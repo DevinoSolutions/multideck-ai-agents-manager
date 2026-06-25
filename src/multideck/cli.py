@@ -1119,24 +1119,17 @@ def docs_cmd() -> None:
 @main.command("termius")
 @click.option("--host", default=None, help="SSH hostname or IP (default: Tailscale IP)")
 @click.option("--user", default=None, help="SSH username (default: current user)")
-@click.option("--install", is_flag=True, help="Write entries to ~/.ssh/config")
+@click.option("--install", is_flag=True, help="Write entry to ~/.ssh/config")
 @click.pass_context
 def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install: bool) -> None:
-    """Generate SSH config for Termius tabs — one per project.
+    """Generate SSH config for Termius — one host that opens all projects.
 
-    Each project becomes a host in Termius that auto-attaches to its psmux session.
+    Connects to the 'multideck' psmux session with all project windows inside.
+    Switch windows with Ctrl+B then number/name.
     """
     import getpass
     import shutil
     import subprocess
-
-    config_file = _find_config(ctx.obj.get("config_path"))
-    data = _load_raw_config(config_file)
-    projects = data.get("projects", [])
-
-    if not projects:
-        click.echo(f"  {S('x', fg='red')} No projects in config.")
-        sys.exit(1)
 
     if not host:
         try:
@@ -1153,33 +1146,17 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
         user = getpass.getuser()
 
     psmux = shutil.which("psmux") or "psmux"
-    from multideck.launch import _psmux_session_name
 
     marker_start = "# --- multideck-start ---"
     marker_end = "# --- multideck-end ---"
 
-    lines = [marker_start]
-    for p in projects:
-        if not p.get("enabled", True):
-            continue
-        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
-        if tool in ("code", "vscode", "cursor"):
-            continue
-        name = p.get("title") or Path(p["path"]).name
-        sess = _psmux_session_name(name)
-        group = p.get("group", "")
-        label = f"md-{sess}"
-
-        lines.append(f"Host {label}")
-        lines.append(f"    HostName {host}")
-        lines.append(f"    User {user}")
-        lines.append(f"    RemoteCommand {psmux} attach -t {sess}")
-        lines.append(f"    RequestTTY force")
-        lines.append(f"    # {group}/{name}" if group else f"    # {name}")
-        lines.append("")
-
-    lines.append(marker_end)
-    block = "\n".join(lines)
+    block = f"""{marker_start}
+Host multideck
+    HostName {host}
+    User {user}
+    RemoteCommand {psmux} attach -t multideck
+    RequestTTY force
+{marker_end}"""
 
     if install:
         ssh_dir = Path.home() / ".ssh"
@@ -1196,24 +1173,21 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
             updated = existing.rstrip() + "\n\n" + block + "\n" if existing else block + "\n"
 
         ssh_config.write_text(updated, encoding="utf-8")
-        count = sum(1 for l in lines if l.startswith("Host "))
-        click.echo(f"  {S('+', fg='green', bold=True)} Wrote {S(str(count), fg='cyan', bold=True)} hosts to {S(str(ssh_config), dim=True)}")
+        click.echo(f"  {S('+', fg='green', bold=True)} Wrote {S('multideck', fg='cyan', bold=True)} host to {S(str(ssh_config), dim=True)}")
         click.echo()
-        click.echo(f"  {S('In Termius:', bold=True)} import from SSH config or sync via Tailscale.")
-        click.echo(f"  {S('Each project is a host named', dim=True)} {S('md-<project>', fg='cyan')}{S('.', dim=True)}")
-        click.echo(f"  {S('Open as tabs — each auto-attaches to its psmux session.', dim=True)}")
+        click.echo(f"  {S('In Termius:', bold=True)} connect to {S('multideck', fg='cyan')} — all projects are windows inside.")
+        click.echo(f"  {S('Switch:', dim=True)} {S('Ctrl+B', bold=True)} {S('then', dim=True)} {S('w', bold=True)} {S('to pick a window by name.', dim=True)}")
     else:
         click.echo(block)
         click.echo()
         click.echo(f"  {S('Add --install to write to ~/.ssh/config', dim=True)}")
-        click.echo(f"  {S('or copy the above into Termius SSH config.', dim=True)}")
 
 
 @main.command("sessions")
 @click.argument("name", required=False)
 @click.pass_context
 def sessions_cmd(ctx: click.Context, name: str | None) -> None:
-    """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
+    """List psmux windows or attach to the multideck session. Usage: multideck sessions [window]"""
     import shutil
     import subprocess
 
@@ -1222,55 +1196,55 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
         click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
         sys.exit(1)
 
-    result = subprocess.run([psmux, "ls"], capture_output=True, text=True)
-    if result.returncode != 0 or not result.stdout.strip():
-        click.echo(f"  {S('x', fg='red')} No active psmux sessions.")
+    has_session = subprocess.run(
+        [psmux, "has-session", "-t", "multideck"],
+        capture_output=True,
+    )
+    if has_session.returncode != 0:
+        click.echo(f"  {S('x', fg='red')} No active multideck session.")
         click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled to create sessions.', dim=True)}")
         sys.exit(1)
 
-    lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
-    sessions = []
-    for line in lines:
-        sess_name = line.split(":")[0].strip()
-        sessions.append((sess_name, line))
+    result = subprocess.run(
+        [psmux, "list-windows", "-t", "multideck", "-F", "#{window_index}:#{window_name}"],
+        capture_output=True, text=True,
+    )
+    windows = []
+    for line in result.stdout.strip().splitlines():
+        if ":" in line:
+            idx_str, wname = line.split(":", 1)
+            windows.append((idx_str.strip(), wname.strip()))
 
     if name:
-        matches = [s for s in sessions if name.lower() in s[0].lower()]
-        if not matches:
-            click.echo(f"  {S('x', fg='red')} No session matching '{name}'.")
-            click.echo(f"  Available: {', '.join(s[0] for s in sessions)}")
-            sys.exit(1)
-        target = matches[0][0]
-        sys.exit(subprocess.call([psmux, "attach", "-t", target]))
+        subprocess.run(
+            [psmux, "select-window", "-t", f"multideck:{name}"],
+            capture_output=True,
+        )
+        sys.exit(subprocess.call([psmux, "attach", "-t", "multideck"]))
 
     _banner()
-    click.echo(f"  {S('Active psmux sessions', bold=True)}")
+    click.echo(f"  {S('multideck psmux windows', bold=True)}")
     _divider()
     click.echo()
-    for i, (sess_name, raw) in enumerate(sessions, 1):
-        info = raw.split(":", 1)[1].strip() if ":" in raw else ""
-        _menu_item(str(i), f"{sess_name}  {S(info, dim=True)}")
+    for idx_str, wname in windows:
+        _menu_item(idx_str, wname)
     click.echo()
+    _menu_item("a", "Attach (window 0)", key_fg="green")
     _menu_item("q", "Quit", key_fg="red")
     click.echo()
 
     choice = click.prompt(
-        f"  {S('attach to', fg='cyan')}",
-        default="q", show_default=False, prompt_suffix=" ",
+        f"  {S('>', fg='cyan', bold=True)}",
+        default="a", show_default=False, prompt_suffix=" ",
     ).strip().lower()
 
     if choice == "q":
         return
 
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(sessions):
-            target = sessions[idx][0]
-            sys.exit(subprocess.call([psmux, "attach", "-t", target]))
-        else:
-            click.echo(f"  {S('x', fg='red')} Invalid number.")
-    except ValueError:
-        matches = [s for s in sessions if choice in s[0].lower()]
-        if matches:
-            os.execvp(psmux, [psmux, "attach", "-t", matches[0][0]])
-        click.echo(f"  {S('x', fg='red')} No session matching '{choice}'.")
+    if choice != "a":
+        subprocess.run(
+            [psmux, "select-window", "-t", f"multideck:{choice}"],
+            capture_output=True,
+        )
+
+    sys.exit(subprocess.call([psmux, "attach", "-t", "multideck"]))

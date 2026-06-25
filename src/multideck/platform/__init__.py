@@ -20,11 +20,10 @@ class TerminalLaunchOpts:
 
 
 @dataclass
-class PsmuxLaunchOpts:
-    session_name: str
+class PsmuxWindowOpts:
+    window_name: str
     cwd: str
     command: str
-    color: str | None = None
 
 
 @dataclass
@@ -53,7 +52,7 @@ class Platform(ABC):
     @abstractmethod
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None: ...
 
-    def launch_psmux(self, opts: PsmuxLaunchOpts) -> None:
+    def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
         raise NotImplementedError("psmux is only supported on Windows")
 
 

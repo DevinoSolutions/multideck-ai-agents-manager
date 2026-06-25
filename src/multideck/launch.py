@@ -11,7 +11,7 @@ import click
 
 from multideck.config import MultideckConfig, ProjectConfig
 from multideck.grid import compute_grid, Rect
-from multideck.platform import Platform, PsmuxLaunchOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
+from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import build_resume_command
 from multideck.sessions.claude import encode_claude_project_path, get_claude_session_ids
 from multideck.sessions.codex import get_codex_session_ids
@@ -110,6 +110,8 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     targets: list[_Target] = []
     new_count = 0
     tools = config.settings.tools
+    use_psmux = config.settings.psmux and sys.platform == "win32"
+    psmux_windows: list[PsmuxWindowOpts] = []
 
     for proj in projects:
         tool = proj.tool or config.settings.default_tool
@@ -164,20 +166,18 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             if use_happy:
                 cmd = _wrap_happy(tool, cmd)
 
-            use_psmux = config.settings.psmux and sys.platform == "win32" and not is_remote
+            proj_psmux = use_psmux and not is_remote
             running = plat.find_window(win_title, mode="exact") is not None
             if not running and not opts.dry_run:
-                if use_psmux:
+                if proj_psmux:
                     resolved_dir = _resolve_path(proj.path, base_dir)
                     if not resolved_dir:
                         click.echo(f"SKIP: {proj.path} not found")
                         continue
-                    sess = _psmux_session_name(win_title)
-                    plat.launch_psmux(PsmuxLaunchOpts(
-                        session_name=sess,
+                    psmux_windows.append(PsmuxWindowOpts(
+                        window_name=_psmux_session_name(win_title),
                         cwd=resolved_dir,
                         command=cmd,
-                        color=proj.color,
                     ))
                 elif is_remote:
                     resolved_dir = proj.remote_path or proj.path
@@ -201,11 +201,18 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                         command=cmd,
                         color=proj.color,
                     ))
-                time.sleep(config.settings.launch_delay_ms / 1000)
+                if not proj_psmux:
+                    time.sleep(config.settings.launch_delay_ms / 1000)
             if not running:
                 new_count += 1
             targets.append(_Target(name=win_title, key=win_title, mode="exact", is_new=not running))
-            _log_project(win_title, tool, running, proj.host, happy=use_happy, psmux=use_psmux)
+            _log_project(win_title, tool, running, proj.host, happy=use_happy, psmux=proj_psmux)
+
+    if psmux_windows and not opts.dry_run:
+        plat.launch_psmux_session(psmux_windows)
+        click.echo(f"\n  {S('#', fg='yellow')} psmux session {S('multideck', fg='yellow', bold=True)} created with "
+                    f"{S(str(len(psmux_windows)), fg='yellow', bold=True)} windows")
+        click.echo(f"  {S('From SSH:', dim=True)} {S('psmux attach -t multideck', fg='cyan')}")
 
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 

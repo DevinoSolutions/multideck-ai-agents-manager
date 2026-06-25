@@ -9,7 +9,7 @@ from typing import Any
 import shutil
 
 from multideck.grid import MonitorRect, Rect
-from multideck.platform import Platform, PsmuxLaunchOpts, TerminalLaunchOpts, VSCodeLaunchOpts
+from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts
 
 user32 = windll.user32
 shcore = windll.shcore
@@ -138,21 +138,27 @@ class WindowsPlatform(Platform):
         args.append(opts.dir)
         subprocess.Popen(args)
 
-    def launch_psmux(self, opts: PsmuxLaunchOpts) -> None:
+    def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
         psmux = shutil.which("psmux")
         if not psmux:
             raise FileNotFoundError("psmux not found on PATH")
+        if not windows:
+            return
+
+        SESSION = "multideck"
+
+        subprocess.run([psmux, "kill-session", "-t", SESSION], capture_output=True)
+
+        first = windows[0]
         subprocess.run(
-            [psmux, "kill-session", "-t", opts.session_name],
-            capture_output=True,
+            [psmux, "new-session", "-d", "-s", SESSION,
+             "-n", first.window_name, "-c", first.cwd, first.command],
+            check=True,
         )
-        args = [
-            "wt", "-w", "new",
-            "--title", opts.session_name,
-        ]
-        if opts.color:
-            args.extend(["--tabColor", opts.color])
-        args.append("--suppressApplicationTitle")
-        args.extend(["--", psmux, "new-session", "-s", opts.session_name,
-                      "-c", opts.cwd, opts.command])
-        subprocess.Popen(args)
+
+        for w in windows[1:]:
+            subprocess.run(
+                [psmux, "new-window", "-t", SESSION,
+                 "-n", w.window_name, "-c", w.cwd, w.command],
+                check=True,
+            )
