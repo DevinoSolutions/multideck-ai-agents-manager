@@ -145,6 +145,8 @@ class WindowsPlatform(Platform):
         if not windows:
             return
 
+        import time
+
         for w in windows:
             subprocess.run([psmux, "kill-session", "-t", w.window_name],
                            capture_output=True)
@@ -153,9 +155,14 @@ class WindowsPlatform(Platform):
                  "-c", w.cwd],
                 check=True,
             )
+
+        time.sleep(2)
+
+        for w in windows:
+            cmd = f"cmd /c {w.command}"
             subprocess.run(
                 [psmux, "send-keys", "-t", w.window_name,
-                 w.command, "Enter"],
+                 cmd, "Enter"],
             )
 
     def attach_psmux(self, session_name: str, title: str,
