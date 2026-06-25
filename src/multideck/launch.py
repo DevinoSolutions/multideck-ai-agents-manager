@@ -177,8 +177,9 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                         cwd=resolved_dir,
                         command=cmd,
                     ))
+                    _psmux_colors[wname] = proj.color
             running = plat.find_window(win_title, mode="exact") is not None
-            if not running and not opts.dry_run:
+            if not running and not opts.dry_run and not proj_psmux:
                 if is_remote:
                     resolved_dir = proj.remote_path or proj.path
                     plat.launch_terminal(TerminalLaunchOpts(
@@ -210,10 +211,14 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
 
     if psmux_windows and not opts.dry_run:
         plat.launch_psmux_session(psmux_windows)
-        click.echo(f"\n  {S('#', fg='yellow')} psmux session {S('multideck', fg='yellow', bold=True)} ready with "
-                    f"{S(str(len(psmux_windows)), fg='yellow', bold=True)} windows")
-        click.echo(f"  {S('From SSH:', dim=True)} {S('psmux attach -t multideck', fg='cyan')}"
-                    f" {S('then F1 to switch windows', dim=True)}")
+        for pw in psmux_windows:
+            plat.attach_psmux(pw.window_name, pw.window_name,
+                              _psmux_colors.get(pw.window_name))
+            time.sleep(config.settings.launch_delay_ms / 1000)
+        click.echo(f"\n  {S('#', fg='yellow')} psmux: {S(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"
+                    f" {S('(synced with mobile)', dim=True)}")
+        click.echo(f"  {S('From SSH:', dim=True)} {S('psmux -L <name> attach', fg='cyan')}"
+                    f" {S('or', dim=True)} {S('multideck sessions', fg='cyan')}")
 
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 

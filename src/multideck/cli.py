@@ -1188,6 +1188,7 @@ Host multideck
 @click.pass_context
 def sessions_cmd(ctx: click.Context, name: str | None) -> None:
     """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
+    import glob
     import shutil
     import subprocess
 
@@ -1196,24 +1197,38 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
         click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
         sys.exit(1)
 
-    result = subprocess.run([psmux, "ls", "-F", "#{session_name}"],
-                            capture_output=True, text=True)
-    if result.returncode != 0 or not result.stdout.strip():
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    from multideck.launch import _psmux_session_name
+
+    sessions: list[str] = []
+    for p in data.get("projects", []):
+        if not p.get("enabled", True):
+            continue
+        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
+        if tool in ("code", "vscode", "cursor"):
+            continue
+        proj_name = p.get("title") or Path(p["path"]).name
+        sock = _psmux_session_name(proj_name)
+        result = subprocess.run([psmux, "-L", sock, "has-session"],
+                                capture_output=True)
+        if result.returncode == 0:
+            sessions.append(sock)
+
+    if not sessions:
         click.echo(f"  {S('x', fg='red')} No active psmux sessions.")
         click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled.', dim=True)}")
         sys.exit(1)
-
-    sessions = [s.strip() for s in result.stdout.strip().splitlines() if s.strip()]
 
     if name:
         matches = [s for s in sessions if name.lower() in s.lower()]
         if not matches:
             click.echo(f"  {S('x', fg='red')} No session matching '{name}'.")
             sys.exit(1)
-        sys.exit(subprocess.call([psmux, "attach", "-t", matches[0]]))
+        sys.exit(subprocess.call([psmux, "-L", matches[0], "attach"]))
 
     _banner()
-    click.echo(f"  {S('psmux sessions', bold=True)}  {S('(F1 to switch once attached)', dim=True)}")
+    click.echo(f"  {S('psmux sessions', bold=True)}  {S('(synced with desktop)', dim=True)}")
     _divider()
     click.echo()
     for i, sess in enumerate(sessions, 1):
@@ -1232,9 +1247,9 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
     try:
         idx = int(choice) - 1
         if 0 <= idx < len(sessions):
-            sys.exit(subprocess.call([psmux, "attach", "-t", sessions[idx]]))
+            sys.exit(subprocess.call([psmux, "-L", sessions[idx], "attach"]))
     except ValueError:
         matches = [s for s in sessions if choice in s.lower()]
         if matches:
-            sys.exit(subprocess.call([psmux, "attach", "-t", matches[0]]))
+            sys.exit(subprocess.call([psmux, "-L", matches[0], "attach"]))
     click.echo(f"  {S('x', fg='red')} Invalid choice.")
