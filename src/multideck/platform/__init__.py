@@ -1,11 +1,24 @@
 from __future__ import annotations
 
+import os
+import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
 from multideck.grid import Rect, MonitorRect
+
+
+def find_psmux() -> str | None:
+    found = shutil.which("psmux")
+    if found:
+        return found
+    if sys.platform == "win32":
+        local = os.path.join(os.environ.get("LOCALAPPDATA", ""), "psmux", "psmux.exe")
+        if os.path.isfile(local):
+            return local
+    return None
 
 
 @dataclass

@@ -166,14 +166,23 @@ def _config_menu(config_file: Path) -> None:
         psmux_label = S("ON", fg="green", bold=True) if psmux_on else S("off", dim=True)
         _menu_item("6", f"psmux sessions    {psmux_label}"
                    f"  {S('-- attach from SSH / phone', dim=True)}")
+        upload_on = settings.get("uploadServer", False)
+        upload_port = settings.get("uploadPort", 8033)
+        upload_label = S(f"ON :{upload_port}", fg="green", bold=True) if upload_on else S("off", dim=True)
+        _menu_item("7", f"Upload server     {upload_label}"
+                   f"  {S('-- send images from phone to Claude', dim=True)}")
+        attach = settings.get("attachTo")
+        attach_label = S(attach, fg="green", bold=True) if attach else S("off", dim=True)
+        _menu_item("8", f"Attach to remote  {attach_label}"
+                   f"  {S('-- PC-B connects to remote sessions', dim=True)}")
         click.echo()
         click.echo(f"  {S('Projects', bold=True)}")
         _divider()
         click.echo()
-        _menu_item("7", f"Add a project     {S('-- register a new folder', dim=True)}")
-        _menu_item("8", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        _menu_item("a", f"Add a project     {S('-- register a new folder', dim=True)}")
+        _menu_item("r", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
         click.echo()
-        _menu_item("9", f"Open config file in editor", key_fg="green")
+        _menu_item("e", f"Open config file in editor", key_fg="green")
         _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
@@ -277,6 +286,57 @@ def _config_menu(config_file: Path) -> None:
                                 f"Projects launch in regular Windows Terminal tabs.")
 
         elif choice == "7":
+            data.setdefault("settings", {})
+            currently_on = data["settings"].get("uploadServer", False)
+            if currently_on:
+                data["settings"]["uploadServer"] = False
+                _save_raw_config(config_file, data)
+                _confirm_change(f"Upload server {S('disabled', dim=True)}.")
+            else:
+                click.echo()
+                cur_port = data["settings"].get("uploadPort", 8033)
+                val = _prompt_or_back(f"Port {S(f'(Enter for {cur_port})', dim=True)}",
+                                      default=str(cur_port), show_default=False)
+                if val is None:
+                    continue
+                try:
+                    port = int(val)
+                except ValueError:
+                    continue
+                data["settings"]["uploadServer"] = True
+                data["settings"]["uploadPort"] = port
+                _save_raw_config(config_file, data)
+                _confirm_change(f"Upload server {S('enabled', fg='green')} on port {S(str(port), fg='cyan')}. "
+                                f"Starts automatically with multideck.")
+
+        elif choice == "8":
+            data.setdefault("settings", {})
+            current = data["settings"].get("attachTo", "")
+            if current:
+                click.echo()
+                click.echo(f"  {S('Currently attaching to:', bold=True)} {S(current, fg='green')}")
+                click.echo(f"  {S('Enter new value, or clear to disable.', dim=True)}")
+                click.echo()
+            else:
+                click.echo()
+                click.echo(f"  {S('Connect to a remote PC running multideck with psmux.', bold=True)}")
+                click.echo(f"  {S('Format: user@hostname or just hostname.', dim=True)}")
+                click.echo()
+            val = _prompt_or_back("Remote host (empty to clear)", default=current, show_default=False)
+            if val is None:
+                continue
+            if val:
+                data["settings"]["attachTo"] = val
+                _save_raw_config(config_file, data)
+                _confirm_change(f"Attach to {S(val, fg='green')}. "
+                                f"Running multideck will connect to remote sessions.")
+            else:
+                data["settings"].pop("attachTo", None)
+                _save_raw_config(config_file, data)
+                _confirm_change(f"Attach to remote {S('disabled', dim=True)}. "
+                                f"multideck will launch local sessions.")
+
+        elif choice == "a":
             cwd = str(Path.cwd()).replace("\\", "/")
             click.echo()
             click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
@@ -314,10 +374,10 @@ def _config_menu(config_file: Path) -> None:
             _save_raw_config(config_file, data)
             _confirm_change(f"Added project {S(path, fg='green')}.")
 
-        elif choice == "8":
+        elif choice == "r":
             _remove_project_menu(config_file, data)
 
-        elif choice == "9":
+        elif choice == "e":
             _open_in_editor(config_file)
             return
 
@@ -545,6 +605,8 @@ def _run_discovery(config_file: Path) -> bool:
 @click.option("--config", "config_path", default=None, type=click.Path(), help="Path to config file")
 @click.option("--force", is_flag=True, help="With --init, overwrite existing config")
 @click.option("--edit", "do_edit", is_flag=True, help="Open config in your default editor")
+@click.option("--attach-to", "attach_host", default=None, help="Attach to remote psmux sessions (host or user@host)")
+@click.option("--attach-port", default=8033, help="Upload server port on remote host")
 @click.version_option(__version__)
 @click.pass_context
 def main(
@@ -558,12 +620,18 @@ def main(
     config_path: str | None,
     force: bool,
     do_edit: bool,
+    attach_host: str | None,
+    attach_port: int,
 ) -> None:
     """Open every project in its own terminal and auto-tile across all monitors."""
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config_path
 
     if ctx.invoked_subcommand is not None:
+        return
+
+    if attach_host:
+        _run_attach(attach_host, attach_port)
         return
 
     config_file = _find_config(config_path)
@@ -612,6 +680,10 @@ def main(
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
+    if not attach_host and cfg.settings.attach_to:
+        _run_attach(cfg.settings.attach_to, cfg.settings.upload_port)
+        return
+
     has_directive = go or retile_all or dry_run or group
     if not has_directive and sys.stdin.isatty():
         groups = sorted({p.group for p in cfg.projects if p.group})
@@ -630,6 +702,134 @@ def main(
         group=group,
         config_path=str(config_file),
     ))
+
+
+def _run_attach(host: str, port: int) -> None:
+    """Discover remote psmux sessions and open local terminal windows attached to each."""
+    import getpass
+    import json
+    import subprocess
+    import time
+    from urllib.request import urlopen
+    from urllib.error import URLError
+
+    from multideck.grid import compute_grid, Rect
+    from multideck.platform import get_platform
+
+    if "@" in host:
+        user, hostname = host.split("@", 1)
+    else:
+        user = getpass.getuser()
+        hostname = host
+
+    server_url = f"http://{hostname}:{port}"
+    _banner()
+    click.echo(f"  {S('Attach mode', bold=True)}  {S(f'-> {user}@{hostname}', dim=True)}")
+    _divider()
+    click.echo()
+
+    click.echo(f"  {S('Discovering sessions at', dim=True)} {S(server_url, fg='cyan')}...")
+    try:
+        with urlopen(f"{server_url}/api/sessions", timeout=5) as resp:
+            sessions = json.loads(resp.read())
+    except (URLError, OSError) as e:
+        click.echo(f"\n  {S('x', fg='red')} Cannot reach upload server at {server_url}")
+        click.echo(f"  {S('Make sure the remote has uploadServer enabled and multideck is running.', dim=True)}")
+        sys.exit(1)
+
+    if not sessions:
+        click.echo(f"  {S('x', fg='red')} No active psmux sessions on remote.")
+        click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('on the remote first.', dim=True)}")
+        sys.exit(1)
+
+    click.echo(f"  {S('+', fg='green')} Found {S(str(len(sessions)), fg='green', bold=True)} sessions\n")
+
+    plat = get_platform()
+    plat.set_dpi_aware()
+    monitors = plat.list_monitors()
+    slots = compute_grid(monitors, 2, 1)
+
+    ssh_target = f"{user}@{hostname}"
+    targets = []
+
+    for sess in sessions:
+        name = sess["name"]
+        title = f"md:{name}"
+        click.echo(f"  {S('o', fg='cyan')} {title}")
+
+        args = [
+            "wt", "-w", "new",
+            "--title", title,
+            "--suppressApplicationTitle",
+            "--", "ssh", "-t", ssh_target,
+            f"multideck sessions {name}",
+        ]
+        subprocess.Popen(args)
+        targets.append({"title": title, "is_new": True})
+        time.sleep(0.4)
+
+    click.echo(f"\n  {S('#', fg='cyan')} Tiling {len(targets)} window(s)...")
+    time.sleep(3)
+
+    for i, target in enumerate(targets):
+        pos = slots[i % len(slots)]
+        handle = plat.find_window(target["title"], mode="exact")
+        if handle is None:
+            for _ in range(6):
+                time.sleep(1)
+                handle = plat.find_window(target["title"], mode="exact")
+                if handle:
+                    break
+        if handle:
+            plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
+            click.echo(f"    {S('+', fg='green')} {target['title']}")
+        else:
+            click.echo(f"    {S('x', fg='red')} {target['title']} {S('not found', dim=True)}")
+
+    click.echo(f"\n  {S('#', fg='magenta')} Hotkey: {S('Alt+V', bold=True)} pastes clipboard images"
+               f" {S('(only in md: windows)', dim=True)}")
+
+    session_names = {s["name"] for s in sessions}
+    click.echo(f"  {S('Listening...', dim=True)}")
+
+    if sys.platform == "win32":
+        from multideck.hotkey import run_hotkey
+        try:
+            run_hotkey(server_url, session_names)
+        except KeyboardInterrupt:
+            click.echo(f"\n  {S('Stopped.', dim=True)}")
+
+
+@main.command("hotkey")
+@click.option("--server", "-s", default="http://localhost:8033", help="Upload server URL")
+@click.pass_context
+def hotkey_cmd(ctx: click.Context, server: str) -> None:
+    """Listen for Alt+V to upload clipboard images to psmux sessions.
+
+    Only activates when a 'md:' titled window is focused. Otherwise
+    the keystroke passes through normally.
+    """
+    if sys.platform != "win32":
+        click.echo(f"  {S('x', fg='red')} Hotkey listener is Windows-only.")
+        sys.exit(1)
+
+    _banner()
+    click.echo(f"  {S('Hotkey listener', bold=True)}  {S(f'-> {server}', dim=True)}")
+    _divider()
+    click.echo()
+    click.echo(f"  {S('Alt+V', fg='cyan', bold=True)} uploads clipboard image to the focused project")
+    click.echo(f"  {S('Only active in windows titled md:<project>', dim=True)}")
+    click.echo(f"  {S('Ctrl+C to stop.', dim=True)}")
+    click.echo()
+
+    from multideck.hotkey import run_hotkey
+    try:
+        run_hotkey(server)
+    except KeyboardInterrupt:
+        click.echo(f"\n  {S('Stopped.', dim=True)}")
+    except RuntimeError as e:
+        click.echo(f"  {S('x', fg='red')} {e}")
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
@@ -930,6 +1130,9 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("launchDelayMs", "int", "`400`", "Delay between launching each terminal (ms)."),
     ("happy", "boolean", "`false`", "Enable [Happy](https://github.com/slopus/happy) to access sessions from mobile/web."),
     ("psmux", "boolean", "`false`", "Run CLI agents in psmux sessions (Windows). Attach from SSH with `psmux attach -t <name>`."),
+    ("uploadServer", "boolean", "`false`", "Auto-start upload server for mobile image transfer when psmux launches."),
+    ("uploadPort", "int", "`8033`", "Port for the upload server."),
+    ("attachTo", "string", "none", "Remote host (`user@host`) to attach to. Turns this into a PC-B that connects to remote psmux sessions."),
     ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"cursor-agent\": ..., \"agy\": ...}`",
      "Map of tool names to shell commands. Add custom tools here."),
     ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),
@@ -1090,6 +1293,10 @@ def _generate_docs() -> str:
     w("| `multideck --init --base-dir <dir>` | Generate config from a folder of repos. |")
     w("| `multideck --edit` | Open config in your default editor. |")
     w("| `multideck docs` | Print this reference (pipe to file for AI context). |")
+    w("| `multideck --attach-to <host>` | Attach to remote psmux sessions, tile locally, start Alt+V hotkey. |")
+    w("| `multideck serve` | Start upload server for mobile image transfer. |")
+    w("| `multideck serve -p 9090` | Use a custom port (default 8033). |")
+    w("| `multideck hotkey` | Listen for Alt+V to upload clipboard images (standalone). |")
     w("| `multideck sessions` | List active psmux sessions, pick one to attach. |")
     w("| `multideck sessions <name>` | Attach directly to a psmux session by name. |")
     w("| `multideck config show` | Display current config. |")
@@ -1181,16 +1388,57 @@ Host multideck
         click.echo(f"  {S('Add --install to write to ~/.ssh/config', dim=True)}")
 
 
+@main.command("serve")
+@click.option("--port", "-p", default=8033, help="Port to listen on")
+@click.pass_context
+def serve_cmd(ctx: click.Context, port: int) -> None:
+    """Start upload server for mobile image transfer.
+
+    Opens a web page on your phone (via Tailscale) where you pick a project,
+    upload an image, and the file path is auto-pasted into that project's
+    Claude session via psmux send-keys.
+    """
+    import subprocess
+
+    ip = "0.0.0.0"
+    try:
+        result = subprocess.run(["tailscale", "ip", "-4"],
+                                capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            ip = result.stdout.strip().splitlines()[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    _banner()
+    click.echo(f"  {S('Upload server', bold=True)}  {S('for mobile image transfer', dim=True)}")
+    _divider()
+    click.echo()
+    if ip != "0.0.0.0":
+        click.echo(f"  {S('Open on phone:', bold=True)}  {S(f'http://{ip}:{port}', fg='cyan', bold=True)}")
+    click.echo(f"  {S('Local:', dim=True)}         {S(f'http://localhost:{port}', fg='cyan')}")
+    click.echo()
+    click.echo(f"  {S('Pick a project, upload a file, path gets pasted into Claude.', dim=True)}")
+    click.echo(f"  {S('Ctrl+C to stop.', dim=True)}")
+    click.echo()
+
+    from multideck.upload_server import run_server
+    config_path = ctx.obj.get("config_path")
+    try:
+        run_server(port=port, config_path=config_path)
+    except KeyboardInterrupt:
+        click.echo(f"\n  {S('Server stopped.', dim=True)}")
+
+
 @main.command("sessions")
 @click.argument("name", required=False)
 @click.pass_context
 def sessions_cmd(ctx: click.Context, name: str | None) -> None:
     """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
-    import glob
-    import shutil
     import subprocess
 
-    psmux = shutil.which("psmux")
+    from multideck.platform import find_psmux
+
+    psmux = find_psmux()
     if not psmux:
         click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
         sys.exit(1)

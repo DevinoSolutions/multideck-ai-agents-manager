@@ -57,6 +57,18 @@ HAPPY_AGENTS = {"claude", "codex"}
 S = click.style
 
 
+def _get_tailscale_ip() -> str | None:
+    import subprocess
+    try:
+        result = subprocess.run(["tailscale", "ip", "-4"],
+                                capture_output=True, text=True, timeout=5)
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip().splitlines()[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    return None
+
+
 def _psmux_session_name(title: str) -> str:
     """Sanitize a window title into a valid psmux/tmux session name."""
     return title.replace(".", "-").replace(":", "-").replace(" ", "-")
@@ -219,6 +231,20 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                     f" {S('(synced with mobile)', dim=True)}")
         click.echo(f"  {S('From SSH:', dim=True)} {S('psmux -L <name> attach', fg='cyan')}"
                     f" {S('or', dim=True)} {S('multideck sessions', fg='cyan')}")
+
+        if config.settings.upload_server:
+            import subprocess
+            port = config.settings.upload_port
+            python = sys.executable
+            serve_args = [python, "-m", "multideck"]
+            if opts.config_path:
+                serve_args.extend(["--config", opts.config_path])
+            serve_args.extend(["serve", "-p", str(port)])
+            subprocess.Popen(serve_args, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            ip = _get_tailscale_ip()
+            url = f"http://{ip}:{port}" if ip else f"http://localhost:{port}"
+            click.echo(f"\n  {S('#', fg='magenta')} upload server: {S(url, fg='cyan', bold=True)}"
+                        f" {S('(open on phone)', dim=True)}")
 
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 

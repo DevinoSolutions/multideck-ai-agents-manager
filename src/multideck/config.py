@@ -25,6 +25,9 @@ class Settings:
     launch_delay_ms: int = 400
     happy: bool = False
     psmux: bool = False
+    upload_server: bool = False
+    upload_port: int = 8033
+    attach_to: str | None = None
     ssh: SSHConfig = field(default_factory=SSHConfig)
     tools: dict[str, str] = field(default_factory=lambda: {
         "claude": "claude --continue",
@@ -71,6 +74,9 @@ def _parse_settings(raw: dict | None) -> Settings:
         launch_delay_ms=raw.get("launchDelayMs", 400),
         happy=raw.get("happy", False),
         psmux=raw.get("psmux", False),
+        upload_server=raw.get("uploadServer", False),
+        upload_port=raw.get("uploadPort", 8033),
+        attach_to=raw.get("attachTo"),
         ssh=_parse_ssh(raw.get("ssh")),
         tools=raw.get("tools", {
             "claude": "claude --continue",

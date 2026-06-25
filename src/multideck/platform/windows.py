@@ -9,7 +9,7 @@ from typing import Any
 import shutil
 
 from multideck.grid import MonitorRect, Rect
-from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts
+from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, find_psmux
 
 user32 = windll.user32
 shcore = windll.shcore
@@ -139,7 +139,7 @@ class WindowsPlatform(Platform):
         subprocess.Popen(args)
 
     def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
-        psmux = shutil.which("psmux")
+        psmux = find_psmux()
         if not psmux:
             raise FileNotFoundError("psmux not found on PATH")
         if not windows:
