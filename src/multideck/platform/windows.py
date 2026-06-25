@@ -145,29 +145,31 @@ class WindowsPlatform(Platform):
         if not windows:
             return
 
-        SESSION = "multideck"
-
-        subprocess.run([psmux, "kill-session", "-t", SESSION], capture_output=True)
-
-        first = windows[0]
-        subprocess.run(
-            [psmux, "new-session", "-d", "-s", SESSION,
-             "-n", first.window_name, "-c", first.cwd],
-            check=True,
-        )
-        subprocess.run(
-            [psmux, "send-keys", "-t", f"{SESSION}:{first.window_name}",
-             first.command, "Enter"],
-        )
-
-        for w in windows[1:]:
+        for w in windows:
+            subprocess.run([psmux, "kill-session", "-t", w.window_name],
+                           capture_output=True)
             subprocess.run(
-                [psmux, "new-window", "-t", SESSION,
-                 "-n", w.window_name, "-c", w.cwd],
+                [psmux, "new-session", "-d", "-s", w.window_name,
+                 "-c", w.cwd],
                 check=True,
             )
             subprocess.run(
-                [psmux, "send-keys", "-t", f"{SESSION}:{w.window_name}",
+                [psmux, "send-keys", "-t", w.window_name,
                  w.command, "Enter"],
             )
+
+    def attach_psmux(self, session_name: str, title: str,
+                     color: str | None = None) -> None:
+        psmux = shutil.which("psmux")
+        if not psmux:
+            return
+        args = [
+            "wt", "-w", "new",
+            "--title", title,
+        ]
+        if color:
+            args.extend(["--tabColor", color])
+        args.append("--suppressApplicationTitle")
+        args.extend(["--", psmux, "attach", "-t", session_name])
+        subprocess.Popen(args)
 
