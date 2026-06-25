@@ -162,14 +162,18 @@ def _config_menu(config_file: Path) -> None:
         happy_label = S("ON", fg="green", bold=True) if happy_on else S("off", dim=True)
         _menu_item("5", f"Happy mobile      {happy_label}"
                    f"  {S('-- monitor sessions from phone/web', dim=True)}")
+        psmux_on = settings.get("psmux", False)
+        psmux_label = S("ON", fg="green", bold=True) if psmux_on else S("off", dim=True)
+        _menu_item("6", f"psmux sessions    {psmux_label}"
+                   f"  {S('-- attach from SSH / phone', dim=True)}")
         click.echo()
         click.echo(f"  {S('Projects', bold=True)}")
         _divider()
         click.echo()
-        _menu_item("6", f"Add a project     {S('-- register a new folder', dim=True)}")
-        _menu_item("7", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        _menu_item("7", f"Add a project     {S('-- register a new folder', dim=True)}")
+        _menu_item("8", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
         click.echo()
-        _menu_item("8", f"Open config file in editor", key_fg="green")
+        _menu_item("9", f"Open config file in editor", key_fg="green")
         _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
@@ -261,6 +265,18 @@ def _config_menu(config_file: Path) -> None:
                                 f"Sessions launch directly without Happy.")
 
         elif choice == "6":
+            data.setdefault("settings", {})
+            new_val = not data["settings"].get("psmux", False)
+            data["settings"]["psmux"] = new_val
+            _save_raw_config(config_file, data)
+            if new_val:
+                _confirm_change(f"psmux sessions {S('enabled', fg='green')}. "
+                                f"Each project runs in a named psmux session you can attach to via SSH.")
+            else:
+                _confirm_change(f"psmux sessions {S('disabled', dim=True)}. "
+                                f"Projects launch in regular Windows Terminal tabs.")
+
+        elif choice == "7":
             cwd = str(Path.cwd()).replace("\\", "/")
             click.echo()
             click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
@@ -298,10 +314,10 @@ def _config_menu(config_file: Path) -> None:
             _save_raw_config(config_file, data)
             _confirm_change(f"Added project {S(path, fg='green')}.")
 
-        elif choice == "7":
+        elif choice == "8":
             _remove_project_menu(config_file, data)
 
-        elif choice == "8":
+        elif choice == "9":
             _open_in_editor(config_file)
             return
 
@@ -913,6 +929,7 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("settleSeconds", "int", "`3`", "Seconds to wait for windows to appear before tiling."),
     ("launchDelayMs", "int", "`400`", "Delay between launching each terminal (ms)."),
     ("happy", "boolean", "`false`", "Enable [Happy](https://github.com/slopus/happy) to access sessions from mobile/web."),
+    ("psmux", "boolean", "`false`", "Run CLI agents in psmux sessions (Windows). Attach from SSH with `psmux attach -t <name>`."),
     ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"cursor-agent\": ..., \"agy\": ...}`",
      "Map of tool names to shell commands. Add custom tools here."),
     ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),

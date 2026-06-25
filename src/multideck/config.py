@@ -24,6 +24,7 @@ class Settings:
     settle_seconds: int = 3
     launch_delay_ms: int = 400
     happy: bool = False
+    psmux: bool = False
     ssh: SSHConfig = field(default_factory=SSHConfig)
     tools: dict[str, str] = field(default_factory=lambda: {
         "claude": "claude --continue",
@@ -69,6 +70,7 @@ def _parse_settings(raw: dict | None) -> Settings:
         settle_seconds=raw.get("settleSeconds", 3),
         launch_delay_ms=raw.get("launchDelayMs", 400),
         happy=raw.get("happy", False),
+        psmux=raw.get("psmux", False),
         ssh=_parse_ssh(raw.get("ssh")),
         tools=raw.get("tools", {
             "claude": "claude --continue",

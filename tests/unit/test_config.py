@@ -121,6 +121,19 @@ class TestLoadConfig:
         assert cfg.projects[1].happy is None
         assert cfg.projects[2].happy is False
 
+    def test_psmux_defaults_false(self, tmp_config):
+        path = tmp_config({"projects": [{"path": "x"}]})
+        cfg = load_config(path)
+        assert cfg.settings.psmux is False
+
+    def test_psmux_enabled(self, tmp_config):
+        path = tmp_config({
+            "settings": {"psmux": True},
+            "projects": [{"path": "x"}],
+        })
+        cfg = load_config(path)
+        assert cfg.settings.psmux is True
+
 
 class TestPathResolution:
     def test_resolve_relative(self, tmp_config):

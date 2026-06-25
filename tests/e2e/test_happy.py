@@ -89,3 +89,53 @@ class TestHappyIntegration:
         )
         assert result.returncode == 0
         assert "[happy]" not in result.stdout
+
+
+class TestPsmuxIntegration:
+    def test_psmux_shows_badge(self, tmp_path):
+        (tmp_path / "myapp").mkdir()
+        cfg = tmp_path / "multideck.config.json"
+        cfg.write_text(json.dumps({
+            "baseDir": str(tmp_path),
+            "settings": {"psmux": True},
+            "projects": [{"path": "myapp"}],
+        }))
+        result = subprocess.run(
+            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        if sys.platform == "win32":
+            assert "[psmux]" in result.stdout
+        else:
+            assert "[psmux]" not in result.stdout
+
+    def test_psmux_disabled_no_badge(self, tmp_path):
+        (tmp_path / "myapp").mkdir()
+        cfg = tmp_path / "multideck.config.json"
+        cfg.write_text(json.dumps({
+            "baseDir": str(tmp_path),
+            "settings": {"psmux": False},
+            "projects": [{"path": "myapp"}],
+        }))
+        result = subprocess.run(
+            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "[psmux]" not in result.stdout
+
+    def test_psmux_vscode_not_affected(self, tmp_path):
+        (tmp_path / "myapp").mkdir()
+        cfg = tmp_path / "multideck.config.json"
+        cfg.write_text(json.dumps({
+            "baseDir": str(tmp_path),
+            "settings": {"psmux": True},
+            "projects": [{"path": "myapp", "tool": "vscode"}],
+        }))
+        result = subprocess.run(
+            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert "[psmux]" not in result.stdout

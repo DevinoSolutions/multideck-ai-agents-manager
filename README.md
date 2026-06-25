@@ -112,6 +112,16 @@ Enable [Happy](https://github.com/slopus/happy) to monitor and control all your 
 
 Requires `npm install -g happy`. Supported agents: Claude, Codex. Per-project override with `"happy": true/false`.
 
+### psmux (persistent sessions for SSH access)
+
+Enable [psmux](https://github.com/psmux/psmux) (native Windows terminal multiplexer) so each project runs in a named session you can attach to from anywhere — SSH from your phone, another PC, or a second terminal:
+
+```json
+"settings": { "psmux": true }
+```
+
+Requires psmux installed (`choco install psmux` or download from GitHub). When enabled, multideck creates a detached psmux session per project and opens Windows Terminal attached to it. From any SSH client: `psmux attach -t project-name`.
+
 ## Usage
 
 Run `multideck` with no arguments for the interactive menu:

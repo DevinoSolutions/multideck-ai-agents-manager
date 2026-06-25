@@ -11,7 +11,7 @@ import click
 
 from multideck.config import MultideckConfig, ProjectConfig
 from multideck.grid import compute_grid, Rect
-from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
+from multideck.platform import Platform, PsmuxLaunchOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import build_resume_command
 from multideck.sessions.claude import encode_claude_project_path, get_claude_session_ids
 from multideck.sessions.codex import get_codex_session_ids
@@ -55,6 +55,11 @@ def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None
 HAPPY_AGENTS = {"claude", "codex"}
 
 S = click.style
+
+
+def _psmux_session_name(title: str) -> str:
+    """Sanitize a window title into a valid psmux/tmux session name."""
+    return title.replace(".", "-").replace(":", "-").replace(" ", "-")
 
 
 def _wrap_happy(tool: str, cmd: str) -> str:
@@ -159,9 +164,27 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             if use_happy:
                 cmd = _wrap_happy(tool, cmd)
 
+            use_psmux = config.settings.psmux and sys.platform == "win32" and not is_remote
             running = plat.find_window(win_title, mode="exact") is not None
             if not running and not opts.dry_run:
-                if is_remote:
+                if use_psmux:
+                    resolved_dir = _resolve_path(proj.path, base_dir)
+                    if not resolved_dir:
+                        click.echo(f"SKIP: {proj.path} not found")
+                        continue
+                    sess = _psmux_session_name(win_title)
+                    plat.launch_psmux(PsmuxLaunchOpts(
+                        session_name=sess,
+                        cwd=resolved_dir,
+                        command=cmd,
+                    ))
+                    plat.launch_terminal(TerminalLaunchOpts(
+                        title=win_title,
+                        cwd=resolved_dir,
+                        command=f"psmux attach -t {sess}",
+                        color=proj.color,
+                    ))
+                elif is_remote:
                     resolved_dir = proj.remote_path or proj.path
                     plat.launch_terminal(TerminalLaunchOpts(
                         title=win_title,
@@ -187,7 +210,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             if not running:
                 new_count += 1
             targets.append(_Target(name=win_title, key=win_title, mode="exact", is_new=not running))
-            _log_project(win_title, tool, running, proj.host, happy=use_happy)
+            _log_project(win_title, tool, running, proj.host, happy=use_happy, psmux=use_psmux)
 
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 
@@ -229,7 +252,8 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
 
 
-def _log_project(name: str, tool: str, running: bool, host: str | None, happy: bool = False) -> None:
+def _log_project(name: str, tool: str, running: bool, host: str | None,
+                  happy: bool = False, psmux: bool = False) -> None:
     if running:
         icon = S("*", fg="green")
         label = S("open", dim=True)
@@ -238,5 +262,9 @@ def _log_project(name: str, tool: str, running: bool, host: str | None, happy: b
         label = S("new", fg="cyan")
     loc = S(f" @ {host}", dim=True) if host else ""
     tool_badge = S(f"[{tool}]", dim=True)
-    happy_badge = S(" [happy]", fg="magenta") if happy else ""
-    click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{happy_badge}{loc}")
+    extras = ""
+    if happy:
+        extras += S(" [happy]", fg="magenta")
+    if psmux:
+        extras += S(" [psmux]", fg="yellow")
+    click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{extras}{loc}")

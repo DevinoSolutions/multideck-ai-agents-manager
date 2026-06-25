@@ -6,8 +6,10 @@ import subprocess
 from ctypes import POINTER, WINFUNCTYPE, byref, create_unicode_buffer, windll
 from typing import Any
 
+import shutil
+
 from multideck.grid import MonitorRect, Rect
-from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts
+from multideck.platform import Platform, PsmuxLaunchOpts, TerminalLaunchOpts, VSCodeLaunchOpts
 
 user32 = windll.user32
 shcore = windll.shcore
@@ -135,3 +137,13 @@ class WindowsPlatform(Platform):
             args.extend(["--remote", f"ssh-remote+{opts.ssh_host}"])
         args.append(opts.dir)
         subprocess.Popen(args)
+
+    def launch_psmux(self, opts: PsmuxLaunchOpts) -> None:
+        psmux = shutil.which("psmux")
+        if not psmux:
+            raise FileNotFoundError("psmux not found on PATH")
+        subprocess.run(
+            [psmux, "new-session", "-d", "-s", opts.session_name,
+             "-c", opts.cwd, opts.command],
+            check=True,
+        )
