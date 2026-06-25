@@ -177,11 +177,6 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                         session_name=sess,
                         cwd=resolved_dir,
                         command=cmd,
-                    ))
-                    plat.launch_terminal(TerminalLaunchOpts(
-                        title=win_title,
-                        cwd=resolved_dir,
-                        command=f"psmux attach -t {sess}",
                         color=proj.color,
                     ))
                 elif is_remote:

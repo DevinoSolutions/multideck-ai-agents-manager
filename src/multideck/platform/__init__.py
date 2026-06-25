@@ -24,6 +24,7 @@ class PsmuxLaunchOpts:
     session_name: str
     cwd: str
     command: str
+    color: str | None = None
 
 
 @dataclass
