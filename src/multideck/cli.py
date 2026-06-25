@@ -171,18 +171,14 @@ def _config_menu(config_file: Path) -> None:
         upload_label = S(f"ON :{upload_port}", fg="green", bold=True) if upload_on else S("off", dim=True)
         _menu_item("7", f"Upload server     {upload_label}"
                    f"  {S('-- send images from phone to Claude', dim=True)}")
-        attach = settings.get("attachTo")
-        attach_label = S(attach, fg="green", bold=True) if attach else S("off", dim=True)
-        _menu_item("8", f"Attach to remote  {attach_label}"
-                   f"  {S('-- PC-B connects to remote sessions', dim=True)}")
         click.echo()
         click.echo(f"  {S('Projects', bold=True)}")
         _divider()
         click.echo()
-        _menu_item("a", f"Add a project     {S('-- register a new folder', dim=True)}")
-        _menu_item("r", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        _menu_item("8", f"Add a project     {S('-- register a new folder', dim=True)}")
+        _menu_item("9", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
         click.echo()
-        _menu_item("e", f"Open config file in editor", key_fg="green")
+        _menu_item("0", f"Open config file in editor", key_fg="green")
         _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
@@ -310,33 +306,6 @@ def _config_menu(config_file: Path) -> None:
                                 f"Starts automatically with multideck.")
 
         elif choice == "8":
-            data.setdefault("settings", {})
-            current = data["settings"].get("attachTo", "")
-            if current:
-                click.echo()
-                click.echo(f"  {S('Currently attaching to:', bold=True)} {S(current, fg='green')}")
-                click.echo(f"  {S('Enter new value, or clear to disable.', dim=True)}")
-                click.echo()
-            else:
-                click.echo()
-                click.echo(f"  {S('Connect to a remote PC running multideck with psmux.', bold=True)}")
-                click.echo(f"  {S('Format: user@hostname or just hostname.', dim=True)}")
-                click.echo()
-            val = _prompt_or_back("Remote host (empty to clear)", default=current, show_default=False)
-            if val is None:
-                continue
-            if val:
-                data["settings"]["attachTo"] = val
-                _save_raw_config(config_file, data)
-                _confirm_change(f"Attach to {S(val, fg='green')}. "
-                                f"Running multideck will connect to remote sessions.")
-            else:
-                data["settings"].pop("attachTo", None)
-                _save_raw_config(config_file, data)
-                _confirm_change(f"Attach to remote {S('disabled', dim=True)}. "
-                                f"multideck will launch local sessions.")
-
-        elif choice == "a":
             cwd = str(Path.cwd()).replace("\\", "/")
             click.echo()
             click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
@@ -374,10 +343,10 @@ def _config_menu(config_file: Path) -> None:
             _save_raw_config(config_file, data)
             _confirm_change(f"Added project {S(path, fg='green')}.")
 
-        elif choice == "r":
+        elif choice == "9":
             _remove_project_menu(config_file, data)
 
-        elif choice == "e":
+        elif choice == "0":
             _open_in_editor(config_file)
             return
 
@@ -679,10 +648,6 @@ def main(
     except (ValueError, FileNotFoundError) as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
-
-    if not attach_host and cfg.settings.attach_to:
-        _run_attach(cfg.settings.attach_to, cfg.settings.upload_port)
-        return
 
     has_directive = go or retile_all or dry_run or group
     if not has_directive and sys.stdin.isatty():
@@ -1132,7 +1097,6 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("psmux", "boolean", "`false`", "Run CLI agents in psmux sessions (Windows). Attach from SSH with `psmux attach -t <name>`."),
     ("uploadServer", "boolean", "`false`", "Auto-start upload server for mobile image transfer when psmux launches."),
     ("uploadPort", "int", "`8033`", "Port for the upload server."),
-    ("attachTo", "string", "none", "Remote host (`user@host`) to attach to. Turns this into a PC-B that connects to remote psmux sessions."),
     ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"cursor-agent\": ..., \"agy\": ...}`",
      "Map of tool names to shell commands. Add custom tools here."),
     ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),
