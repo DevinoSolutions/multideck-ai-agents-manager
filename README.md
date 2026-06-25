@@ -154,6 +154,8 @@ Or skip the menu with flags:
 | `multideck --init --base-dir <folder>` | Generate config from a folder of git repos. |
 | `multideck --edit` | Open config in your default editor. |
 | `multideck docs` | Print full config reference (Markdown). |
+| `multideck sessions` | List active psmux sessions, pick one to attach. |
+| `multideck sessions <name>` | Attach directly to a psmux session by name. |
 
 ## Configuration
 

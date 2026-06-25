@@ -1090,6 +1090,8 @@ def _generate_docs() -> str:
     w("| `multideck --init --base-dir <dir>` | Generate config from a folder of repos. |")
     w("| `multideck --edit` | Open config in your default editor. |")
     w("| `multideck docs` | Print this reference (pipe to file for AI context). |")
+    w("| `multideck sessions` | List active psmux sessions, pick one to attach. |")
+    w("| `multideck sessions <name>` | Attach directly to a psmux session by name. |")
     w("| `multideck config show` | Display current config. |")
     w("| `multideck config layout <cols> <rows>` | Set window grid. |")
     w("| `multideck config base-dir <path>` | Set projects folder. |")
@@ -1112,3 +1114,70 @@ def _generate_docs() -> str:
 def docs_cmd() -> None:
     """Print the full configuration reference (Markdown). Pipe to a file or feed to an AI."""
     click.echo(_generate_docs())
+
+
+@main.command("sessions")
+@click.argument("name", required=False)
+@click.pass_context
+def sessions_cmd(ctx: click.Context, name: str | None) -> None:
+    """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
+    import shutil
+    import subprocess
+
+    psmux = shutil.which("psmux")
+    if not psmux:
+        click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
+        sys.exit(1)
+
+    result = subprocess.run([psmux, "ls"], capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        click.echo(f"  {S('x', fg='red')} No active psmux sessions.")
+        click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled to create sessions.', dim=True)}")
+        sys.exit(1)
+
+    lines = [l.strip() for l in result.stdout.strip().splitlines() if l.strip()]
+    sessions = []
+    for line in lines:
+        sess_name = line.split(":")[0].strip()
+        sessions.append((sess_name, line))
+
+    if name:
+        matches = [s for s in sessions if name.lower() in s[0].lower()]
+        if not matches:
+            click.echo(f"  {S('x', fg='red')} No session matching '{name}'.")
+            click.echo(f"  Available: {', '.join(s[0] for s in sessions)}")
+            sys.exit(1)
+        target = matches[0][0]
+        sys.exit(subprocess.call([psmux, "attach", "-t", target]))
+
+    _banner()
+    click.echo(f"  {S('Active psmux sessions', bold=True)}")
+    _divider()
+    click.echo()
+    for i, (sess_name, raw) in enumerate(sessions, 1):
+        info = raw.split(":", 1)[1].strip() if ":" in raw else ""
+        _menu_item(str(i), f"{sess_name}  {S(info, dim=True)}")
+    click.echo()
+    _menu_item("q", "Quit", key_fg="red")
+    click.echo()
+
+    choice = click.prompt(
+        f"  {S('attach to', fg='cyan')}",
+        default="q", show_default=False, prompt_suffix=" ",
+    ).strip().lower()
+
+    if choice == "q":
+        return
+
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(sessions):
+            target = sessions[idx][0]
+            sys.exit(subprocess.call([psmux, "attach", "-t", target]))
+        else:
+            click.echo(f"  {S('x', fg='red')} Invalid number.")
+    except ValueError:
+        matches = [s for s in sessions if choice in s[0].lower()]
+        if matches:
+            os.execvp(psmux, [psmux, "attach", "-t", matches[0][0]])
+        click.echo(f"  {S('x', fg='red')} No session matching '{choice}'.")
