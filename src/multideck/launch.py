@@ -168,21 +168,18 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                 cmd = _wrap_happy(tool, cmd)
 
             proj_psmux = use_psmux and not is_remote
-            running = plat.find_window(win_title, mode="exact") is not None
-            if not running and not opts.dry_run:
-                if proj_psmux:
-                    resolved_dir = _resolve_path(proj.path, base_dir)
-                    if not resolved_dir:
-                        click.echo(f"SKIP: {proj.path} not found")
-                        continue
+            if proj_psmux and not opts.dry_run:
+                resolved_dir = _resolve_path(proj.path, base_dir)
+                if resolved_dir:
                     wname = _psmux_session_name(win_title)
                     psmux_windows.append(PsmuxWindowOpts(
                         window_name=wname,
                         cwd=resolved_dir,
                         command=cmd,
                     ))
-                    _psmux_colors[wname] = proj.color
-                elif is_remote:
+            running = plat.find_window(win_title, mode="exact") is not None
+            if not running and not opts.dry_run:
+                if is_remote:
                     resolved_dir = proj.remote_path or proj.path
                     plat.launch_terminal(TerminalLaunchOpts(
                         title=win_title,
@@ -213,13 +210,10 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
 
     if psmux_windows and not opts.dry_run:
         plat.launch_psmux_session(psmux_windows)
-        for pw in psmux_windows:
-            plat.attach_psmux(pw.window_name, pw.window_name,
-                              _psmux_colors.get(pw.window_name))
-            time.sleep(config.settings.launch_delay_ms / 1000)
-        click.echo(f"\n  {S('#', fg='yellow')} psmux: {S(str(len(psmux_windows)), fg='yellow', bold=True)} sessions created")
-        click.echo(f"  {S('From SSH:', dim=True)} {S('psmux attach -t <name>', fg='cyan')}"
-                    f" {S('then F1 to switch', dim=True)}")
+        click.echo(f"\n  {S('#', fg='yellow')} psmux session {S('multideck', fg='yellow', bold=True)} ready with "
+                    f"{S(str(len(psmux_windows)), fg='yellow', bold=True)} windows")
+        click.echo(f"  {S('From SSH:', dim=True)} {S('psmux attach -t multideck', fg='cyan')}"
+                    f" {S('then F1 to switch windows', dim=True)}")
 
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 
