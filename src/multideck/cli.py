@@ -1154,7 +1154,7 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
 Host multideck
     HostName {host}
     User {user}
-    RemoteCommand {psmux} attach -t multideck
+    RemoteCommand multideck sessions
     RequestTTY force
 {marker_end}"""
 
@@ -1227,29 +1227,37 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
             sys.exit(1)
         sys.exit(subprocess.call([psmux, "-L", matches[0], "attach"]))
 
-    _banner()
-    click.echo(f"  {S('psmux sessions', bold=True)}  {S('(synced with desktop)', dim=True)}")
-    _divider()
-    click.echo()
-    for i, sess in enumerate(sessions, 1):
-        _menu_item(str(i), sess)
-    click.echo()
-    _menu_item("q", "Quit", key_fg="red")
-    click.echo()
+    while True:
+        click.clear()
+        _banner()
+        click.echo(f"  {S('psmux sessions', bold=True)}  {S('(synced with desktop)', dim=True)}")
+        _divider()
+        click.echo()
+        for i, sess in enumerate(sessions, 1):
+            _menu_item(str(i), sess)
+        click.echo()
+        _menu_item("q", "Quit", key_fg="red")
+        click.echo()
 
-    choice = click.prompt(
-        f"  {S('attach to', fg='cyan')}",
-        default="1", show_default=False, prompt_suffix=" ",
-    ).strip().lower()
+        choice = click.prompt(
+            f"  {S('attach to', fg='cyan')}",
+            default="1", show_default=False, prompt_suffix=" ",
+        ).strip().lower()
 
-    if choice == "q":
-        return
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(sessions):
-            sys.exit(subprocess.call([psmux, "-L", sessions[idx], "attach"]))
-    except ValueError:
-        matches = [s for s in sessions if choice in s.lower()]
-        if matches:
-            sys.exit(subprocess.call([psmux, "-L", matches[0], "attach"]))
-    click.echo(f"  {S('x', fg='red')} Invalid choice.")
+        if choice == "q":
+            return
+
+        target = None
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(sessions):
+                target = sessions[idx]
+        except ValueError:
+            matches = [s for s in sessions if choice in s.lower()]
+            if matches:
+                target = matches[0]
+
+        if target:
+            subprocess.call([psmux, "-L", target, "attach"])
+        else:
+            click.echo(f"  {S('x', fg='red')} Invalid choice.")
