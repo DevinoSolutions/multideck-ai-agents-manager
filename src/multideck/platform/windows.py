@@ -169,6 +169,16 @@ class WindowsPlatform(Platform):
         psmux = shutil.which("psmux")
         if not psmux:
             return
+        group_name = f"md-{window_name}"
+        subprocess.run([psmux, "kill-session", "-t", group_name], capture_output=True)
+        subprocess.run(
+            [psmux, "new-session", "-d", "-s", group_name, "-t", "multideck"],
+            capture_output=True,
+        )
+        subprocess.run(
+            [psmux, "select-window", "-t", f"{group_name}:{window_name}"],
+            capture_output=True,
+        )
         args = [
             "wt", "-w", "new",
             "--title", title,
@@ -176,8 +186,5 @@ class WindowsPlatform(Platform):
         if color:
             args.extend(["--tabColor", color])
         args.append("--suppressApplicationTitle")
-        args.extend([
-            "--", psmux, "new-session", "-t", "multideck",
-            ";", "select-window", "-t", window_name,
-        ])
+        args.extend(["--", psmux, "attach", "-t", group_name])
         subprocess.Popen(args)
