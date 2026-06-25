@@ -1187,7 +1187,7 @@ Host multideck
 @click.argument("name", required=False)
 @click.pass_context
 def sessions_cmd(ctx: click.Context, name: str | None) -> None:
-    """List psmux windows or attach to the multideck session. Usage: multideck sessions [window]"""
+    """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
     import shutil
     import subprocess
 
@@ -1196,55 +1196,45 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
         click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
         sys.exit(1)
 
-    has_session = subprocess.run(
-        [psmux, "has-session", "-t", "multideck"],
-        capture_output=True,
-    )
-    if has_session.returncode != 0:
-        click.echo(f"  {S('x', fg='red')} No active multideck session.")
-        click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled to create sessions.', dim=True)}")
+    result = subprocess.run([psmux, "ls", "-F", "#{session_name}"],
+                            capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        click.echo(f"  {S('x', fg='red')} No active psmux sessions.")
+        click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled.', dim=True)}")
         sys.exit(1)
 
-    result = subprocess.run(
-        [psmux, "list-windows", "-t", "multideck", "-F", "#{window_index}:#{window_name}"],
-        capture_output=True, text=True,
-    )
-    windows = []
-    for line in result.stdout.strip().splitlines():
-        if ":" in line:
-            idx_str, wname = line.split(":", 1)
-            windows.append((idx_str.strip(), wname.strip()))
+    sessions = [s.strip() for s in result.stdout.strip().splitlines() if s.strip()]
 
     if name:
-        subprocess.run(
-            [psmux, "select-window", "-t", f"multideck:{name}"],
-            capture_output=True,
-        )
-        sys.exit(subprocess.call([psmux, "attach", "-t", "multideck"]))
+        matches = [s for s in sessions if name.lower() in s.lower()]
+        if not matches:
+            click.echo(f"  {S('x', fg='red')} No session matching '{name}'.")
+            sys.exit(1)
+        sys.exit(subprocess.call([psmux, "attach", "-t", matches[0]]))
 
     _banner()
-    click.echo(f"  {S('multideck psmux windows', bold=True)}")
+    click.echo(f"  {S('psmux sessions', bold=True)}  {S('(F1 to switch once attached)', dim=True)}")
     _divider()
     click.echo()
-    for idx_str, wname in windows:
-        _menu_item(idx_str, wname)
+    for i, sess in enumerate(sessions, 1):
+        _menu_item(str(i), sess)
     click.echo()
-    _menu_item("a", "Attach (window 0)", key_fg="green")
     _menu_item("q", "Quit", key_fg="red")
     click.echo()
 
     choice = click.prompt(
-        f"  {S('>', fg='cyan', bold=True)}",
-        default="a", show_default=False, prompt_suffix=" ",
+        f"  {S('attach to', fg='cyan')}",
+        default="1", show_default=False, prompt_suffix=" ",
     ).strip().lower()
 
     if choice == "q":
         return
-
-    if choice != "a":
-        subprocess.run(
-            [psmux, "select-window", "-t", f"multideck:{choice}"],
-            capture_output=True,
-        )
-
-    sys.exit(subprocess.call([psmux, "attach", "-t", "multideck"]))
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(sessions):
+            sys.exit(subprocess.call([psmux, "attach", "-t", sessions[idx]]))
+    except ValueError:
+        matches = [s for s in sessions if choice in s.lower()]
+        if matches:
+            sys.exit(subprocess.call([psmux, "attach", "-t", matches[0]]))
+    click.echo(f"  {S('x', fg='red')} Invalid choice.")
