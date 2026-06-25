@@ -1145,39 +1145,16 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
     if not user:
         user = getpass.getuser()
 
-    from multideck.launch import _psmux_session_name
-
-    config_file = _find_config(ctx.obj.get("config_path"))
-    data = _load_raw_config(config_file)
-    projects = data.get("projects", [])
-
     marker_start = "# --- multideck-start ---"
     marker_end = "# --- multideck-end ---"
 
-    lines = [marker_start]
-    count = 0
-    for p in projects:
-        if not p.get("enabled", True):
-            continue
-        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
-        if tool in ("code", "vscode", "cursor"):
-            continue
-        name = p.get("title") or Path(p["path"]).name
-        sock = _psmux_session_name(name)
-        group = p.get("group", "")
-        label = f"md-{sock}"
-
-        lines.append(f"Host {label}")
-        lines.append(f"    HostName {host}")
-        lines.append(f"    User {user}")
-        lines.append(f"    RemoteCommand psmux -L {sock} attach")
-        lines.append(f"    RequestTTY force")
-        lines.append(f"    # {group}/{name}" if group else f"    # {name}")
-        lines.append("")
-        count += 1
-
-    lines.append(marker_end)
-    block = "\n".join(lines)
+    block = f"""{marker_start}
+Host multideck
+    HostName {host}
+    User {user}
+    RemoteCommand multideck sessions
+    RequestTTY force
+{marker_end}"""
 
     if install:
         ssh_dir = Path.home() / ".ssh"
@@ -1194,11 +1171,10 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
             updated = existing.rstrip() + "\n\n" + block + "\n" if existing else block + "\n"
 
         ssh_config.write_text(updated, encoding="utf-8")
-        click.echo(f"  {S('+', fg='green', bold=True)} Wrote {S(str(count), fg='cyan', bold=True)} hosts to {S(str(ssh_config), dim=True)}")
+        click.echo(f"  {S('+', fg='green', bold=True)} Wrote {S('multideck', fg='cyan', bold=True)} host to {S(str(ssh_config), dim=True)}")
         click.echo()
-        click.echo(f"  {S('In Termius:', bold=True)} each project is {S('md-<name>', fg='cyan')}.")
-        click.echo(f"  {S('Tap to connect, swipe between tabs to switch.', dim=True)}")
-        click.echo(f"  {S('Synced with desktop — same terminal, same Claude session.', dim=True)}")
+        click.echo(f"  {S('SSH in:', bold=True)} {S('ssh multideck', fg='cyan')} {S('— shows session picker.', dim=True)}")
+        click.echo(f"  {S('Pick a project, F1 to go back to the list.', dim=True)}")
     else:
         click.echo(block)
         click.echo()
