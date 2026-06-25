@@ -162,3 +162,22 @@ class WindowsPlatform(Platform):
                  "-n", w.window_name, "-c", w.cwd, w.command],
                 check=True,
             )
+
+    def attach_psmux_window(self, window_name: str, title: str,
+                            color: str | None = None) -> None:
+        """Open a Windows Terminal attached to a specific multideck psmux window."""
+        psmux = shutil.which("psmux")
+        if not psmux:
+            return
+        args = [
+            "wt", "-w", "new",
+            "--title", title,
+        ]
+        if color:
+            args.extend(["--tabColor", color])
+        args.append("--suppressApplicationTitle")
+        args.extend([
+            "--", psmux, "new-session", "-t", "multideck",
+            ";", "select-window", "-t", window_name,
+        ])
+        subprocess.Popen(args)
