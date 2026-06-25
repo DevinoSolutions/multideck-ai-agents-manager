@@ -112,6 +112,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     tools = config.settings.tools
     use_psmux = config.settings.psmux and sys.platform == "win32"
     psmux_windows: list[PsmuxWindowOpts] = []
+    _psmux_colors: dict[str, str | None] = {}
 
     for proj in projects:
         tool = proj.tool or config.settings.default_tool
@@ -174,11 +175,13 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                     if not resolved_dir:
                         click.echo(f"SKIP: {proj.path} not found")
                         continue
+                    wname = _psmux_session_name(win_title)
                     psmux_windows.append(PsmuxWindowOpts(
-                        window_name=_psmux_session_name(win_title),
+                        window_name=wname,
                         cwd=resolved_dir,
                         command=cmd,
                     ))
+                    _psmux_colors[wname] = proj.color
                 elif is_remote:
                     resolved_dir = proj.remote_path or proj.path
                     plat.launch_terminal(TerminalLaunchOpts(
@@ -210,6 +213,10 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
 
     if psmux_windows and not opts.dry_run:
         plat.launch_psmux_session(psmux_windows)
+        for pw in psmux_windows:
+            color = _psmux_colors.get(pw.window_name)
+            plat.attach_psmux_window(pw.window_name, pw.window_name, color)
+            time.sleep(config.settings.launch_delay_ms / 1000)
         click.echo(f"\n  {S('#', fg='yellow')} psmux session {S('multideck', fg='yellow', bold=True)} created with "
                     f"{S(str(len(psmux_windows)), fg='yellow', bold=True)} windows")
         click.echo(f"  {S('From SSH:', dim=True)} {S('psmux attach -t multideck', fg='cyan')}")
