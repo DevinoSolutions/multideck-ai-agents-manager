@@ -146,8 +146,13 @@ class WindowsPlatform(Platform):
             [psmux, "kill-session", "-t", opts.session_name],
             capture_output=True,
         )
-        subprocess.run(
-            [psmux, "new-session", "-d", "-s", opts.session_name,
-             "-c", opts.cwd, opts.command],
-            check=True,
-        )
+        args = [
+            "wt", "-w", "new",
+            "--title", opts.session_name,
+        ]
+        if opts.color:
+            args.extend(["--tabColor", opts.color])
+        args.append("--suppressApplicationTitle")
+        args.extend(["--", psmux, "new-session", "-s", opts.session_name,
+                      "-c", opts.cwd, opts.command])
+        subprocess.Popen(args)
