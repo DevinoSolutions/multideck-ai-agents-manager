@@ -1116,6 +1116,99 @@ def docs_cmd() -> None:
     click.echo(_generate_docs())
 
 
+@main.command("termius")
+@click.option("--host", default=None, help="SSH hostname or IP (default: Tailscale IP)")
+@click.option("--user", default=None, help="SSH username (default: current user)")
+@click.option("--install", is_flag=True, help="Write entries to ~/.ssh/config")
+@click.pass_context
+def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install: bool) -> None:
+    """Generate SSH config for Termius tabs — one per project.
+
+    Each project becomes a host in Termius that auto-attaches to its psmux session.
+    """
+    import getpass
+    import shutil
+    import subprocess
+
+    config_file = _find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    projects = data.get("projects", [])
+
+    if not projects:
+        click.echo(f"  {S('x', fg='red')} No projects in config.")
+        sys.exit(1)
+
+    if not host:
+        try:
+            result = subprocess.run(["tailscale", "ip", "-4"],
+                                    capture_output=True, text=True, timeout=5)
+            if result.returncode == 0 and result.stdout.strip():
+                host = result.stdout.strip().splitlines()[0]
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        if not host:
+            host = click.prompt(f"  {S('SSH host/IP', fg='cyan')}", default="localhost")
+
+    if not user:
+        user = getpass.getuser()
+
+    psmux = shutil.which("psmux") or "psmux"
+    from multideck.launch import _psmux_session_name
+
+    marker_start = "# --- multideck-start ---"
+    marker_end = "# --- multideck-end ---"
+
+    lines = [marker_start]
+    for p in projects:
+        if not p.get("enabled", True):
+            continue
+        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
+        if tool in ("code", "vscode", "cursor"):
+            continue
+        name = p.get("title") or Path(p["path"]).name
+        sess = _psmux_session_name(name)
+        group = p.get("group", "")
+        label = f"md-{sess}"
+
+        lines.append(f"Host {label}")
+        lines.append(f"    HostName {host}")
+        lines.append(f"    User {user}")
+        lines.append(f"    RemoteCommand {psmux} attach -t {sess}")
+        lines.append(f"    RequestTTY force")
+        lines.append(f"    # {group}/{name}" if group else f"    # {name}")
+        lines.append("")
+
+    lines.append(marker_end)
+    block = "\n".join(lines)
+
+    if install:
+        ssh_dir = Path.home() / ".ssh"
+        ssh_dir.mkdir(exist_ok=True)
+        ssh_config = ssh_dir / "config"
+
+        existing = ssh_config.read_text(encoding="utf-8") if ssh_config.exists() else ""
+
+        if marker_start in existing:
+            import re
+            pattern = re.escape(marker_start) + r".*?" + re.escape(marker_end)
+            updated = re.sub(pattern, block, existing, flags=re.DOTALL)
+        else:
+            updated = existing.rstrip() + "\n\n" + block + "\n" if existing else block + "\n"
+
+        ssh_config.write_text(updated, encoding="utf-8")
+        count = sum(1 for l in lines if l.startswith("Host "))
+        click.echo(f"  {S('+', fg='green', bold=True)} Wrote {S(str(count), fg='cyan', bold=True)} hosts to {S(str(ssh_config), dim=True)}")
+        click.echo()
+        click.echo(f"  {S('In Termius:', bold=True)} import from SSH config or sync via Tailscale.")
+        click.echo(f"  {S('Each project is a host named', dim=True)} {S('md-<project>', fg='cyan')}{S('.', dim=True)}")
+        click.echo(f"  {S('Open as tabs — each auto-attaches to its psmux session.', dim=True)}")
+    else:
+        click.echo(block)
+        click.echo()
+        click.echo(f"  {S('Add --install to write to ~/.ssh/config', dim=True)}")
+        click.echo(f"  {S('or copy the above into Termius SSH config.', dim=True)}")
+
+
 @main.command("sessions")
 @click.argument("name", required=False)
 @click.pass_context
