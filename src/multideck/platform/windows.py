@@ -142,12 +142,10 @@ class WindowsPlatform(Platform):
         psmux = shutil.which("psmux")
         if not psmux:
             raise FileNotFoundError("psmux not found on PATH")
-        exists = subprocess.run(
-            [psmux, "has-session", "-t", opts.session_name],
+        subprocess.run(
+            [psmux, "kill-session", "-t", opts.session_name],
             capture_output=True,
         )
-        if exists.returncode == 0:
-            return
         subprocess.run(
             [psmux, "new-session", "-d", "-s", opts.session_name,
              "-c", opts.cwd, opts.command],
