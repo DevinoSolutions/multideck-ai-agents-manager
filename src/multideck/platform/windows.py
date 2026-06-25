@@ -152,17 +152,23 @@ class WindowsPlatform(Platform):
         first = windows[0]
         subprocess.run(
             [psmux, "new-session", "-d", "-s", SESSION,
-             "-n", first.window_name, "-c", first.cwd,
-             "cmd", "/k", first.command],
+             "-n", first.window_name, "-c", first.cwd],
             check=True,
+        )
+        subprocess.run(
+            [psmux, "send-keys", "-t", f"{SESSION}:{first.window_name}",
+             first.command, "Enter"],
         )
 
         for w in windows[1:]:
             subprocess.run(
                 [psmux, "new-window", "-t", SESSION,
-                 "-n", w.window_name, "-c", w.cwd,
-                 "cmd", "/k", w.command],
+                 "-n", w.window_name, "-c", w.cwd],
                 check=True,
+            )
+            subprocess.run(
+                [psmux, "send-keys", "-t", f"{SESSION}:{w.window_name}",
+                 w.command, "Enter"],
             )
 
     def attach_psmux_window(self, window_name: str, title: str,
