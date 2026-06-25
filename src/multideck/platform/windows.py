@@ -166,9 +166,8 @@ class WindowsPlatform(Platform):
 
     def attach_psmux(self, session_name: str, title: str,
                      color: str | None = None) -> None:
-        psmux = shutil.which("psmux")
-        if not psmux:
-            return
+        import sys
+        python = sys.executable
         args = [
             "wt", "-w", "new",
             "--title", title,
@@ -176,7 +175,7 @@ class WindowsPlatform(Platform):
         if color:
             args.extend(["--tabColor", color])
         args.append("--suppressApplicationTitle")
-        args.extend(["--", psmux, "-L", session_name, "attach"])
+        args.extend(["--", python, "-m", "multideck", "sessions", session_name])
         subprocess.Popen(args)
 
 

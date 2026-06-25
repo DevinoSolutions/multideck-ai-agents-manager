@@ -1220,10 +1220,8 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
 
     if name:
         matches = [s for s in sessions if name.lower() in s.lower()]
-        if not matches:
-            click.echo(f"  {S('x', fg='red')} No session matching '{name}'.")
-            sys.exit(1)
-        sys.exit(subprocess.call([psmux, "-L", matches[0], "attach"]))
+        if matches:
+            subprocess.call([psmux, "-L", matches[0], "attach"])
 
     while True:
         click.clear()
