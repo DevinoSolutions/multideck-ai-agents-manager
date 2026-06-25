@@ -1218,10 +1218,18 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
         click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled.', dim=True)}")
         sys.exit(1)
 
+    def _reset_terminal():
+        if sys.platform == "win32":
+            subprocess.run(["cmd", "/c", "cls"], shell=False)
+        else:
+            subprocess.run(["stty", "sane"], capture_output=True)
+            subprocess.run(["tput", "reset"], capture_output=True)
+
     if name:
         matches = [s for s in sessions if name.lower() in s.lower()]
         if matches:
             subprocess.call([psmux, "-L", matches[0], "attach"])
+            _reset_terminal()
 
     while True:
         click.clear()
@@ -1255,5 +1263,6 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
 
         if target:
             subprocess.call([psmux, "-L", target, "attach"])
+            _reset_terminal()
         else:
             click.echo(f"  {S('x', fg='red')} Invalid choice.")
