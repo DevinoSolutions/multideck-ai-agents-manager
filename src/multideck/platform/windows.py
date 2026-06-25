@@ -152,14 +152,16 @@ class WindowsPlatform(Platform):
         first = windows[0]
         subprocess.run(
             [psmux, "new-session", "-d", "-s", SESSION,
-             "-n", first.window_name, "-c", first.cwd, first.command],
+             "-n", first.window_name, "-c", first.cwd,
+             "cmd", "/k", first.command],
             check=True,
         )
 
         for w in windows[1:]:
             subprocess.run(
                 [psmux, "new-window", "-t", SESSION,
-                 "-n", w.window_name, "-c", w.cwd, w.command],
+                 "-n", w.window_name, "-c", w.cwd,
+                 "cmd", "/k", w.command],
                 check=True,
             )
 
