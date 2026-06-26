@@ -19,6 +19,28 @@ from multideck.sessions.codex import get_codex_session_ids
 from multideck.titles import generate_titles, get_leaf_name
 
 
+def spawn_detached(args: list[str], extra_flags: int = 0) -> "subprocess.Popen":
+    """Popen a process that outlives both this process and a launching SSH session.
+
+    On Windows, OpenSSH puts the command's children in a job object marked
+    kill-on-close, so when the SSH session ends the children are terminated.
+    ``DETACHED_PROCESS`` only detaches the console -- it does not escape the job.
+    ``CREATE_BREAKAWAY_FROM_JOB`` does, but CreateProcess fails outright if the
+    parent job forbids breakaway, so fall back to a plain detached spawn (the
+    normal case when launched from an interactive console, not under a job).
+    """
+    if sys.platform != "win32":
+        return subprocess.Popen(args)
+    CREATE_NO_WINDOW = 0x08000000
+    DETACHED_PROCESS = 0x00000008
+    CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+    base = CREATE_NO_WINDOW | DETACHED_PROCESS | extra_flags
+    try:
+        return subprocess.Popen(args, creationflags=base | CREATE_BREAKAWAY_FROM_JOB)
+    except OSError:
+        return subprocess.Popen(args, creationflags=base)
+
+
 @dataclass
 class RunOpts:
     retile_all: bool = False
@@ -234,14 +256,13 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                     f" {S('or', dim=True)} {S('multideck sessions', fg='cyan')}")
 
         if config.settings.upload_server:
-            import subprocess
             port = config.settings.upload_port
             python = sys.executable
             serve_args = [python, "-m", "multideck"]
             if opts.config_path:
                 serve_args.extend(["--config", opts.config_path])
             serve_args.extend(["serve", "-p", str(port)])
-            subprocess.Popen(serve_args, creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            spawn_detached(serve_args)
             ip = _get_tailscale_ip()
             url = f"http://{ip}:{port}" if ip else f"http://localhost:{port}"
             click.echo(f"\n  {S('#', fg='magenta')} upload server: {S(url, fg='cyan', bold=True)}"

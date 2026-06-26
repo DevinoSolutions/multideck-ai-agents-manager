@@ -1006,7 +1006,6 @@ def _attach_nomux(target: str, status: dict) -> None:
 def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
     """Start the upload server detached, unless something is already on the port."""
     import socket
-    import subprocess
 
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     probe.settimeout(0.3)
@@ -1022,11 +1021,9 @@ def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
     if config_path:
         args += ["--config", config_path]
     args += ["serve", "-p", str(port)]
-    flags = 0
-    if sys.platform == "win32":
-        # CREATE_NO_WINDOW | DETACHED_PROCESS -> survives the launching SSH session.
-        flags = 0x08000000 | 0x00000008
-    subprocess.Popen(args, creationflags=flags)
+    # Must outlive the SSH bring-up command that spawns it -- see spawn_detached.
+    from multideck.launch import spawn_detached
+    spawn_detached(args)
 
 
 @main.command("up")
