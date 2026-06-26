@@ -187,7 +187,7 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
         method="POST",
     )
     try:
-        with urlopen(req, timeout=10) as resp:
+        with urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())
             return result.get("ok", False)
     except (URLError, OSError, json.JSONDecodeError):
