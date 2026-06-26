@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -302,3 +303,85 @@ def _log_project(name: str, tool: str, running: bool, host: str | None,
     if psmux:
         extras += S(" [psmux]", fg="yellow")
     click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{extras}{loc}")
+
+
+# ---------------------------------------------------------------------------
+# Headless psmux session management -- the host side of `multideck attach`.
+# These never open GUI windows, so they work over a plain SSH command.
+# ---------------------------------------------------------------------------
+
+def eligible_psmux_projects(config: MultideckConfig) -> list[dict]:
+    """Projects that map to a persistent psmux session.
+
+    A project is eligible when it is enabled, runs a CLI agent (not an IDE),
+    and is local to this machine (no ``host`` -- remote projects are launched
+    over SSH directly, not via psmux).
+    """
+    base_dir = config.base_dir
+    if base_dir:
+        base_dir = os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)
+
+    out: list[dict] = []
+    for proj in config.projects:
+        if not proj.enabled:
+            continue
+        tool = proj.tool or config.settings.default_tool
+        if tool in ("code", "vscode", "cursor"):
+            continue
+        if proj.host:
+            continue
+        leaf = proj.title or get_leaf_name(proj.path)
+        out.append({
+            "name": _psmux_session_name(leaf),
+            "path": proj.path,
+            "tool": tool,
+            "resolved": _resolve_path(proj.path, base_dir),
+            "cmd": config.settings.tools.get(tool, ""),
+            "color": proj.color,
+        })
+    return out
+
+
+def psmux_status(config: MultideckConfig) -> tuple[list[dict], list[dict], list[dict]]:
+    """Return ``(up, down, all_projects)`` for eligible projects.
+
+    ``up``/``down`` are split by whether a live psmux session already exists.
+    """
+    from multideck.platform import find_psmux
+
+    psmux = find_psmux()
+    projects = eligible_psmux_projects(config)
+    up: list[dict] = []
+    down: list[dict] = []
+    for p in projects:
+        info = {"name": p["name"], "path": p["path"], "tool": p["tool"]}
+        alive = False
+        if psmux and p["resolved"] and p["cmd"]:
+            r = subprocess.run([psmux, "-L", p["name"], "has-session"], capture_output=True)
+            alive = r.returncode == 0
+        (up if alive else down).append(info)
+    return up, down, projects
+
+
+def bring_up_psmux(config: MultideckConfig, only: list[str] | None = None) -> list[str]:
+    """Create detached psmux sessions for eligible projects.
+
+    ``only`` restricts creation to the given session names (pass the ``down``
+    set to avoid disturbing sessions that are already running). Returns the
+    names that were (re)created.
+    """
+    from multideck.platform import PsmuxWindowOpts, get_platform
+
+    plat = get_platform()
+    windows: list[PsmuxWindowOpts] = []
+    for p in eligible_psmux_projects(config):
+        if only is not None and p["name"] not in only:
+            continue
+        if not p["resolved"] or not p["cmd"]:
+            continue
+        windows.append(PsmuxWindowOpts(
+            window_name=p["name"], cwd=p["resolved"], command=p["cmd"],
+        ))
+    if windows:
+        plat.launch_psmux_session(windows)
+    return [w.window_name for w in windows]
