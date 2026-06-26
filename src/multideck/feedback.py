@@ -1,18 +1,20 @@
-"""Cross-platform feedback for the Alt+V clipboard-upload hotkey.
+"""Cross-platform *visual* feedback for the Alt+V clipboard-upload hotkey.
 
 The hotkey otherwise gives no signal until the pasted path lands in the session,
-which means silence while an upload is in flight (and up to the request timeout
-if the host is slow or unreachable). This adds three layers, each best-effort:
+which means nothing visible while an upload is in flight (and up to the request
+timeout if the host is slow or unreachable). This adds two silent layers, each
+best-effort:
 
-  * an immediate beep the moment a paste is captured / resolved,
   * a colored status line in the listener's terminal,
-  * a native desktop notification via the OS's own tool.
+  * a native desktop notification -- one on capture ("Uploading…") and one on
+    the result -- so something pops the instant you press Alt+V, well before the
+    path would otherwise appear.
 
-Design goal: work the same on Windows, macOS, and Linux with the least possible
-per-OS surface -- no GUI toolkit, no third-party dependency. The only platform
-branches are the one-line beep and a three-way map of notification commands.
-Everything is wrapped so a failure to notify can never break an upload. Set
-``MULTIDECK_NO_FEEDBACK=1`` to disable.
+No sound is ever played. Design goal: work the same on Windows, macOS, and Linux
+with the least possible per-OS surface -- no GUI toolkit, no third-party
+dependency. The only platform branch is a three-way map of notification
+commands. Everything is wrapped so a failure to notify can never break an
+upload. Set ``MULTIDECK_NO_FEEDBACK=1`` to disable.
 """
 from __future__ import annotations
 
@@ -33,13 +35,11 @@ _STAGES = {
 # ASCII fallbacks for terminals that can't encode the glyphs (e.g. cp1252).
 _ASCII = {"start": ">>", "ok": "OK", "fail": "!!"}
 
-# stage -> winsound.MessageBeep type (Windows only; MB_OK / ASTERISK / HAND)
-_TONES = {"start": 0x00000000, "ok": 0x00000040, "fail": 0x00000010}
-
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
-# Tray-balloon toast via built-in .NET WinForms -- no module install required.
-# Values arrive via env vars so project names with quotes/spaces are safe.
+# Tray-balloon toast via built-in .NET WinForms -- no module install required,
+# no sound. Values arrive via env vars so project names with quotes/spaces are
+# safe.
 _PS_BALLOON = (
     "$ErrorActionPreference='SilentlyContinue';"
     "Add-Type -AssemblyName System.Windows.Forms,System.Drawing;"
@@ -58,47 +58,28 @@ def enabled() -> bool:
 
 
 def begin(project: str):
-    """Signal that a paste was captured: instant beep + console line.
+    """Signal that a paste was captured: console line + an "Uploading…" toast.
 
-    No desktop toast here -- the beep is the immediate "I heard you" cue, and a
-    second toast now plus another on the result would just be noise on a fast
-    upload. Returns a handle to pass to finish().
+    Returns a handle to pass to finish().
     """
     if not enabled():
         return None
-    play_tone("start")
-    _console("start", project)
+    _emit("start", project)
     return project
 
 
 def finish(handle, project: str, ok: bool) -> None:
-    """Resolve the feedback: result beep + console line + a single desktop toast."""
+    """Resolve the feedback: console line + a success/failure toast."""
     if not enabled():
         return
-    stage = "ok" if ok else "fail"
-    play_tone(stage)
+    _emit("ok" if ok else "fail", project)
+
+
+def _emit(stage: str, project: str) -> None:
     _console(stage, project)
     # The native notifier may spawn a process / block briefly -- never on the
     # caller's thread.
     threading.Thread(target=_notify, args=(stage, project), daemon=True).start()
-
-
-def play_tone(stage: str) -> None:
-    """Immediate audible cue: winsound on Windows, terminal bell elsewhere."""
-    if not enabled():
-        return
-    if sys.platform == "win32":
-        try:
-            import winsound
-            winsound.MessageBeep(_TONES.get(stage, 0x00000000))
-            return
-        except Exception:
-            pass
-    try:
-        sys.stderr.write("\a")
-        sys.stderr.flush()
-    except Exception:
-        pass
 
 
 def _console(stage: str, project: str) -> None:
