@@ -196,9 +196,12 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
 
 def _do_upload(server_url: str, project: str) -> None:
     """Run upload in a thread so the hook callback returns quickly."""
+    from multideck import feedback
+
+    handle = feedback.begin(project)
     image_data = get_clipboard_image()
-    if image_data:
-        upload_image(server_url, project, image_data)
+    ok = bool(image_data) and upload_image(server_url, project, image_data)
+    feedback.finish(handle, project, ok)
 
 
 def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
