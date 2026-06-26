@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
@@ -180,8 +181,11 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
         f"\r\n"
     ).encode() + image_data + b"\r\n------MultideckUpload--\r\n"
 
+    # ?project= lets the server flash "uploading" in the md:<project> status line
+    # the moment the request lands -- before it reads the image bytes -- so the
+    # feedback shows in the same window you pasted into.
     req = Request(
-        f"{server_url}/upload",
+        f"{server_url}/upload?project={quote(project)}",
         data=body,
         headers={"Content-Type": f"multipart/form-data; boundary=----MultideckUpload"},
         method="POST",
@@ -195,19 +199,17 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
 
 
 def _do_upload(server_url: str, project: str) -> None:
-    """Run upload in a thread so the hook callback returns quickly."""
-    from multideck import feedback
+    """Run upload in a thread so the hook callback returns quickly.
 
-    handle = feedback.begin(project)
+    No feedback is printed here: progress shows in the md:<project> window's own
+    status line, driven by the upload server (see upload_server._flash).
+    """
     image_data = get_clipboard_image()
-    ok = bool(image_data) and upload_image(server_url, project, image_data)
-    feedback.finish(handle, project, ok)
+    if image_data:
+        upload_image(server_url, project, image_data)
 
 
 def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
-    from multideck import feedback
-    feedback.init_console()
-
     alt_held = False
 
     def hook_proc(nCode, wParam, lParam):

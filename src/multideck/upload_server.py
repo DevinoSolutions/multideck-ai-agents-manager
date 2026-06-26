@@ -7,9 +7,11 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from multideck.platform import find_psmux
 
@@ -49,6 +51,59 @@ def stop_server(port: int) -> bool:
 
 
 _UPLOAD_DIR = Path.home() / ".multideck" / "uploads"
+
+# In-session upload feedback: a paste's progress shows in the SAME md:<project>
+# window it landed in, via the psmux (tmux) status line -- never drawn into the
+# agent pane. tmux 3.3 renders these UTF-8 glyphs intact.
+_FB_UP = "↑"    # up arrow   -- uploading
+_FB_OK = "✓"    # check mark -- uploaded
+_FB_NO = "✗"    # ballot x   -- failed
+
+# How long each status-line flash lingers (ms). "uploading" is given a generous
+# ceiling so it stays put until the result overwrites it; if something stalls
+# without raising, it still clears on its own.
+_FLASH_UP_MS = 20000
+_FLASH_OK_MS = 2500
+_FLASH_NO_MS = 3000
+
+# Per-project count of pastes currently in flight, so several at once read as
+# "uploading (2)" / "uploaded (1 more)" instead of stomping each other.
+_inflight: dict[str, int] = {}
+_inflight_lock = threading.Lock()
+
+
+def _inflight_inc(project: str) -> int:
+    with _inflight_lock:
+        n = _inflight.get(project, 0) + 1
+        _inflight[project] = n
+        return n
+
+
+def _inflight_dec(project: str) -> int:
+    with _inflight_lock:
+        n = max(0, _inflight.get(project, 1) - 1)
+        if n:
+            _inflight[project] = n
+        else:
+            _inflight.pop(project, None)
+        return n
+
+
+def _flash(psmux: str | None, project: str, message: str, duration_ms: int) -> None:
+    """Best-effort: flash a transient message in the session's psmux status line.
+
+    Non-disruptive -- ``display-message`` repaints the status bar, not the agent
+    pane. Never raises and never blocks the upload for long.
+    """
+    if not psmux:
+        return
+    try:
+        subprocess.run(
+            [psmux, "-L", project, "display-message", "-d", str(duration_ms), message],
+            capture_output=True, timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -291,43 +346,57 @@ class UploadHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
-        if self.path != "/upload":
+        parsed = urlparse(self.path)
+        if parsed.path != "/upload":
             self.send_error(404)
             return
 
-        fields, files = _parse_multipart(self)
-        project = fields.get("project", "")
-        inject = fields.get("inject", "1") == "1"
-
-        if "file" not in files or not project:
-            self._json_response({"ok": False, "error": "Missing file or project"}, 400)
-            return
-
-        # Discovery is now concurrent (sub-second), so validating against the
-        # session cache no longer risks timing out the upload.
+        psmux = find_psmux()
+        # Discovery is concurrent (sub-second), so validating against the session
+        # cache no longer risks timing out the upload.
         valid_names = {s["name"] for s in self._sessions()}
-        if project not in valid_names:
-            self._json_response({"ok": False, "error": "Unknown project"}, 400)
-            return
 
-        filename, data = files["file"]
-        basename = Path(filename).name.replace(" ", "_")
-        basename = re.sub(r"[^\w.\-]", "_", basename)
-        if not basename or basename.startswith("."):
-            basename = "upload"
-        safe_name = f"{int(time.time())}_{basename}"
+        # The Alt+V listener passes ?project= so we can flash "uploading" the
+        # instant the request lands -- before the image bytes are even read off
+        # the socket -- right in that project's md: window. (The mobile web UI
+        # doesn't, so it skips straight to the result flash below.)
+        flagged = parse_qs(parsed.query).get("project", [""])[0]
+        flagged = flagged if flagged in valid_names else ""
+        if flagged:
+            n = _inflight_inc(flagged)
+            tail = f" ({n})" if n > 1 else ""
+            _flash(psmux, flagged, f"multideck  {_FB_UP} uploading image{tail}", _FLASH_UP_MS)
 
-        _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-        dest = (_UPLOAD_DIR / safe_name).resolve()
-        if not dest.is_relative_to(_UPLOAD_DIR.resolve()):
-            self._json_response({"ok": False, "error": "Invalid filename"}, 400)
-            return
-        dest.write_bytes(data)
+        ok = False
+        project = flagged
+        try:
+            fields, files = _parse_multipart(self)
+            project = fields.get("project", "") or flagged
+            inject = fields.get("inject", "1") == "1"
 
-        injected = False
-        if inject:
-            psmux = find_psmux()
-            if psmux:
+            if "file" not in files or not project:
+                self._json_response({"ok": False, "error": "Missing file or project"}, 400)
+                return
+            if project not in valid_names:
+                self._json_response({"ok": False, "error": "Unknown project"}, 400)
+                return
+
+            filename, data = files["file"]
+            basename = Path(filename).name.replace(" ", "_")
+            basename = re.sub(r"[^\w.\-]", "_", basename)
+            if not basename or basename.startswith("."):
+                basename = "upload"
+            safe_name = f"{int(time.time())}_{basename}"
+
+            _UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            dest = (_UPLOAD_DIR / safe_name).resolve()
+            if not dest.is_relative_to(_UPLOAD_DIR.resolve()):
+                self._json_response({"ok": False, "error": "Invalid filename"}, 400)
+                return
+            dest.write_bytes(data)
+
+            injected = False
+            if inject and psmux:
                 result = subprocess.run(
                     [psmux, "-L", project, "send-keys", "-t", project,
                      "--", str(dest)],
@@ -335,11 +404,23 @@ class UploadHandler(BaseHTTPRequestHandler):
                 )
                 injected = result.returncode == 0
 
-        self._json_response({
-            "ok": True,
-            "path": str(dest),
-            "injected": injected,
-        })
+            ok = True
+            self._json_response({
+                "ok": True,
+                "path": str(dest),
+                "injected": injected,
+            })
+        finally:
+            # Confirm in the same md: status line -- for both the listener (paired
+            # with the early "uploading" flash) and mobile uploads.
+            remaining = _inflight_dec(flagged) if flagged else 0
+            done = project if project in valid_names else flagged
+            if done:
+                more = f"  ({remaining} more)" if remaining else ""
+                if ok:
+                    _flash(psmux, done, f"multideck  {_FB_OK} image uploaded{more}", _FLASH_OK_MS)
+                else:
+                    _flash(psmux, done, f"multideck  {_FB_NO} upload failed{more}", _FLASH_NO_MS)
 
     def _json_response(self, data: dict, status: int = 200):
         body = json.dumps(data).encode()
