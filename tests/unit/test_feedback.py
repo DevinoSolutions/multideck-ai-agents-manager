@@ -1,4 +1,5 @@
 import importlib
+import threading
 
 import pytest
 
@@ -6,47 +7,16 @@ from multideck import feedback
 
 
 class TestStages:
-    def test_each_stage_has_glyph_color_title(self):
+    def test_each_stage_has_glyph_color_ascii(self):
         for stage in ("start", "ok", "fail"):
-            glyph, color, title = feedback._STAGES[stage]
-            assert glyph and title
+            glyph, color, ascii_glyph = feedback._STAGES[stage]
+            assert glyph and ascii_glyph
             assert color.isdigit()
 
-    def test_stages_have_distinct_titles(self):
-        titles = {feedback._STAGES[s][2] for s in ("start", "ok", "fail")}
-        assert len(titles) == 3
-
-
-class TestNotifySpec:
-    def test_macos_uses_osascript_with_env(self):
-        argv, env = feedback._notify_spec("ok", "eBay", "darwin")
-        assert argv[0] == "osascript"
-        assert env["MD_MSG"] == "eBay"
-        assert env["MD_TITLE"]
-
-    def test_windows_uses_powershell_with_env(self):
-        argv, env = feedback._notify_spec("fail", "App Releasing Sessions", "win32")
-        assert argv[0] == "powershell"
-        assert env["MD_MSG"] == "App Releasing Sessions"   # spaces safe via env
-        assert env["MD_ICON"] == "error"
-
-    def test_linux_uses_notify_send_argv(self):
-        argv, env = feedback._notify_spec("ok", "eBay", "linux")
-        assert argv[0] == "notify-send"
-        assert "eBay" in argv          # passed as argv, no shell -> quoting-safe
-        assert env == {}
-
-    def test_unknown_platform_returns_none(self):
-        assert feedback._notify_spec("ok", "x", "sunos5") is None
-
-    def test_project_with_quotes_never_reaches_a_shell(self):
-        # macOS/Windows carry the value in env, Linux in argv -- never interpolated
-        # into a shell string, so quotes/semicolons can't break or inject.
-        nasty = 'a"; rm -rf ~ #'
-        for plat in ("darwin", "win32"):
-            argv, env = feedback._notify_spec("ok", nasty, plat)
-            assert env["MD_MSG"] == nasty
-            assert not any(nasty in a for a in argv)
+    def test_no_popup_or_audio_surface(self):
+        # terminal-only: no desktop-notification or sound entry points remain
+        for attr in ("play_tone", "_notify", "_notify_spec", "_PS_BALLOON", "_TONES"):
+            assert not hasattr(feedback, attr)
 
 
 class TestEnabled:
@@ -60,23 +30,74 @@ class TestEnabled:
         assert feedback.enabled() is False
 
 
-class TestSafeApi:
-    def test_begin_finish_noop_when_disabled(self, monkeypatch):
+class TestLog:
+    def test_begin_returns_incrementing_id(self, monkeypatch):
+        monkeypatch.delenv("MULTIDECK_NO_FEEDBACK", raising=False)
+        a = feedback.begin("eBay")
+        b = feedback.begin("marka")
+        assert isinstance(a, int) and isinstance(b, int)
+        assert b > a
+
+    def test_start_line_names_project_and_id(self, monkeypatch, capsys):
+        monkeypatch.delenv("MULTIDECK_NO_FEEDBACK", raising=False)
+        uid = feedback.begin("eBay")
+        out = capsys.readouterr().out
+        assert "eBay" in out
+        assert f"#{uid}" in out
+        assert "uploading" in out
+
+    def test_finish_ok_shows_sent_and_timing(self, monkeypatch, capsys):
+        monkeypatch.delenv("MULTIDECK_NO_FEEDBACK", raising=False)
+        uid = feedback.begin("eBay")
+        capsys.readouterr()
+        feedback.finish(uid, "eBay", True)
+        out = capsys.readouterr().out
+        assert f"#{uid}" in out
+        assert "sent" in out
+        assert "s)" in out  # "(0.0s)" timing tail
+
+    def test_finish_fail_shows_failed(self, monkeypatch, capsys):
+        monkeypatch.delenv("MULTIDECK_NO_FEEDBACK", raising=False)
+        uid = feedback.begin("personal-portfolio")
+        capsys.readouterr()
+        feedback.finish(uid, "personal-portfolio", False)
+        out = capsys.readouterr().out
+        assert "failed" in out
+
+    def test_concurrent_uploads_keep_distinct_ids(self, monkeypatch, capsys):
+        monkeypatch.delenv("MULTIDECK_NO_FEEDBACK", raising=False)
+        a = feedback.begin("eBay")
+        b = feedback.begin("eBay")          # same project, two in flight
+        assert a != b
+        feedback.finish(b, "eBay", True)
+        feedback.finish(a, "eBay", True)
+        out = capsys.readouterr().out
+        assert f"#{a}" in out and f"#{b}" in out
+
+    def test_disabled_is_silent_noop(self, monkeypatch, capsys):
         monkeypatch.setenv("MULTIDECK_NO_FEEDBACK", "1")
         h = feedback.begin("proj")
         assert h is None
         feedback.finish(h, "proj", True)
-        feedback.finish(h, "proj", False)
+        assert capsys.readouterr().out == ""
 
-    def test_no_audio_api_exposed(self):
-        # feedback is visual-only: there must be no tone/beep entry point.
-        assert not hasattr(feedback, "play_tone")
-        assert not hasattr(feedback, "_TONES")
+    def test_thread_safe_under_load(self, monkeypatch):
+        monkeypatch.delenv("MULTIDECK_NO_FEEDBACK", raising=False)
+        with feedback._lock:
+            feedback._active.clear()  # ignore dangling entries from other tests
 
-    def test_console_handles_ascii_fallback(self, capsys):
-        feedback._console("ok", "eBay")
-        out = capsys.readouterr().out
-        assert "eBay" in out
+        def worker(name):
+            for _ in range(20):
+                uid = feedback.begin(name)
+                feedback.finish(uid, name, True)
+
+        threads = [threading.Thread(target=worker, args=(f"p{i}",)) for i in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        # no active uploads should be left dangling
+        assert feedback._active == {}
 
     def test_module_imports_on_any_platform(self):
         importlib.reload(feedback)
