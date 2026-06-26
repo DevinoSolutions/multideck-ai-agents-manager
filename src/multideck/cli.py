@@ -606,7 +606,7 @@ def main(
         return
 
     if attach_host:
-        _attach_flow(attach_host, no_mux=attach_no_mux)
+        _attach_flow(attach_host, no_mux=attach_no_mux, group=group)
         return
 
     config_file = _find_config(config_path)
@@ -758,15 +758,18 @@ def _tile_titles(titles: list[str]) -> None:
             click.echo(f"    {S('x', fg='red')} {title} {S('not found', dim=True)}")
 
 
-def _attach_flow(host: str | None, no_mux: bool = False) -> None:
+def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = None) -> None:
     """Remote-PC attach: bring the host's sessions up, then open local windows.
 
     Default (psmux): tile one local window per remote psmux session and run the
     Alt+V image hotkey. ``--no-mux``: open one plain SSH window per project that
-    runs the agent directly (no multiplexer).
+    runs the agent directly (no multiplexer). ``group`` limits the whole flow to
+    one project group on the host.
     """
     import subprocess
     import time
+
+    grp = f' -g "{group}"' if group else ""
 
     if not host:
         default = _default_attach_host()
@@ -783,12 +786,13 @@ def _attach_flow(host: str | None, no_mux: bool = False) -> None:
 
     _banner()
     mode_tag = S("[no-mux]", fg="yellow") if no_mux else S("[psmux]", fg="cyan")
-    click.echo(f"  {S('Attach', bold=True)}  {S(f'-> {target}', dim=True)}  {mode_tag}")
+    grp_tag = f"  {S(f'group={group}', fg='cyan')}" if group else ""
+    click.echo(f"  {S('Attach', bold=True)}  {S(f'-> {target}', dim=True)}  {mode_tag}{grp_tag}")
     _divider()
     click.echo()
 
     click.echo(f"  {S('Querying projects on host...', dim=True)}")
-    status = _ssh_json(target, "multideck up --json", timeout=30)
+    status = _ssh_json(target, f"multideck up --json{grp}", timeout=30)
     if status is None:
         rc, _, _ = _ssh_capture(target, "multideck --version")
         click.echo(f"\n  {S('x', fg='red')} Could not read project status from {target}.")
@@ -797,6 +801,10 @@ def _attach_flow(host: str | None, no_mux: bool = False) -> None:
         sys.exit(1)
     if status.get("error"):
         click.echo(f"\n  {S('x', fg='red')} Host error: {status['error']}")
+        sys.exit(1)
+    if not status.get("projects"):
+        where = f" in group '{group}'" if group else ""
+        click.echo(f"\n  {S('x', fg='red')} No eligible projects{where} on the host.")
         sys.exit(1)
 
     if no_mux:
@@ -814,11 +822,11 @@ def _attach_flow(host: str | None, no_mux: bool = False) -> None:
         click.echo(f"  {S('Not up:', dim=True)} {', '.join(d['name'] for d in down)}")
         if click.confirm(f"  Bring up {len(down)} project(s) on {hostname}?", default=True):
             click.echo(f"  {S('o', fg='cyan')} starting sessions on host (this can take a moment)...")
-            rc, _, err = _ssh_capture(target, "multideck up", timeout=180)
+            rc, _, err = _ssh_capture(target, f"multideck up{grp}", timeout=180)
             if rc != 0:
                 click.echo(f"  {S('!', fg='yellow')} bring-up exited {rc}: {S(err.strip()[:200], dim=True)}")
             time.sleep(1)
-            status = _ssh_json(target, "multideck up --json", timeout=30) or status
+            status = _ssh_json(target, f"multideck up --json{grp}", timeout=30) or status
             up = status.get("up", [])
 
     if not up:
@@ -911,8 +919,9 @@ def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
 @main.command("up")
 @click.option("--json", "as_json", is_flag=True, help="Print session status as JSON without changing anything")
 @click.option("--all", "do_all", is_flag=True, help="Recreate every session, not just the ones that are down")
+@click.option("-g", "--group", default=None, help="Only projects tagged with this group")
 @click.pass_context
-def up_cmd(ctx: click.Context, as_json: bool, do_all: bool) -> None:
+def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -> None:
     """Ensure a persistent psmux session per project (host side of `attach`)."""
     config_file = _find_config(ctx.obj.get("config_path"))
     try:
@@ -926,7 +935,7 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool) -> None:
 
     from multideck.launch import bring_up_psmux, psmux_status
 
-    up, down, projects = psmux_status(cfg)
+    up, down, projects = psmux_status(cfg, group=group)
 
     if as_json:
         click.echo(json.dumps({
@@ -950,10 +959,13 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool) -> None:
     click.echo()
 
     targets = None if do_all else [d["name"] for d in down]
-    if not do_all and not down:
+    if not projects:
+        where = f" in group '{group}'" if group else ""
+        click.echo(f"  {S('!', fg='yellow')} No eligible projects{where}.")
+    elif not do_all and not down:
         click.echo(f"  {S('+', fg='green')} All {len(up)} session(s) already up.")
     else:
-        created = bring_up_psmux(cfg, only=targets)
+        created = bring_up_psmux(cfg, only=targets, group=group)
         click.echo(f"  {S('+', fg='green')} Brought up {S(str(len(created)), fg='green', bold=True)}"
                    f" session(s): {S(', '.join(created) or '(none)', dim=True)}")
 
@@ -965,15 +977,17 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool) -> None:
 @main.command("attach")
 @click.argument("host", required=False)
 @click.option("--no-mux", is_flag=True, help="One plain SSH window per project (no psmux/tmux)")
+@click.option("-g", "--group", default=None, help="Only attach/bring up projects in this group")
 @click.pass_context
-def attach_cmd(ctx: click.Context, host: str | None, no_mux: bool) -> None:
+def attach_cmd(ctx: click.Context, host: str | None, no_mux: bool, group: str | None) -> None:
     """Attach to another machine's multideck sessions over SSH.
 
     HOST is user@host (omit to be prompted; blank uses the host from your local
     config). Default tiles one window per remote psmux session with Alt+V image
-    paste; --no-mux opens a direct SSH window per project instead.
+    paste; --no-mux opens a direct SSH window per project instead. -g limits the
+    flow to one project group on the host.
     """
-    _attach_flow(host, no_mux=no_mux)
+    _attach_flow(host, no_mux=no_mux, group=group)
 
 
 @main.command("hotkey")
@@ -1470,7 +1484,9 @@ def _generate_docs() -> str:
     w("| `multideck docs` | Print this reference (pipe to file for AI context). |")
     w("| `multideck up` | (Host side) ensure a persistent psmux session per project. |")
     w("| `multideck up --json` | Print session status (up/down/projects) as JSON, change nothing. |")
+    w("| `multideck up -g <group>` | Bring up sessions for only one project group. |")
     w("| `multideck attach [host]` | From another PC: bring host sessions up over SSH, tile locally, Alt+V hotkey. |")
+    w("| `multideck attach <host> -g <group>` | Attach to only one project group on the host. |")
     w("| `multideck attach <host> --no-mux` | Attach with a direct SSH window per project (no psmux/tmux). |")
     w("| `multideck --attach-to <host>` | (deprecated alias for `multideck attach <host>`). |")
     w("| `multideck serve` | Start upload server for mobile image transfer. |")

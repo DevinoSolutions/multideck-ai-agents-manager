@@ -310,12 +310,13 @@ def _log_project(name: str, tool: str, running: bool, host: str | None,
 # These never open GUI windows, so they work over a plain SSH command.
 # ---------------------------------------------------------------------------
 
-def eligible_psmux_projects(config: MultideckConfig) -> list[dict]:
+def eligible_psmux_projects(config: MultideckConfig, group: str | None = None) -> list[dict]:
     """Projects that map to a persistent psmux session.
 
     A project is eligible when it is enabled, runs a CLI agent (not an IDE),
     and is local to this machine (no ``host`` -- remote projects are launched
-    over SSH directly, not via psmux).
+    over SSH directly, not via psmux). When ``group`` is given, only projects
+    tagged with that group (case-insensitive) are returned.
     """
     base_dir = config.base_dir
     if base_dir:
@@ -324,6 +325,8 @@ def eligible_psmux_projects(config: MultideckConfig) -> list[dict]:
     out: list[dict] = []
     for proj in config.projects:
         if not proj.enabled:
+            continue
+        if group and (not proj.group or proj.group.lower() != group.lower()):
             continue
         tool = proj.tool or config.settings.default_tool
         if tool in ("code", "vscode", "cursor"):
@@ -342,7 +345,7 @@ def eligible_psmux_projects(config: MultideckConfig) -> list[dict]:
     return out
 
 
-def psmux_status(config: MultideckConfig) -> tuple[list[dict], list[dict], list[dict]]:
+def psmux_status(config: MultideckConfig, group: str | None = None) -> tuple[list[dict], list[dict], list[dict]]:
     """Return ``(up, down, all_projects)`` for eligible projects.
 
     ``up``/``down`` are split by whether a live psmux session already exists.
@@ -350,7 +353,7 @@ def psmux_status(config: MultideckConfig) -> tuple[list[dict], list[dict], list[
     from multideck.platform import find_psmux
 
     psmux = find_psmux()
-    projects = eligible_psmux_projects(config)
+    projects = eligible_psmux_projects(config, group)
     up: list[dict] = []
     down: list[dict] = []
     for p in projects:
@@ -363,18 +366,20 @@ def psmux_status(config: MultideckConfig) -> tuple[list[dict], list[dict], list[
     return up, down, projects
 
 
-def bring_up_psmux(config: MultideckConfig, only: list[str] | None = None) -> list[str]:
+def bring_up_psmux(config: MultideckConfig, only: list[str] | None = None,
+                   group: str | None = None) -> list[str]:
     """Create detached psmux sessions for eligible projects.
 
     ``only`` restricts creation to the given session names (pass the ``down``
-    set to avoid disturbing sessions that are already running). Returns the
-    names that were (re)created.
+    set to avoid disturbing sessions that are already running); ``group``
+    restricts to a single project group. Returns the names that were
+    (re)created.
     """
     from multideck.platform import PsmuxWindowOpts, get_platform
 
     plat = get_platform()
     windows: list[PsmuxWindowOpts] = []
-    for p in eligible_psmux_projects(config):
+    for p in eligible_psmux_projects(config, group):
         if only is not None and p["name"] not in only:
             continue
         if not p["resolved"] or not p["cmd"]:
