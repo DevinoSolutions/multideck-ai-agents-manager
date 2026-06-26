@@ -3,13 +3,49 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import re
 import subprocess
+import sys
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 from multideck.platform import find_psmux
+
+
+def _pid_path(port: int) -> Path:
+    return Path.home() / ".multideck" / f"upload_server-{port}.pid"
+
+
+def server_pid(port: int) -> int | None:
+    """Return the PID of the upload server recorded for this port, if any."""
+    p = _pid_path(port)
+    if not p.exists():
+        return None
+    try:
+        return int(p.read_text().strip())
+    except (ValueError, OSError):
+        return None
+
+
+def stop_server(port: int) -> bool:
+    """Stop the upload server running on the given port. Returns True if stopped."""
+    pid = server_pid(port)
+    if not pid:
+        return False
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+        else:
+            os.kill(pid, 15)
+    except OSError:
+        return False
+    try:
+        _pid_path(port).unlink()
+    except OSError:
+        pass
+    return True
 
 
 _UPLOAD_DIR = Path.home() / ".multideck" / "uploads"
@@ -307,4 +343,13 @@ class UploadHandler(BaseHTTPRequestHandler):
 def run_server(port: int = 8080, config_path: str | None = None) -> None:
     UploadHandler.config_path = config_path
     server = HTTPServer(("0.0.0.0", port), UploadHandler)
-    server.serve_forever()
+    pid_file = _pid_path(port)
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(str(os.getpid()))
+    try:
+        server.serve_forever()
+    finally:
+        try:
+            pid_file.unlink()
+        except OSError:
+            pass

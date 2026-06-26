@@ -465,8 +465,17 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
         if groups:
             group_list = S(f"  {' | '.join(groups)}", dim=True)
             _menu_item("3", "Launch a group" + group_list)
+        click.echo()
+        _menu_item("u", "Bring up sessions in background", key_fg="cyan",
+                   extra=S("  (no windows)", dim=True))
+        _menu_item("s", "Open session switcher", key_fg="cyan",
+                   extra=S("  (one window, switch inside)", dim=True))
         _menu_item("a", "Attach to a remote host", key_fg="cyan",
-                   extra=S("  (SSH to another PC's sessions)", dim=True))
+                   extra=S("  (SSH to another PC)", dim=True))
+        click.echo()
+        _menu_item("t", "Status", extra=S("  (what's running)", dim=True))
+        _menu_item("d", "Shut down sessions", key_fg="yellow")
+        click.echo()
         _menu_item("e", "Edit config", key_fg="yellow")
         _menu_item("q", "Quit", key_fg="red")
         click.echo()
@@ -480,8 +489,16 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
             return {"action": "run", "retile_all": False, "group": None, "reload": config_changed}
         elif choice == "2":
             return {"action": "run", "retile_all": True, "group": None, "reload": config_changed}
+        elif choice == "u":
+            return {"action": "up", "reload": config_changed}
+        elif choice == "s":
+            return {"action": "sessions", "reload": config_changed}
         elif choice == "a":
             return {"action": "attach", "reload": config_changed}
+        elif choice == "t":
+            return {"action": "status", "reload": config_changed}
+        elif choice == "d":
+            return {"action": "down", "reload": config_changed}
         elif choice == "3" and groups:
             click.echo()
             for i, g in enumerate(groups, 1):
@@ -657,17 +674,32 @@ def main(
 
     has_directive = go or retile_all or dry_run or group
     if not has_directive and sys.stdin.isatty():
-        groups = sorted({p.group for p in cfg.projects if p.group})
-        menu = _show_menu(list(groups), config_file)
-        if menu["action"] == "quit":
-            return
-        if menu["action"] == "attach":
-            _attach_flow(None, no_mux=False)
-            return
-        if menu.get("reload"):
-            cfg = load_config(str(config_file))
-        retile_all = menu["retile_all"]
-        group = menu.get("group")
+        while True:
+            groups = sorted({p.group for p in cfg.projects if p.group})
+            menu = _show_menu(list(groups), config_file)
+            action = menu["action"]
+            if action == "quit":
+                return
+            if action == "attach":
+                _attach_flow(None, no_mux=False)
+                return
+            if action == "sessions":
+                _run_sessions_picker(config_file)
+                continue
+            if action == "status":
+                _menu_status(config_file)
+                continue
+            if action == "up":
+                _menu_up(config_file)
+                continue
+            if action == "down":
+                _menu_down(config_file)
+                continue
+            if menu.get("reload"):
+                cfg = load_config(str(config_file))
+            retile_all = menu["retile_all"]
+            group = menu.get("group")
+            break
 
     from multideck.launch import run_multideck, RunOpts
     run_multideck(cfg, RunOpts(
@@ -1571,6 +1603,11 @@ def _generate_docs() -> str:
     w("| `multideck attach <host> -g <group>` | Attach to only one project group on the host. |")
     w("| `multideck attach <host> --no-mux` | Attach with a direct SSH window per project (no psmux/tmux). |")
     w("| `multideck --attach-to <host>` | (deprecated alias for `multideck attach <host>`). |")
+    w("| `multideck status` | Show which psmux sessions and the upload server are running. |")
+    w("| `multideck down` | Shut down all running psmux sessions. |")
+    w("| `multideck down -g <group>` | Shut down only one group's sessions. |")
+    w("| `multideck down <name> [<name>...]` | Shut down specific sessions by name. |")
+    w("| `multideck down --all` | Stop every session and the upload server. |")
     w("| `multideck serve` | Start upload server for mobile image transfer. |")
     w("| `multideck serve -p 9090` | Use a custom port (default 8033). |")
     w("| `multideck hotkey` | Listen for Alt+V to upload clipboard images (standalone). |")
@@ -1706,24 +1743,19 @@ def serve_cmd(ctx: click.Context, port: int) -> None:
         click.echo(f"\n  {S('Server stopped.', dim=True)}")
 
 
-@main.command("sessions")
-@click.argument("name", required=False)
-@click.pass_context
-def sessions_cmd(ctx: click.Context, name: str | None) -> None:
-    """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
+def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
+    """Looping psmux session picker: list live sessions, attach to a choice, repeat."""
     import subprocess
 
+    from multideck.launch import _psmux_session_name
     from multideck.platform import find_psmux
 
     psmux = find_psmux()
     if not psmux:
         click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
-        sys.exit(1)
+        return
 
-    config_file = _find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    from multideck.launch import _psmux_session_name
-
     sessions: list[str] = []
     for p in data.get("projects", []):
         if not p.get("enabled", True):
@@ -1733,15 +1765,14 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
             continue
         proj_name = p.get("title") or Path(p["path"]).name
         sock = _psmux_session_name(proj_name)
-        result = subprocess.run([psmux, "-L", sock, "has-session"],
-                                capture_output=True)
-        if result.returncode == 0:
+        if subprocess.run([psmux, "-L", sock, "has-session"], capture_output=True).returncode == 0:
             sessions.append(sock)
 
     if not sessions:
         click.echo(f"  {S('x', fg='red')} No active psmux sessions.")
-        click.echo(f"  {S('Run', dim=True)} {S('multideck --go', bold=True)} {S('with psmux enabled.', dim=True)}")
-        sys.exit(1)
+        click.echo(f"  {S('Run', dim=True)} {S('multideck up', bold=True)} {S('or', dim=True)} "
+                   f"{S('multideck --go', bold=True)} {S('first.', dim=True)}")
+        return
 
     def _reset_terminal():
         if sys.platform == "win32":
@@ -1765,7 +1796,7 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
         for i, sess in enumerate(sessions, 1):
             _menu_item(str(i), sess)
         click.echo()
-        _menu_item("q", "Quit", key_fg="red")
+        _menu_item("q", "Back", key_fg="yellow")
         click.echo()
 
         choice = click.prompt(
@@ -1791,3 +1822,214 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
             _reset_terminal()
         else:
             click.echo(f"  {S('x', fg='red')} Invalid choice.")
+
+
+@main.command("sessions")
+@click.argument("name", required=False)
+@click.pass_context
+def sessions_cmd(ctx: click.Context, name: str | None) -> None:
+    """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    _run_sessions_picker(config_file, name)
+
+
+# ---------------------------------------------------------------------------
+# multideck status / down  (inspect and shut down running sessions/services)
+# ---------------------------------------------------------------------------
+
+def _probe_port(port: int) -> bool:
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.3)
+    try:
+        s.connect(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _render_status(config_file: Path) -> None:
+    from multideck.launch import psmux_status
+
+    cfg = load_config(str(config_file))
+    up, down, _ = psmux_status(cfg)
+
+    _banner()
+    click.echo(f"  {S('Status', bold=True)}   "
+               f"{S(str(len(up)), fg='green', bold=True)} running  {S('/', dim=True)}  "
+               f"{S(str(len(down)), fg='yellow', bold=True)} stopped")
+    _divider()
+    if up:
+        order, buckets = _grouped(up)
+        for g in order:
+            click.echo(f"  {S(g, fg='green', bold=True)}  {S(f'({len(buckets[g])})', dim=True)}")
+            _print_names(buckets[g])
+    else:
+        click.echo(f"  {S('No sessions running.', dim=True)}  "
+                   f"{S('Bring some up from the menu or `multideck up`.', dim=True)}")
+    if down:
+        preview = ", ".join(d["name"] for d in down[:6]) + ("..." if len(down) > 6 else "")
+        click.echo(f"\n  {S(str(len(down)), fg='yellow', bold=True)} not running  {S('(' + preview + ')', dim=True)}")
+    _divider()
+    on = _probe_port(cfg.settings.upload_port)
+    server = (S(f"ON  port {cfg.settings.upload_port}", fg="green", bold=True)
+              if on else S("off", dim=True))
+    click.echo(f"  {S('Upload server', bold=True)}   {server}")
+    click.echo(f"  {S('Alt+V listener', bold=True)}   "
+               f"{S('runs with `multideck attach` (or `multideck hotkey`)', dim=True)}")
+
+
+@main.command("status")
+@click.pass_context
+def status_cmd(ctx: click.Context) -> None:
+    """Show which psmux sessions and services are currently running."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    if not config_file.exists():
+        click.echo("No config found. Run multideck first.", err=True)
+        sys.exit(1)
+    _render_status(config_file)
+
+
+@main.command("down")
+@click.argument("names", nargs=-1)
+@click.option("-g", "--group", default=None, help="Only sessions in this group")
+@click.option("--all", "do_all", is_flag=True, help="Stop every session and the upload server")
+@click.option("--server", "stop_srv", is_flag=True, help="Also stop the upload server")
+@click.pass_context
+def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
+             do_all: bool, stop_srv: bool) -> None:
+    """Shut down running psmux sessions (and optionally the upload server)."""
+    config_file = _find_config(ctx.obj.get("config_path"))
+    try:
+        cfg = load_config(str(config_file))
+    except (ValueError, FileNotFoundError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    from multideck.launch import kill_psmux, psmux_status
+
+    up, _, _ = psmux_status(cfg, group=group)
+    up_names = [u["name"] for u in up]
+    if names:
+        wanted = {n.lower() for n in names}
+        targets = [n for n in up_names if n.lower() in wanted]
+    else:
+        targets = up_names
+
+    if targets:
+        kill_psmux(targets)
+        click.echo(f"  {S('+', fg='green')} Stopped {S(str(len(targets)), fg='green', bold=True)}"
+                   f" session(s): {S(', '.join(targets), dim=True)}")
+    else:
+        click.echo(f"  {S('-', dim=True)} No matching running sessions.")
+
+    if do_all or stop_srv:
+        from multideck.upload_server import stop_server
+        if stop_server(cfg.settings.upload_port):
+            click.echo(f"  {S('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}.")
+        else:
+            click.echo(f"  {S('-', dim=True)} Upload server was not running.")
+
+
+def _menu_status(config_file: Path) -> None:
+    _render_status(config_file)
+    click.echo()
+    click.pause(info=f"  {S('press any key to return', dim=True)}")
+
+
+def _menu_up(config_file: Path) -> None:
+    from multideck.launch import bring_up_psmux, psmux_status
+
+    cfg = load_config(str(config_file))
+    up, down, projects = psmux_status(cfg)
+    _banner()
+    click.echo(f"  {S('Bring up sessions in background', bold=True)}  {S('(no windows)', dim=True)}")
+    _divider()
+    if not projects:
+        click.echo(f"  {S('!', fg='yellow')} No psmux-eligible projects in config.")
+    elif not down:
+        click.echo(f"  {S('+', fg='green')} All {len(up)} session(s) already running.")
+    else:
+        dn_order, dn_buckets = _grouped(down)
+        pickable = _print_session_overview("this machine", up, down)
+        opts = [f"{S('a', fg='cyan', bold=True)}=all {len(down)}"]
+        if pickable:
+            opts.append(f"{S('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
+        opts.append(f"{S('n', fg='cyan', bold=True)}=cancel")
+        click.echo(f"  {S('Bring up', bold=True)}   " + "   ".join(opts))
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="a",
+                              show_default=False, prompt_suffix=" ").strip().lower()
+        if choice in ("n", "no", "cancel", "q"):
+            return
+        if choice in ("a", "all", "y", ""):
+            only = [d["name"] for d in down]
+        elif choice.isdigit() and 1 <= int(choice) <= len(pickable):
+            only = dn_buckets[pickable[int(choice) - 1]]
+        else:
+            sel = next((g for g in pickable if g.lower() == choice), None)
+            if not sel:
+                click.echo(f"  {S('?', fg='yellow')} cancelled.")
+                return
+            only = dn_buckets[sel]
+        created = bring_up_psmux(cfg, only=only)
+        click.echo(f"  {S('+', fg='green')} Brought up {S(str(len(created)), fg='green', bold=True)} "
+                   f"session(s) headlessly {S('(switch with the session switcher)', dim=True)}.")
+        if cfg.settings.upload_server:
+            _maybe_start_upload_server(cfg.settings.upload_port, str(config_file))
+    click.echo()
+    click.pause(info=f"  {S('press any key to return', dim=True)}")
+
+
+def _menu_down(config_file: Path) -> None:
+    from multideck.launch import kill_psmux, psmux_status
+
+    cfg = load_config(str(config_file))
+    up, _, _ = psmux_status(cfg)
+    _banner()
+    click.echo(f"  {S('Shut down sessions', bold=True)}")
+    _divider()
+    if not up:
+        click.echo(f"  {S('-', dim=True)} Nothing is running.")
+    else:
+        order, buckets = _grouped(up)
+        for g in order:
+            click.echo(f"  {S(g, fg='green', bold=True)}  {S(f'({len(buckets[g])})', dim=True)}")
+            _print_names(buckets[g])
+        pickable = [g for g in order if g != "(no group)"]
+        srv_on = _probe_port(cfg.settings.upload_port)
+        click.echo()
+        opts = [f"{S('a', fg='cyan', bold=True)}=all {len(up)}"]
+        if pickable:
+            opts.append(f"{S('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
+        if srv_on:
+            opts.append(f"{S('x', fg='cyan', bold=True)}=all + server")
+        opts.append(f"{S('n', fg='cyan', bold=True)}=cancel")
+        click.echo(f"  {S('Shut down', bold=True)}   " + "   ".join(opts))
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="n",
+                              show_default=False, prompt_suffix=" ").strip().lower()
+        also_server = False
+        if choice in ("n", "no", "cancel", "q", ""):
+            return
+        if choice in ("a", "all", "y"):
+            targets = [u["name"] for u in up]
+        elif choice == "x":
+            targets = [u["name"] for u in up]
+            also_server = True
+        elif choice.isdigit() and 1 <= int(choice) <= len(pickable):
+            targets = buckets[pickable[int(choice) - 1]]
+        else:
+            sel = next((g for g in pickable if g.lower() == choice), None)
+            if not sel:
+                click.echo(f"  {S('?', fg='yellow')} cancelled.")
+                return
+            targets = buckets[sel]
+        kill_psmux(targets)
+        click.echo(f"  {S('+', fg='green')} Stopped {S(str(len(targets)), fg='green', bold=True)} session(s).")
+        if also_server:
+            from multideck.upload_server import stop_server
+            stop_server(cfg.settings.upload_port)
+            click.echo(f"  {S('+', fg='green')} Stopped upload server.")
+    click.echo()
+    click.pause(info=f"  {S('press any key to return', dim=True)}")

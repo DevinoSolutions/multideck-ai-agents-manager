@@ -74,3 +74,27 @@ class TestAttachHelp:
         )
         assert r.returncode == 0
         assert "--no-mux" in r.stdout
+
+
+class TestStatusDown:
+    def test_status_runs(self, tmp_path):
+        (tmp_path / "api").mkdir()
+        cfg = _write_cfg(tmp_path, [{"path": str(tmp_path / "api"), "tool": "claude"}])
+        r = _run(cfg, "status")
+        assert r.returncode == 0, r.stderr
+        assert "Status" in r.stdout
+        assert "running" in r.stdout
+
+    def test_down_all_no_sessions(self, tmp_path):
+        (tmp_path / "api").mkdir()
+        cfg = _write_cfg(tmp_path, [{"path": str(tmp_path / "api"), "tool": "claude"}])
+        r = _run(cfg, "down", "--all")
+        assert r.returncode == 0, r.stderr
+        # nothing was running, so nothing to stop -- but it must exit cleanly
+        assert "session" in r.stdout.lower() or "server" in r.stdout.lower()
+
+    def test_down_named_no_session(self, tmp_path):
+        (tmp_path / "api").mkdir()
+        cfg = _write_cfg(tmp_path, [{"path": str(tmp_path / "api"), "tool": "claude"}])
+        r = _run(cfg, "down", "nonexistent")
+        assert r.returncode == 0, r.stderr

@@ -391,3 +391,15 @@ def bring_up_psmux(config: MultideckConfig, only: list[str] | None = None,
     if windows:
         plat.launch_psmux_session(windows)
     return [w.window_name for w in windows]
+
+
+def kill_psmux(names: list[str]) -> list[str]:
+    """Kill the psmux server backing each named session. Returns the names tried."""
+    from multideck.platform import find_psmux
+
+    psmux = find_psmux()
+    if not psmux:
+        return []
+    for name in names:
+        subprocess.run([psmux, "-L", name, "kill-server"], capture_output=True)
+    return list(names)
