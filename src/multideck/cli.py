@@ -960,6 +960,13 @@ def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = Non
 
     _tile_titles(titles)
 
+    # Guarantee the host runs an upload server for Alt+V -- independent of the
+    # host's uploadServer flag and of whether anything was just brought up.
+    rc, _, _ = _ssh_capture(target, f"multideck serve -p {port} --ensure", timeout=15)
+    if rc != 0:
+        click.echo(f"  {S('!', fg='yellow')} couldn't confirm an upload server on the host"
+                   f" {S('-- Alt+V may not work', dim=True)}")
+
     server_url = f"http://{hostname}:{port}"
     click.echo(f"\n  {S('#', fg='magenta')} Hotkey {S('Alt+V', bold=True)} pastes clipboard images"
                f" {S('(only in md: windows)', dim=True)} {S('->', dim=True)} {S(server_url, fg='cyan')}")
@@ -1701,8 +1708,10 @@ Host multideck
 
 @main.command("serve")
 @click.option("--port", "-p", default=8033, help="Port to listen on")
+@click.option("--ensure", is_flag=True,
+              help="Start the server detached if it isn't already running, then exit (used by attach).")
 @click.pass_context
-def serve_cmd(ctx: click.Context, port: int) -> None:
+def serve_cmd(ctx: click.Context, port: int, ensure: bool) -> None:
     """Start upload server for mobile image transfer.
 
     Opens a web page on your phone (via Tailscale) where you pick a project,
@@ -1710,6 +1719,16 @@ def serve_cmd(ctx: click.Context, port: int) -> None:
     Claude session via psmux send-keys.
     """
     import subprocess
+
+    config_path = ctx.obj.get("config_path")
+    if ensure:
+        # Non-blocking: ensure a survivor server exists on this port, then return.
+        # attach calls this over SSH so the host always has a server for Alt+V,
+        # regardless of the uploadServer config flag or whether anything was
+        # just brought up.
+        _maybe_start_upload_server(port, config_path)
+        click.echo(f"upload server ensured on port {port}")
+        return
 
     ip = "0.0.0.0"
     try:
@@ -1733,7 +1752,6 @@ def serve_cmd(ctx: click.Context, port: int) -> None:
     click.echo()
 
     from multideck.upload_server import run_server
-    config_path = ctx.obj.get("config_path")
     try:
         run_server(port=port, config_path=config_path)
     except KeyboardInterrupt:
