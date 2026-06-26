@@ -76,6 +76,35 @@ class TestAttachHelp:
         assert "--no-mux" in r.stdout
 
 
+class TestServeEnsure:
+    def test_ensure_flag_registered(self):
+        r = subprocess.run(
+            [sys.executable, "-m", "multideck", "serve", "--help"],
+            capture_output=True, text=True,
+        )
+        assert r.returncode == 0
+        assert "--ensure" in r.stdout
+
+    def test_ensure_returns_immediately_when_already_listening(self):
+        import socket
+
+        # Hold a port so the ensure probe finds it listening and spawns nothing.
+        srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        srv.bind(("127.0.0.1", 0))
+        srv.listen(1)
+        port = srv.getsockname()[1]
+        try:
+            # Must NOT block on a foreground server -- a short timeout proves it.
+            r = subprocess.run(
+                [sys.executable, "-m", "multideck", "serve", "-p", str(port), "--ensure"],
+                capture_output=True, text=True, timeout=20,
+            )
+            assert r.returncode == 0, r.stderr
+            assert "ensured" in r.stdout.lower()
+        finally:
+            srv.close()
+
+
 class TestStatusDown:
     def test_status_runs(self, tmp_path):
         (tmp_path / "api").mkdir()
