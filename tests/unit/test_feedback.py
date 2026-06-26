@@ -68,9 +68,10 @@ class TestSafeApi:
         feedback.finish(h, "proj", True)
         feedback.finish(h, "proj", False)
 
-    def test_play_tone_never_raises(self):
-        for stage in ("start", "ok", "fail", "bogus"):
-            feedback.play_tone(stage)
+    def test_no_audio_api_exposed(self):
+        # feedback is visual-only: there must be no tone/beep entry point.
+        assert not hasattr(feedback, "play_tone")
+        assert not hasattr(feedback, "_TONES")
 
     def test_console_handles_ascii_fallback(self, capsys):
         feedback._console("ok", "eBay")
