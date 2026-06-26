@@ -124,8 +124,11 @@ class WindowsPlatform(Platform):
                 remote = f"{opts.ssh_shell} '{inner}'"
             else:
                 remote = inner
-            ssh_cmd = f'ssh -t {opts.ssh_host} "{remote}"'
-            args.extend(["--", "cmd", "/k", ssh_cmd])
+            # Pass ssh + args as separate argv elements so the remote command
+            # is a single, cleanly-quoted token. Building one `ssh ... "..."`
+            # string and handing it to `cmd /k` double-nests the quotes, which
+            # cmd mangles (the inner quotes leak to the remote shell).
+            args.extend(["--", "cmd", "/k", "ssh", "-t", opts.ssh_host, remote])
         else:
             args.extend(["--", "cmd", "/k", opts.command])
 
