@@ -51,6 +51,19 @@ class TestUpJson:
         assert r.returncode != 0
         assert "error" in r.stdout.lower()
 
+    def test_group_filter(self, tmp_path):
+        for name in ("a", "b", "c"):
+            (tmp_path / name).mkdir()
+        cfg = _write_cfg(tmp_path, [
+            {"path": str(tmp_path / "a"), "tool": "claude", "group": "X"},
+            {"path": str(tmp_path / "b"), "tool": "claude", "group": "Y"},
+            {"path": str(tmp_path / "c"), "tool": "claude", "group": "X"},
+        ])
+        r = _run(cfg, "up", "--json", "-g", "X")
+        assert r.returncode == 0, r.stderr
+        data = json.loads(r.stdout.strip().splitlines()[-1])
+        assert sorted(p["name"] for p in data["projects"]) == ["a", "c"]
+
 
 class TestAttachHelp:
     def test_attach_registered(self):

@@ -35,6 +35,19 @@ class TestEligibleProjects:
         out = eligible_psmux_projects(cfg)
         assert out[0]["name"] == "My-App-1"
 
+    def test_group_filter_case_insensitive(self):
+        cfg = _cfg([
+            ProjectConfig(path="/a/api", tool="claude", group="INTERNAL"),
+            ProjectConfig(path="/a/web", tool="claude", group="LEAD"),
+            ProjectConfig(path="/a/x", tool="claude"),
+        ])
+        out = eligible_psmux_projects(cfg, group="internal")
+        assert [p["name"] for p in out] == ["api"]
+
+    def test_group_filter_no_match(self):
+        cfg = _cfg([ProjectConfig(path="/a/api", tool="claude", group="INTERNAL")])
+        assert eligible_psmux_projects(cfg, group="NOPE") == []
+
 
 class TestDefaultAttachHost:
     def test_picks_most_common_host(self, tmp_path, monkeypatch):
