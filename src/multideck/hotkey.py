@@ -41,6 +41,7 @@ user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
 VK_V = 0x56
 VK_MENU = 0x12
 CF_DIB = 8
+BI_BITFIELDS = 3
 WH_KEYBOARD_LL = 13
 WM_KEYDOWN = 0x0100
 WM_SYSKEYDOWN = 0x0104
@@ -99,21 +100,56 @@ def get_clipboard_image() -> bytes | None:
         if not ptr:
             return None
         try:
-            dib_data = ctypes.string_at(ptr, size)
-            header_size = int.from_bytes(dib_data[:4], "little")
-            file_size = 14 + size
-            offset = 14 + header_size
-            bmp_header = (
-                b"BM"
-                + file_size.to_bytes(4, "little")
-                + b"\x00\x00\x00\x00"
-                + offset.to_bytes(4, "little")
-            )
-            return bmp_header + dib_data
+            dib_data = bytearray(ctypes.string_at(ptr, size))
         finally:
             kernel32.GlobalUnlock(handle)
     finally:
         user32.CloseClipboard()
+
+    return _dib_to_bmp(dib_data)
+
+
+def _dib_to_bmp(dib: bytearray) -> bytes | None:
+    """Wrap a clipboard DIB in a BMP file header.
+
+    Two things the naive `14 + header_size` offset gets wrong:
+      * BI_BITFIELDS DIBs (what GDI / .NET / many screenshot tools produce)
+        store 3 color masks (12 bytes) between a BITMAPINFOHEADER and the
+        pixels. Skipping them points the pixel offset 12 bytes too early, so
+        decoders read masks as pixels and the image renders as garbage/black.
+      * 32bpp DIBs usually carry an all-zero alpha channel. BMP's 4th byte is
+        officially reserved, but many decoders honor it as alpha -> the whole
+        image is treated as transparent and composites to black.
+    """
+    if len(dib) < 40:
+        return None
+    header_size = int.from_bytes(dib[0:4], "little")
+    bpp = int.from_bytes(dib[14:16], "little")
+    compression = int.from_bytes(dib[16:20], "little")
+    clr_used = int.from_bytes(dib[32:36], "little")
+
+    extra = 0
+    # Masks only trail a plain BITMAPINFOHEADER; V4/V5 headers embed them.
+    if compression == BI_BITFIELDS and header_size == 40:
+        extra += 12
+    if bpp <= 8:
+        extra += (clr_used or (1 << bpp)) * 4
+
+    px_start = header_size + extra
+
+    if bpp == 32 and px_start < len(dib):
+        n = len(range(px_start + 3, len(dib), 4))
+        dib[px_start + 3::4] = b"\xff" * n
+
+    file_size = 14 + len(dib)
+    offset = 14 + px_start
+    bmp_header = (
+        b"BM"
+        + file_size.to_bytes(4, "little")
+        + b"\x00\x00\x00\x00"
+        + offset.to_bytes(4, "little")
+    )
+    return bmp_header + bytes(dib)
 
 
 def project_from_title(title: str) -> str | None:
