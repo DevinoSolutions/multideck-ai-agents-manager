@@ -8,7 +8,7 @@ import re
 import subprocess
 import sys
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 
 from multideck.platform import find_psmux
@@ -159,8 +159,8 @@ input.addEventListener('change', async () => {
 </html>"""
 
 
-def _discover_sessions(config_path: str | None) -> list[dict]:
-    """Find active psmux sessions from config."""
+def _config_sessions(config_path: str | None) -> list[dict]:
+    """Eligible psmux session names from config -- no psmux calls, so it's fast."""
     from multideck.cli import _find_config
     from multideck.launch import _psmux_session_name
 
@@ -169,24 +169,38 @@ def _discover_sessions(config_path: str | None) -> list[dict]:
         return []
 
     data = json.loads(config_file.read_text(encoding="utf-8"))
-    psmux = find_psmux()
-    if not psmux:
-        return []
-
-    sessions = []
+    default_tool = data.get("settings", {}).get("defaultTool", "claude")
+    out: list[dict] = []
     for p in data.get("projects", []):
         if not p.get("enabled", True):
             continue
-        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
+        tool = p.get("tool", default_tool)
         if tool in ("code", "vscode", "cursor"):
             continue
         proj_name = p.get("title") or Path(p["path"]).name
-        sock = _psmux_session_name(proj_name)
-        result = subprocess.run([psmux, "-L", sock, "has-session"],
-                                capture_output=True)
-        if result.returncode == 0:
-            sessions.append({"name": sock, "path": p["path"]})
-    return sessions
+        out.append({"name": _psmux_session_name(proj_name), "path": p["path"]})
+    return out
+
+
+def _alive(psmux: str, name: str) -> bool:
+    return subprocess.run([psmux, "-L", name, "has-session"], capture_output=True).returncode == 0
+
+
+def _discover_sessions(config_path: str | None) -> list[dict]:
+    """Active psmux sessions from config.
+
+    Checks every candidate socket concurrently -- with a large config a serial
+    scan takes several seconds, long enough to time out an Alt+V upload.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    candidates = _config_sessions(config_path)
+    psmux = find_psmux()
+    if not candidates or not psmux:
+        return []
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        flags = list(pool.map(lambda c: _alive(psmux, c["name"]), candidates))
+    return [c for c, ok in zip(candidates, flags) if ok]
 
 
 def _build_html(sessions: list[dict]) -> str:
@@ -289,6 +303,8 @@ class UploadHandler(BaseHTTPRequestHandler):
             self._json_response({"ok": False, "error": "Missing file or project"}, 400)
             return
 
+        # Discovery is now concurrent (sub-second), so validating against the
+        # session cache no longer risks timing out the upload.
         valid_names = {s["name"] for s in self._sessions()}
         if project not in valid_names:
             self._json_response({"ok": False, "error": "Unknown project"}, 400)
@@ -319,9 +335,6 @@ class UploadHandler(BaseHTTPRequestHandler):
                 )
                 injected = result.returncode == 0
 
-        UploadHandler.cached_sessions = _discover_sessions(UploadHandler.config_path)
-        UploadHandler.sessions_ts = time.time()
-
         self._json_response({
             "ok": True,
             "path": str(dest),
@@ -342,7 +355,7 @@ class UploadHandler(BaseHTTPRequestHandler):
 
 def run_server(port: int = 8080, config_path: str | None = None) -> None:
     UploadHandler.config_path = config_path
-    server = HTTPServer(("0.0.0.0", port), UploadHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", port), UploadHandler)
     pid_file = _pid_path(port)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
