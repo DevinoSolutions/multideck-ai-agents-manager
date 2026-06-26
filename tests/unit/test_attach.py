@@ -49,6 +49,29 @@ class TestEligibleProjects:
         assert eligible_psmux_projects(cfg, group="NOPE") == []
 
 
+class TestGroupedOverview:
+    def test_grouped_preserves_order(self):
+        order, buckets = cli._grouped([
+            {"name": "a", "group": "X"},
+            {"name": "b", "group": "Y"},
+            {"name": "c", "group": "X"},
+            {"name": "d"},
+        ])
+        assert order == ["X", "Y", "(no group)"]
+        assert buckets["X"] == ["a", "c"]
+        assert buckets["(no group)"] == ["d"]
+
+    def test_overview_pickable_excludes_no_group(self, capsys):
+        up = [{"name": "z", "group": "AUTOMATIONS"}]
+        down = [{"name": "a", "group": "INTERNAL"},
+                {"name": "b", "group": "LEAD"},
+                {"name": "c"}]
+        pickable = cli._print_session_overview("host", up, down)
+        assert pickable == ["INTERNAL", "LEAD"]
+        out = capsys.readouterr().out
+        assert "INTERNAL" in out and "LEAD" in out and "AUTOMATIONS" in out
+
+
 class TestDefaultAttachHost:
     def test_picks_most_common_host(self, tmp_path, monkeypatch):
         cfgfile = tmp_path / "c.json"

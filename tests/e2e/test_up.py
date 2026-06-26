@@ -63,6 +63,7 @@ class TestUpJson:
         assert r.returncode == 0, r.stderr
         data = json.loads(r.stdout.strip().splitlines()[-1])
         assert sorted(p["name"] for p in data["projects"]) == ["a", "c"]
+        assert all(p["group"] == "X" for p in data["projects"])
 
 
 class TestAttachHelp:

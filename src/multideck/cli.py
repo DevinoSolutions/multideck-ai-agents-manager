@@ -758,13 +758,81 @@ def _tile_titles(titles: list[str]) -> None:
             click.echo(f"    {S('x', fg='red')} {title} {S('not found', dim=True)}")
 
 
-def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = None) -> None:
+def _grouped(entries: list[dict]) -> tuple[list[str], dict[str, list[str]]]:
+    """Bucket session entries by project group, preserving first-seen order."""
+    order: list[str] = []
+    buckets: dict[str, list[str]] = {}
+    for e in entries:
+        g = e.get("group") or "(no group)"
+        if g not in buckets:
+            buckets[g] = []
+            order.append(g)
+        buckets[g].append(e["name"])
+    return order, buckets
+
+
+def _print_names(names: list[str], indent: str = "       ", width: int = 66) -> None:
+    line = indent
+    for nm in names:
+        if line.strip() and len(line) + len(nm) + 2 > width:
+            click.echo(S(line, dim=True))
+            line = indent
+        line += nm + "  "
+    if line.strip():
+        click.echo(S(line, dim=True))
+
+
+def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> list[str]:
+    """Render a grouped up/down overview; return the ordered list of pickable groups."""
+    dn_order, dn_buckets = _grouped(down)
+    up_order, up_buckets = _grouped(up)
+
+    click.echo()
+    click.echo(f"  {S('Sessions on', bold=True)} {S(hostname, fg='cyan')}    "
+               f"{S(str(len(up)), fg='green', bold=True)} up  {S('/', dim=True)}  "
+               f"{S(str(len(down)), fg='yellow', bold=True)} down")
+    _divider()
+
+    pickable: list[str] = []
+    for g in dn_order:
+        names = dn_buckets[g]
+        up_n = len(up_buckets.get(g, []))
+        total = up_n + len(names)
+        if g == "(no group)":
+            click.echo(f"     {S(g, dim=True)}  {S(f'{up_n}/{total}', dim=True)}")
+        else:
+            pickable.append(g)
+            num = S(str(len(pickable)), fg="cyan", bold=True)
+            click.echo(f"  {num}  {S(g, bold=True)}  {S(f'{up_n}/{total} up', dim=True)}")
+        _print_names(names)
+
+    for g in up_order:
+        if g not in dn_buckets:
+            cnt = len(up_buckets[g])
+            click.echo(f"     {S(g, dim=True)}  {S(f'{cnt}/{cnt} ready', fg='green')}")
+    _divider()
+    return pickable
+
+
+def _bring_up_and_requery(target: str, grp_suffix: str, fallback_up: list[dict]) -> list[dict]:
+    import time
+    click.echo(f"  {S('o', fg='cyan')} starting sessions on host (this can take a moment)...")
+    rc, _, err = _ssh_capture(target, f"multideck up{grp_suffix}", timeout=300)
+    if rc != 0:
+        click.echo(f"  {S('!', fg='yellow')} bring-up exited {rc}: {S(err.strip()[:200], dim=True)}")
+    time.sleep(1)
+    new = _ssh_json(target, f"multideck up --json{grp_suffix}", timeout=30)
+    return new.get("up", fallback_up) if new else fallback_up
+
+
+def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = None,
+                 yes: bool = False) -> None:
     """Remote-PC attach: bring the host's sessions up, then open local windows.
 
     Default (psmux): tile one local window per remote psmux session and run the
     Alt+V image hotkey. ``--no-mux``: open one plain SSH window per project that
     runs the agent directly (no multiplexer). ``group`` limits the whole flow to
-    one project group on the host.
+    one project group on the host; ``yes`` skips the bring-up prompt.
     """
     import subprocess
     import time
@@ -815,19 +883,32 @@ def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = Non
     down = status.get("down", [])
     port = status.get("uploadPort", 8033)
 
-    click.echo(f"  {S(str(len(up)), fg='green', bold=True)} up   "
-               f"{S(str(len(down)), fg='yellow', bold=True)} not up")
+    if down and yes:
+        up = _bring_up_and_requery(target, grp, up)
+    elif down:
+        pickable = _print_session_overview(hostname, up, down)
+        opts = [f"{S('a', fg='cyan', bold=True)}=all {len(down)}"]
+        if pickable:
+            opts.append(f"{S('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
+        opts.append(f"{S('n', fg='cyan', bold=True)}=none")
+        click.echo(f"  {S('Bring up', bold=True)}   " + "   ".join(opts))
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="a",
+                              show_default=False, prompt_suffix=" ").strip().lower()
 
-    if down:
-        click.echo(f"  {S('Not up:', dim=True)} {', '.join(d['name'] for d in down)}")
-        if click.confirm(f"  Bring up {len(down)} project(s) on {hostname}?", default=True):
-            click.echo(f"  {S('o', fg='cyan')} starting sessions on host (this can take a moment)...")
-            rc, _, err = _ssh_capture(target, f"multideck up{grp}", timeout=180)
-            if rc != 0:
-                click.echo(f"  {S('!', fg='yellow')} bring-up exited {rc}: {S(err.strip()[:200], dim=True)}")
-            time.sleep(1)
-            status = _ssh_json(target, f"multideck up --json{grp}", timeout=30) or status
-            up = status.get("up", [])
+        if choice in ("n", "no", "none", "q"):
+            pass
+        elif choice in ("a", "y", "all", ""):
+            up = _bring_up_and_requery(target, grp, up)
+        else:
+            sel = None
+            if choice.isdigit() and 1 <= int(choice) <= len(pickable):
+                sel = pickable[int(choice) - 1]
+            else:
+                sel = next((g for g in pickable if g.lower() == choice), None)
+            if sel:
+                up = _bring_up_and_requery(target, f' -g "{sel}"', up)
+            else:
+                click.echo(f"  {S('?', fg='yellow')} unrecognized choice -- bringing up none.")
 
     if not up:
         click.echo(f"\n  {S('x', fg='red')} No sessions are up on the host.")
@@ -947,7 +1028,7 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -
             "down": down,
             "projects": [
                 {"name": p["name"], "path": p["path"], "tool": p["tool"],
-                 "resolved": p["resolved"], "cmd": p["cmd"]}
+                 "group": p["group"], "resolved": p["resolved"], "cmd": p["cmd"]}
                 for p in projects
             ],
         }))
@@ -978,16 +1059,17 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -
 @click.argument("host", required=False)
 @click.option("--no-mux", is_flag=True, help="One plain SSH window per project (no psmux/tmux)")
 @click.option("-g", "--group", default=None, help="Only attach/bring up projects in this group")
+@click.option("-y", "--yes", is_flag=True, help="Skip the bring-up prompt (bring up everything that's down)")
 @click.pass_context
-def attach_cmd(ctx: click.Context, host: str | None, no_mux: bool, group: str | None) -> None:
+def attach_cmd(ctx: click.Context, host: str | None, no_mux: bool, group: str | None, yes: bool) -> None:
     """Attach to another machine's multideck sessions over SSH.
 
     HOST is user@host (omit to be prompted; blank uses the host from your local
     config). Default tiles one window per remote psmux session with Alt+V image
     paste; --no-mux opens a direct SSH window per project instead. -g limits the
-    flow to one project group on the host.
+    flow to one project group on the host; -y skips the bring-up prompt.
     """
-    _attach_flow(host, no_mux=no_mux, group=group)
+    _attach_flow(host, no_mux=no_mux, group=group, yes=yes)
 
 
 @main.command("hotkey")

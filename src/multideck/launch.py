@@ -338,6 +338,7 @@ def eligible_psmux_projects(config: MultideckConfig, group: str | None = None) -
             "name": _psmux_session_name(leaf),
             "path": proj.path,
             "tool": tool,
+            "group": proj.group,
             "resolved": _resolve_path(proj.path, base_dir),
             "cmd": config.settings.tools.get(tool, ""),
             "color": proj.color,
@@ -357,7 +358,7 @@ def psmux_status(config: MultideckConfig, group: str | None = None) -> tuple[lis
     up: list[dict] = []
     down: list[dict] = []
     for p in projects:
-        info = {"name": p["name"], "path": p["path"], "tool": p["tool"]}
+        info = {"name": p["name"], "path": p["path"], "tool": p["tool"], "group": p.get("group")}
         alive = False
         if psmux and p["resolved"] and p["cmd"]:
             r = subprocess.run([psmux, "-L", p["name"], "has-session"], capture_output=True)
