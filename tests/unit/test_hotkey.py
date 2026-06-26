@@ -79,7 +79,10 @@ class TestUploadImage:
         url = f"http://127.0.0.1:{self.port}"
         result = upload_image(url, "marka", b"FAKEBMP")
         assert result is True
-        assert self.last_request["path"] == "/upload"
+        # project rides in the query string so the server can flash "uploading"
+        # before reading the body, and still in the multipart body for validation.
+        assert self.last_request["path"].startswith("/upload")
+        assert "project=marka" in self.last_request["path"]
         assert b"marka" in self.last_request["body"]
         assert b"FAKEBMP" in self.last_request["body"]
         assert "multipart/form-data" in self.last_request["content_type"]
