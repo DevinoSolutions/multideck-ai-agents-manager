@@ -28,6 +28,19 @@ class TestProjectFromTitle:
         assert MD_TITLE_PREFIX == "md:"
 
 
+class TestAltKeyDetection:
+    def test_physical_alt_codes_recognized(self):
+        # A low-level keyboard hook reports the physical Alt as VK_LMENU/VK_RMENU,
+        # never the generic VK_MENU. All three must be treated as Alt or Alt+V
+        # is never detected (the keystroke falls through to the focused app).
+        from multideck.hotkey import _ALT_KEYS, VK_LMENU, VK_MENU, VK_RMENU
+        assert VK_LMENU == 0xA4
+        assert VK_RMENU == 0xA5
+        assert VK_LMENU in _ALT_KEYS
+        assert VK_RMENU in _ALT_KEYS
+        assert VK_MENU in _ALT_KEYS
+
+
 class TestUploadImage:
     @pytest.fixture(autouse=True)
     def _server(self):

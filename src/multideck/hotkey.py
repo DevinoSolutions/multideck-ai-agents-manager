@@ -40,6 +40,11 @@ user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
 
 VK_V = 0x56
 VK_MENU = 0x12
+VK_LMENU = 0xA4
+VK_RMENU = 0xA5
+# A low-level keyboard hook reports the physical Alt as VK_LMENU/VK_RMENU,
+# never the generic VK_MENU -- match all three or Alt is never detected.
+_ALT_KEYS = (VK_MENU, VK_LMENU, VK_RMENU)
 CF_DIB = 8
 BI_BITFIELDS = 3
 WH_KEYBOARD_LL = 13
@@ -207,7 +212,7 @@ def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
 
         kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
 
-        if kb.vkCode == VK_MENU:
+        if kb.vkCode in _ALT_KEYS:
             alt_held = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
             return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
