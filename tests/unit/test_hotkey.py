@@ -77,6 +77,66 @@ class TestUploadImage:
         assert result is False
 
 
+class TestDibToBmp:
+    """Clipboard DIB -> BMP conversion (the all-black image bug)."""
+
+    @staticmethod
+    def _header(width, height, bpp, compression):
+        import struct
+        return struct.pack(
+            "<IiiHHIIiiII",
+            40,            # biSize (BITMAPINFOHEADER)
+            width, height,
+            1,             # planes
+            bpp,
+            compression,
+            0, 0, 0, 0, 0,  # sizeImage, x/y ppm, clrUsed, clrImportant
+        )
+
+    def test_bitfields_offset_skips_masks(self):
+        # 32bpp BI_BITFIELDS (what GDI / .NET / screenshots produce): 3 color
+        # masks sit between the 40-byte header and the pixels.
+        import struct
+        from multideck.hotkey import _dib_to_bmp
+        header = self._header(2, 2, 32, 3)
+        masks = struct.pack("<III", 0x00FF0000, 0x0000FF00, 0x000000FF)
+        pixels = bytes([0, 0, 255, 0] * 4)  # opaque-red BGR with alpha=0
+        bmp = _dib_to_bmp(bytearray(header + masks + pixels))
+
+        assert bmp[:2] == b"BM"
+        bf_off_bits = struct.unpack_from("<I", bmp, 10)[0]
+        assert bf_off_bits == 14 + 40 + 12  # past header AND the 12 mask bytes
+        # alpha forced opaque so decoders don't render it transparent/black
+        for i in range(bf_off_bits + 3, len(bmp), 4):
+            assert bmp[i] == 0xFF
+
+    def test_rgb32_forces_alpha_opaque(self):
+        import struct
+        from multideck.hotkey import _dib_to_bmp
+        header = self._header(2, 2, 32, 0)  # BI_RGB, no masks
+        pixels = bytes([10, 20, 30, 0] * 4)  # alpha = 0 (transparent -> black)
+        bmp = _dib_to_bmp(bytearray(header + pixels))
+
+        bf_off_bits = struct.unpack_from("<I", bmp, 10)[0]
+        assert bf_off_bits == 14 + 40  # no masks for BI_RGB
+        for i in range(bf_off_bits + 3, len(bmp), 4):
+            assert bmp[i] == 0xFF
+
+    def test_rgb24_untouched(self):
+        import struct
+        from multideck.hotkey import _dib_to_bmp
+        header = self._header(2, 2, 24, 0)
+        pixels = bytes([1, 2, 3] * 4)
+        bmp = _dib_to_bmp(bytearray(header + pixels))
+        bf_off_bits = struct.unpack_from("<I", bmp, 10)[0]
+        assert bf_off_bits == 14 + 40
+        assert bmp[14 + 40:] == pixels  # 24bpp pixels passed through verbatim
+
+    def test_too_small_returns_none(self):
+        from multideck.hotkey import _dib_to_bmp
+        assert _dib_to_bmp(bytearray(b"\x00" * 10)) is None
+
+
 class TestHookStructsAndConstants:
     def test_kbdllhookstruct_size(self):
         from multideck.hotkey import KBDLLHOOKSTRUCT
