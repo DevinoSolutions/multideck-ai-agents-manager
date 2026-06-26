@@ -4,6 +4,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.wintypes
 import json
+import os
 import sys
 import threading
 import time
@@ -38,6 +39,12 @@ user32.SetWindowsHookExW.argtypes = [
 user32.SetWindowsHookExW.restype = ctypes.c_void_p
 
 user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
+
+kernel32.OpenProcess.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
+kernel32.GetExitCodeProcess.argtypes = [ctypes.wintypes.HANDLE, ctypes.POINTER(ctypes.wintypes.DWORD)]
+kernel32.GetExitCodeProcess.restype = ctypes.wintypes.BOOL
+kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
 
 VK_V = 0x56
 VK_MENU = 0x12
@@ -198,6 +205,76 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
         return False
 
 
+# --- Background-listener lifecycle -------------------------------------------
+# attach starts the Alt+V listener hidden in the background (no terminal of its
+# own), because its progress now shows in the md: windows. A pid file lets
+# `multideck status` report it and `multideck down --all` stop it.
+
+_PID_PATH = Path.home() / ".multideck" / "hotkey.pid"
+_STILL_ACTIVE = 259
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return False
+    try:
+        code = ctypes.wintypes.DWORD()
+        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        return bool(ok) and code.value == _STILL_ACTIVE
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def listener_pid() -> int | None:
+    """PID of the running Alt+V listener, or None. Clears a stale pid file."""
+    try:
+        pid = int(_PID_PATH.read_text().strip())
+    except (OSError, ValueError):
+        return None
+    if _pid_alive(pid):
+        return pid
+    try:
+        _PID_PATH.unlink()
+    except OSError:
+        pass
+    return None
+
+
+def stop_listener() -> bool:
+    """Stop the running Alt+V listener. Returns True if one was stopped."""
+    import subprocess
+
+    pid = listener_pid()
+    if not pid:
+        return False
+    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+    try:
+        _PID_PATH.unlink()
+    except OSError:
+        pass
+    return True
+
+
+def _write_pid() -> None:
+    try:
+        _PID_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _PID_PATH.write_text(str(os.getpid()))
+    except OSError:
+        pass
+
+
+def _clear_pid() -> None:
+    try:
+        if _PID_PATH.read_text().strip() == str(os.getpid()):
+            _PID_PATH.unlink()
+    except OSError:
+        pass
+
+
 def _do_upload(server_url: str, project: str) -> None:
     """Run upload in a thread so the hook callback returns quickly.
 
@@ -248,6 +325,9 @@ def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
     if not hook:
         raise RuntimeError("Failed to install keyboard hook")
 
+    # Record the pid only once the hook is actually installed, so a failed
+    # listener never leaves a pid file claiming it's running.
+    _write_pid()
     msg = ctypes.wintypes.MSG()
     try:
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0):
@@ -255,3 +335,4 @@ def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
             user32.DispatchMessageW(ctypes.byref(msg))
     finally:
         user32.UnhookWindowsHookEx(hook)
+        _clear_pid()

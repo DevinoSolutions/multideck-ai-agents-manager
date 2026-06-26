@@ -971,12 +971,14 @@ def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = Non
     click.echo(f"\n  {S('#', fg='magenta')} Hotkey {S('Alt+V', bold=True)} pastes clipboard images"
                f" {S('(only in md: windows)', dim=True)} {S('->', dim=True)} {S(server_url, fg='cyan')}")
     if sys.platform == "win32":
-        from multideck.hotkey import run_hotkey
-        click.echo(f"  {S('Listening... Ctrl+C to stop.', dim=True)}")
-        try:
-            run_hotkey(server_url, {s["name"] for s in up})
-        except KeyboardInterrupt:
-            click.echo(f"\n  {S('Stopped.', dim=True)}")
+        pid = _maybe_start_hotkey(server_url)
+        if pid:
+            click.echo(f"  {S('+', fg='green')} Alt+V listener running in the background "
+                       f"{S(f'(pid {pid})', dim=True)}")
+            click.echo(f"  {S('Progress shows in each md: window. Stop with', dim=True)} "
+                       f"{S('multideck down --all', bold=True)}{S('.', dim=True)}")
+        else:
+            click.echo(f"  {S('!', fg='yellow')} couldn't start the Alt+V listener")
 
 
 def _attach_nomux(target: str, status: dict) -> None:
@@ -1031,6 +1033,37 @@ def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
     # Must outlive the SSH bring-up command that spawns it -- see spawn_detached.
     from multideck.launch import spawn_detached
     spawn_detached(args)
+
+
+def _maybe_start_hotkey(server_url: str) -> int | None:
+    """Start the Alt+V listener hidden in the background, unless one is running.
+
+    The listener's progress now shows in the md: windows, so it needs no terminal
+    of its own -- attach launches it detached and returns, instead of blocking a
+    terminal on a message loop. Returns the listener pid (existing or freshly
+    started), or None if it couldn't be confirmed.
+    """
+    if sys.platform != "win32":
+        return None
+    import time
+
+    from multideck.hotkey import listener_pid
+
+    existing = listener_pid()
+    if existing:
+        return existing
+
+    args = [sys.executable, "-m", "multideck", "hotkey", "-s", server_url]
+    from multideck.launch import spawn_detached
+    spawn_detached(args)
+    # The child writes its pid only after the keyboard hook installs; give it a
+    # short window to come up so we can report (and so a hook failure surfaces).
+    for _ in range(20):
+        time.sleep(0.1)
+        pid = listener_pid()
+        if pid:
+            return pid
+    return None
 
 
 @main.command("up")
@@ -1120,6 +1153,14 @@ def hotkey_cmd(ctx: click.Context, server: str) -> None:
     if sys.platform != "win32":
         click.echo(f"  {S('x', fg='red')} Hotkey listener is Windows-only.")
         sys.exit(1)
+
+    from multideck.hotkey import listener_pid
+    existing = listener_pid()
+    if existing:
+        click.echo(f"  {S('!', fg='yellow')} An Alt+V listener is already running "
+                   f"{S(f'(pid {existing})', dim=True)}.")
+        click.echo(f"  {S('Stop it first with', dim=True)} {S('multideck down --all', bold=True)}{S('.', dim=True)}")
+        return
 
     _banner()
     click.echo(f"  {S('Hotkey listener', bold=True)}  {S(f'-> {server}', dim=True)}")
@@ -1892,8 +1933,14 @@ def _render_status(config_file: Path) -> None:
     server = (S(f"ON  port {cfg.settings.upload_port}", fg="green", bold=True)
               if on else S("off", dim=True))
     click.echo(f"  {S('Upload server', bold=True)}   {server}")
-    click.echo(f"  {S('Alt+V listener', bold=True)}   "
-               f"{S('runs with `multideck attach` (or `multideck hotkey`)', dim=True)}")
+
+    pid = None
+    if sys.platform == "win32":
+        from multideck.hotkey import listener_pid
+        pid = listener_pid()
+    listener = (S(f"ON  pid {pid}", fg="green", bold=True) if pid
+                else S("off  (starts with `multideck attach`)", dim=True))
+    click.echo(f"  {S('Alt+V listener', bold=True)}   {listener}")
 
 
 @main.command("status")
@@ -1910,7 +1957,8 @@ def status_cmd(ctx: click.Context) -> None:
 @main.command("down")
 @click.argument("names", nargs=-1)
 @click.option("-g", "--group", default=None, help="Only sessions in this group")
-@click.option("--all", "do_all", is_flag=True, help="Stop every session and the upload server")
+@click.option("--all", "do_all", is_flag=True,
+              help="Stop every session, the upload server, and the Alt+V listener")
 @click.option("--server", "stop_srv", is_flag=True, help="Also stop the upload server")
 @click.pass_context
 def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
@@ -1946,6 +1994,13 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
             click.echo(f"  {S('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}.")
         else:
             click.echo(f"  {S('-', dim=True)} Upload server was not running.")
+
+    if do_all and sys.platform == "win32":
+        from multideck.hotkey import stop_listener
+        if stop_listener():
+            click.echo(f"  {S('+', fg='green')} Stopped the Alt+V listener.")
+        else:
+            click.echo(f"  {S('-', dim=True)} Alt+V listener was not running.")
 
 
 def _menu_status(config_file: Path) -> None:

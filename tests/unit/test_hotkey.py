@@ -153,6 +153,84 @@ class TestDibToBmp:
         assert _dib_to_bmp(bytearray(b"\x00" * 10)) is None
 
 
+class TestListenerLifecycle:
+    """Pid-file management for the background Alt+V listener."""
+
+    def test_pid_none_when_no_file(self, tmp_path, monkeypatch):
+        from multideck import hotkey
+        monkeypatch.setattr(hotkey, "_PID_PATH", tmp_path / "hotkey.pid")
+        assert hotkey.listener_pid() is None
+
+    def test_pid_returns_live_pid(self, tmp_path, monkeypatch):
+        from multideck import hotkey
+        p = tmp_path / "hotkey.pid"
+        p.write_text("4321")
+        monkeypatch.setattr(hotkey, "_PID_PATH", p)
+        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: pid == 4321)
+        assert hotkey.listener_pid() == 4321
+
+    def test_pid_clears_stale_file(self, tmp_path, monkeypatch):
+        from multideck import hotkey
+        p = tmp_path / "hotkey.pid"
+        p.write_text("999999")
+        monkeypatch.setattr(hotkey, "_PID_PATH", p)
+        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: False)
+        assert hotkey.listener_pid() is None
+        assert not p.exists()  # stale pid file is cleaned up
+
+    def test_stop_kills_and_removes(self, tmp_path, monkeypatch):
+        import subprocess
+        from multideck import hotkey
+        p = tmp_path / "hotkey.pid"
+        p.write_text("4321")
+        monkeypatch.setattr(hotkey, "_PID_PATH", p)
+        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: True)
+        calls = []
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a[0]))
+        assert hotkey.stop_listener() is True
+        assert calls and calls[0][0] == "taskkill" and "4321" in calls[0]
+        assert not p.exists()
+
+    def test_stop_noop_when_not_running(self, tmp_path, monkeypatch):
+        from multideck import hotkey
+        monkeypatch.setattr(hotkey, "_PID_PATH", tmp_path / "hotkey.pid")
+        assert hotkey.stop_listener() is False
+
+    def test_write_then_clear_pid(self, tmp_path, monkeypatch):
+        import os
+        from multideck import hotkey
+        p = tmp_path / "hotkey.pid"
+        monkeypatch.setattr(hotkey, "_PID_PATH", p)
+        hotkey._write_pid()
+        assert p.read_text().strip() == str(os.getpid())
+        hotkey._clear_pid()
+        assert not p.exists()
+
+
+class TestMaybeStartHotkey:
+    """attach starts the listener in the background, never a second copy."""
+
+    def test_returns_existing_without_spawning(self, monkeypatch):
+        from multideck import cli, hotkey
+        monkeypatch.setattr(hotkey, "listener_pid", lambda: 1234)
+        spawned = []
+        monkeypatch.setattr("multideck.launch.spawn_detached",
+                            lambda *a, **k: spawned.append(a))
+        assert cli._maybe_start_hotkey("http://x:8034") == 1234
+        assert spawned == []  # an already-running listener isn't duplicated
+
+    def test_spawns_when_none_running(self, monkeypatch):
+        from multideck import cli, hotkey
+        state = {"pid": None}
+        monkeypatch.setattr(hotkey, "listener_pid", lambda: state["pid"])
+
+        def fake_spawn(args, *a, **k):
+            state["pid"] = 5678  # the detached child comes up and writes its pid
+
+        monkeypatch.setattr("multideck.launch.spawn_detached", fake_spawn)
+        assert cli._maybe_start_hotkey("http://x:8034") == 5678
+
+
 class TestHookStructsAndConstants:
     def test_kbdllhookstruct_size(self):
         from multideck.hotkey import KBDLLHOOKSTRUCT
