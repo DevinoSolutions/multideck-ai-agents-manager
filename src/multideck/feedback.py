@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import sys
 import threading
 import time
 
@@ -32,6 +33,23 @@ _active: dict[int, tuple[str, float]] = {}
 
 def enabled() -> bool:
     return os.environ.get("MULTIDECK_NO_FEEDBACK", "") in ("", "0", "false", "False")
+
+
+def init_console() -> None:
+    """Best-effort: make this process's console render UTF-8 so the ✓/↑/✗ glyphs
+    show correctly regardless of which terminal hosts the listener. Call once at
+    listener startup.
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")  # Python 3.7+
+    except Exception:
+        pass
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+        except Exception:
+            pass
 
 
 def begin(project: str):

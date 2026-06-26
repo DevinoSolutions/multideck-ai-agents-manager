@@ -101,3 +101,6 @@ class TestLog:
 
     def test_module_imports_on_any_platform(self):
         importlib.reload(feedback)
+
+    def test_init_console_never_raises(self):
+        feedback.init_console()

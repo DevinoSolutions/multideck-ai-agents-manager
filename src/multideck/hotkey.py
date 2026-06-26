@@ -205,6 +205,9 @@ def _do_upload(server_url: str, project: str) -> None:
 
 
 def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
+    from multideck import feedback
+    feedback.init_console()
+
     alt_held = False
 
     def hook_proc(nCode, wParam, lParam):
