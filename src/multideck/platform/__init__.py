@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import os
 import shutil
 import sys
@@ -10,6 +11,7 @@ from typing import Any
 from multideck.grid import Rect, MonitorRect
 
 
+@functools.lru_cache(maxsize=1)
 def find_psmux() -> str | None:
     found = shutil.which("psmux")
     if found:
@@ -64,6 +66,10 @@ class Platform(ABC):
 
     @abstractmethod
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None: ...
+
+    def snapshot_windows(self) -> dict[str, Any]:
+        """Return {title: handle} for all visible windows in a single pass."""
+        return {}
 
     def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
         raise NotImplementedError("psmux is only supported on Windows")

@@ -103,6 +103,22 @@ class WindowsPlatform(Platform):
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return result
 
+    def snapshot_windows(self) -> dict[str, int]:
+        titles: dict[str, int] = {}
+        WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+        def callback(hwnd, _):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            buf = create_unicode_buffer(512)
+            user32.GetWindowTextW(hwnd, buf, 512)
+            if buf.value:
+                titles[buf.value] = hwnd
+            return True
+
+        user32.EnumWindows(WNDENUMPROC(callback), 0)
+        return titles
+
     def move_window(self, handle: Any, rect: Rect) -> None:
         user32.MoveWindow(handle, rect.x, rect.y, rect.w, rect.h, True)
         user32.MoveWindow(handle, rect.x, rect.y, rect.w, rect.h, True)
@@ -148,29 +164,42 @@ class WindowsPlatform(Platform):
         if not windows:
             return
 
-        import time
+        checks = [(w, subprocess.Popen([psmux, "-L", w.window_name, "has-session"],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+                   for w in windows]
+        to_create = [w for w, p in checks if p.wait() != 0]
 
-        for w in windows:
-            subprocess.run([psmux, "-L", w.window_name, "kill-server"],
-                           capture_output=True)
-            subprocess.run(
-                [psmux, "-L", w.window_name, "new-session", "-d",
-                 "-s", w.window_name, "-c", w.cwd],
-                check=True,
-            )
+        if not to_create:
+            return
 
-        time.sleep(2)
+        kills = [subprocess.Popen([psmux, "-L", w.window_name, "kill-server"],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                 for w in to_create]
+        for p in kills:
+            p.wait()
 
-        for w in windows:
-            subprocess.run(
+        creates = [subprocess.Popen(
+                       [psmux, "-L", w.window_name, "new-session", "-d",
+                        "-s", w.window_name, "-c", w.cwd],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                   for w in to_create]
+        for p in creates:
+            if p.wait() != 0:
+                raise subprocess.CalledProcessError(p.returncode, p.args)
+
+        for w in to_create:
+            subprocess.Popen(
                 [psmux, "-L", w.window_name, "send-keys",
                  "-t", w.window_name, f"cmd /c {w.command}", "Enter"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
 
     def attach_psmux(self, session_name: str, title: str,
-                     color: str | None = None) -> None:
-        import sys
-        python = sys.executable
+                     color: str | None = None,
+                     config_path: str | None = None) -> None:
+        psmux = find_psmux()
+        if not psmux:
+            return
         args = [
             "wt", "-w", "new",
             "--title", title,
@@ -178,7 +207,7 @@ class WindowsPlatform(Platform):
         if color:
             args.extend(["--tabColor", color])
         args.append("--suppressApplicationTitle")
-        args.extend(["--", python, "-m", "multideck", "sessions", session_name])
+        args.extend(["--", psmux, "-L", session_name, "attach"])
         subprocess.Popen(args)
 
 

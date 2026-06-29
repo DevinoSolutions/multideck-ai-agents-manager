@@ -149,6 +149,13 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     psmux_windows: list[PsmuxWindowOpts] = []
     _psmux_colors: dict[str, str | None] = {}
 
+    win_snapshot = plat.snapshot_windows()
+
+    def _is_running(key: str, mode: str) -> bool:
+        if mode == "exact":
+            return key in win_snapshot
+        return any(key.lower() in t.lower() for t in win_snapshot)
+
     for proj in projects:
         tool = proj.tool or config.settings.default_tool
         is_remote = bool(proj.host)
@@ -156,7 +163,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         if tool in ("code", "vscode", "cursor"):
             key = get_leaf_name(proj.remote_path or proj.path) if is_remote else get_leaf_name(proj.path)
             name = proj.title or key
-            running = plat.find_window(key, mode="contains") is not None
+            running = _is_running(key, "contains")
             if not running and not opts.dry_run:
                 vsc_dir = proj.remote_path or proj.path if is_remote else (_resolve_path(proj.path, base_dir) or proj.path)
                 ide_cmd = "cursor" if tool == "cursor" else "code"
@@ -213,7 +220,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                         command=cmd,
                     ))
                     _psmux_colors[wname] = proj.color
-            running = plat.find_window(win_title, mode="exact") is not None
+            running = _is_running(win_title, "exact")
             if not running and not opts.dry_run and not proj_psmux:
                 if is_remote:
                     resolved_dir = proj.remote_path or proj.path
@@ -249,7 +256,6 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         for pw in psmux_windows:
             plat.attach_psmux(pw.window_name, pw.window_name,
                               _psmux_colors.get(pw.window_name))
-            time.sleep(config.settings.launch_delay_ms / 1000)
         click.echo(f"\n  {S('#', fg='yellow')} psmux: {S(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"
                     f" {S('(synced with mobile)', dim=True)}")
         click.echo(f"  {S('From SSH:', dim=True)} {S('psmux -L <name> attach', fg='cyan')}"
@@ -277,33 +283,61 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     mode_label = S(" retile all", fg="yellow") if opts.retile_all else (S(" dry run", fg="yellow") if opts.dry_run else "")
     click.echo(f"\n  {S('#', fg='cyan')} Tiling {S(str(len(to_place)), fg='cyan', bold=True)} window(s)...{mode_label}")
 
-    if not opts.dry_run and new_count > 0:
-        time.sleep(config.settings.settle_seconds)
-
-    for slot_idx, target in enumerate(to_place):
-        pos = slots[slot_idx % len(slots)]
-        screen_num = (slot_idx % len(slots)) // per_screen + 1
-
-        if opts.dry_run:
+    if opts.dry_run:
+        for slot_idx, target in enumerate(to_place):
+            pos = slots[slot_idx % len(slots)]
+            screen_num = (slot_idx % len(slots)) // per_screen + 1
             dims = S(f"{pos.w}x{pos.h}", dim=True)
             at = S(f"({pos.x},{pos.y})", dim=True)
             click.echo(f"    {S('>', fg='cyan')} {target.name:<28} {S('->', dim=True)} screen {screen_num}  {dims} {at}")
-            continue
+        click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
+        return
 
-        handle = plat.find_window(target.key, mode=target.mode)
-        if handle is None and target.is_new:
-            deadline = 20 if target.mode == "contains" else 6
-            for _ in range(deadline):
-                time.sleep(1)
-                handle = plat.find_window(target.key, mode=target.mode)
-                if handle is not None:
-                    break
+    def _lookup(snap: dict[str, int], key: str, mode: str) -> int | None:
+        if mode == "exact":
+            return snap.get(key)
+        key_lower = key.lower()
+        for title, hwnd in snap.items():
+            if key_lower in title.lower():
+                return hwnd
+        return None
 
+    pending: dict[int, _Target] = {}
+    placed = 0
+    snap = plat.snapshot_windows()
+    for slot_idx, target in enumerate(to_place):
+        handle = _lookup(snap, target.key, target.mode)
         if handle is not None:
+            pos = slots[slot_idx % len(slots)]
+            screen_num = (slot_idx % len(slots)) // per_screen + 1
             plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
             click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
-        else:
-            click.echo(f"    {S('x', fg='red')} {target.name} {S('not found', dim=True)}")
+            placed += 1
+        elif target.is_new:
+            pending[slot_idx] = target
+
+    if pending:
+        deadline = max(20 if t.mode == "contains" else 6 for t in pending.values())
+        for _ in range(deadline):
+            if not pending:
+                break
+            time.sleep(1)
+            snap = plat.snapshot_windows()
+            resolved = []
+            for slot_idx, target in pending.items():
+                handle = _lookup(snap, target.key, target.mode)
+                if handle is not None:
+                    pos = slots[slot_idx % len(slots)]
+                    screen_num = (slot_idx % len(slots)) // per_screen + 1
+                    plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
+                    click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
+                    placed += 1
+                    resolved.append(slot_idx)
+            for idx in resolved:
+                del pending[idx]
+
+    for slot_idx, target in pending.items():
+        click.echo(f"    {S('x', fg='red')} {target.name} {S('not found', dim=True)}")
 
     click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
 
@@ -378,13 +412,20 @@ def psmux_status(config: MultideckConfig, group: str | None = None) -> tuple[lis
     projects = eligible_psmux_projects(config, group)
     up: list[dict] = []
     down: list[dict] = []
+
+    checkable = []
     for p in projects:
         info = {"name": p["name"], "path": p["path"], "tool": p["tool"], "group": p.get("group")}
-        alive = False
         if psmux and p["resolved"] and p["cmd"]:
-            r = subprocess.run([psmux, "-L", p["name"], "has-session"], capture_output=True)
-            alive = r.returncode == 0
-        (up if alive else down).append(info)
+            proc = subprocess.Popen([psmux, "-L", p["name"], "has-session"],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            checkable.append((info, proc))
+        else:
+            down.append(info)
+
+    for info, proc in checkable:
+        (up if proc.wait() == 0 else down).append(info)
+
     return up, down, projects
 
 
