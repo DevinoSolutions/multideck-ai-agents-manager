@@ -114,7 +114,6 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         return
 
     slots = compute_grid(monitors, config.layout.columns, config.layout.rows)
-    per_screen = config.layout.columns * config.layout.rows
 
     grid_label = f"{config.layout.columns}x{config.layout.rows}"
     click.echo(
@@ -286,7 +285,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
     if opts.dry_run:
         for slot_idx, target in enumerate(to_place):
             pos = slots[slot_idx % len(slots)]
-            screen_num = (slot_idx % len(slots)) // per_screen + 1
+            screen_num = pos.monitor_index + 1
             dims = S(f"{pos.w}x{pos.h}", dim=True)
             at = S(f"({pos.x},{pos.y})", dim=True)
             click.echo(f"    {S('>', fg='cyan')} {target.name:<28} {S('->', dim=True)} screen {screen_num}  {dims} {at}")
@@ -309,11 +308,11 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         handle = _lookup(snap, target.key, target.mode)
         if handle is not None:
             pos = slots[slot_idx % len(slots)]
-            screen_num = (slot_idx % len(slots)) // per_screen + 1
+            screen_num = pos.monitor_index + 1
             plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
             click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
             placed += 1
-        elif target.is_new:
+        elif target.is_new or opts.retile_all:
             pending[slot_idx] = target
 
     if pending:
@@ -328,7 +327,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
                 handle = _lookup(snap, target.key, target.mode)
                 if handle is not None:
                     pos = slots[slot_idx % len(slots)]
-                    screen_num = (slot_idx % len(slots)) // per_screen + 1
+                    screen_num = pos.monitor_index + 1
                     plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
                     click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
                     placed += 1

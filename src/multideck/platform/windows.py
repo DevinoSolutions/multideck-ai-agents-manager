@@ -120,6 +120,11 @@ class WindowsPlatform(Platform):
         return titles
 
     def move_window(self, handle: Any, rect: Rect) -> None:
+        # A minimized window still enumerates and MoveWindow silently updates
+        # its restored placement, but it stays in the taskbar -- so a re-tile
+        # appears to skip it. Restore first so every window lands on screen.
+        if user32.IsIconic(handle):
+            user32.ShowWindow(handle, 9)  # SW_RESTORE
         user32.MoveWindow(handle, rect.x, rect.y, rect.w, rect.h, True)
         user32.MoveWindow(handle, rect.x, rect.y, rect.w, rect.h, True)
 
