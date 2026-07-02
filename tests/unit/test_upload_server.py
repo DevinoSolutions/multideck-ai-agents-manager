@@ -302,8 +302,9 @@ class TestInSessionFeedback:
         assert self._post("/upload?project=marka")["ok"] is True
         # early flash lands before the response, so it's already recorded
         assert any("uploading image" in f for f in self._flashes())
-        # the early flash targets the right session socket
-        assert any("-L marka display-message" in f and "uploading" in f
+        # the early flash targets the right session socket (a message-style
+        # tint may sit between the socket flag and display-message)
+        assert any("-L marka" in f and "display-message" in f and "uploading" in f
                    for f in self._flashes())
         # result flash lands just after the response
         assert self._wait_flash("image uploaded")

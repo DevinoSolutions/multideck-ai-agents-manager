@@ -59,6 +59,15 @@ _FB_UP = "↑"    # up arrow   -- uploading
 _FB_OK = "✓"    # check mark -- uploaded
 _FB_NO = "✗"    # ballot x   -- failed
 
+# Color the flash so state reads at a glance: green while uploading AND on
+# success, red on failure. This Cygwin tmux 3.3.6 does NOT expand inline #[...]
+# style directives inside display-message (it prints them verbatim), so we tint
+# the whole message bar via message-style instead -- set just before the flash,
+# scoped to that project's own socket. It's overwritten on the next flash and
+# only styles the transient message line, never the agent pane.
+_MSG_GREEN = "bg=green,fg=black,bold"
+_MSG_RED = "bg=red,fg=white,bold"
+
 # How long each status-line flash lingers (ms). "uploading" is given a generous
 # ceiling so it stays put until the result overwrites it; if something stalls
 # without raising, it still clears on its own.
@@ -89,19 +98,23 @@ def _inflight_dec(project: str) -> int:
         return n
 
 
-def _flash(psmux: str | None, project: str, message: str, duration_ms: int) -> None:
+def _flash(psmux: str | None, project: str, message: str, duration_ms: int,
+           style: str | None = None) -> None:
     """Best-effort: flash a transient message in the session's psmux status line.
 
     Non-disruptive -- ``display-message`` repaints the status bar, not the agent
-    pane. Never raises and never blocks the upload for long.
+    pane. ``style`` (a tmux message-style spec) tints the bar; it's set in the
+    same psmux invocation, just before the message, via tmux's ``;`` command
+    chaining. Never raises and never blocks the upload for long.
     """
     if not psmux:
         return
+    cmd = [psmux, "-L", project]
+    if style:
+        cmd += ["set", "-g", "message-style", style, ";"]
+    cmd += ["display-message", "-d", str(duration_ms), message]
     try:
-        subprocess.run(
-            [psmux, "-L", project, "display-message", "-d", str(duration_ms), message],
-            capture_output=True, timeout=3,
-        )
+        subprocess.run(cmd, capture_output=True, timeout=3)
     except (OSError, subprocess.SubprocessError):
         pass
 
@@ -110,7 +123,15 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>md</title>
+<title>md upload</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#1e1e2e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="md upload">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cdd6f4;
@@ -137,6 +158,13 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cd
 .toast.ok{color:#a6e3a1}
 .toast.err{color:#f38ba8}
 .none{color:#f38ba8;font-size:.8rem;padding:12px 0}
+.install{display:none;margin-top:14px;padding:10px 12px;border:1px solid #313244;
+  border-radius:10px;background:#181825;font-size:.72rem;color:#9399b2;line-height:1.5}
+.install.show{display:block}
+.install b{color:#a6e3a1;font-weight:600}
+.install button{margin-top:8px;width:100%;padding:8px;border:none;border-radius:8px;
+  background:#a6e3a1;color:#1e1e2e;font-weight:700;font-size:.78rem;cursor:pointer}
+.install .x{float:right;color:#585b70;cursor:pointer;font-size:.9rem;line-height:1}
 </style>
 </head>
 <body>
@@ -152,6 +180,12 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cd
   <input type="file" id="file" accept="image/*,video/*,.pdf,.txt,.json,.csv,.log" disabled>
 </div>
 <div class="toast" id="toast">&nbsp;</div>
+
+<div class="install" id="install">
+  <span class="x" id="install-x">&times;</span>
+  <span id="install-text"></span>
+  <button id="install-btn" style="display:none">Install app</button>
+</div>
 
 <script>
 let proj = null;
@@ -171,6 +205,15 @@ pills.forEach(p => p.addEventListener('click', () => {
   toast.textContent = ' ';
   toast.className = 'toast';
 }));
+
+// Deep link: ?project=<name> (e.g. from a notification) pre-selects that
+// project's pill on open, so a tap lands you straight on the right session.
+(function () {
+  const want = new URLSearchParams(location.search).get('project');
+  if (!want) return;
+  const pill = [...pills].find(p => p.dataset.name === want);
+  if (pill) { pill.click(); pill.scrollIntoView({block: 'center'}); }
+})();
 
 input.addEventListener('change', async () => {
   if (!input.files.length || !proj) return;
@@ -209,6 +252,58 @@ input.addEventListener('change', async () => {
     }
   }, 2000);
 });
+</script>
+
+<script>
+// Register the service worker only where it's allowed (HTTPS/localhost); over
+// plain HTTP this is simply skipped, no errors.
+if ('serviceWorker' in navigator && window.isSecureContext) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+// Add-to-home-screen helper. Hidden once installed. On Android/HTTPS the
+// beforeinstallprompt event gives a one-tap Install button; otherwise we show
+// the platform's manual steps.
+(function () {
+  const box = document.getElementById('install');
+  const text = document.getElementById('install-text');
+  const btn = document.getElementById('install-btn');
+  const standalone = window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true;
+  if (standalone || localStorage.getItem('md-install-hide')) return;
+
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (ios) {
+    // One-tap: install the Web Clip profile (drops the icon straight on the
+    // Home Screen). Must be Safari; offer the manual route as a fallback.
+    text.innerHTML = "Tap to install the app icon, then <b>Install</b> the profile. "
+      + "(If it doesn't open, use this page in <b>Safari</b>, or Share &rsaquo; Add to Home Screen.)";
+    btn.textContent = 'Install to Home Screen';
+    btn.style.display = 'block';
+    btn.addEventListener('click', () => { location.href = '/install.mobileconfig'; });
+  } else {
+    text.innerHTML = "Install: open the browser <b>menu</b> then <b>Add to Home screen</b> (or <b>Install app</b>).";
+    let deferred = null;
+    window.addEventListener('beforeinstallprompt', e => {
+      e.preventDefault();
+      deferred = e;
+      text.innerHTML = "Install <b>md upload</b> to your home screen for one-tap access.";
+      btn.style.display = 'block';
+    });
+    btn.addEventListener('click', async () => {
+      if (!deferred) return;
+      deferred.prompt();
+      await deferred.userChoice;
+      deferred = null;
+      box.classList.remove('show');
+    });
+  }
+  box.classList.add('show');
+  document.getElementById('install-x').addEventListener('click', () => {
+    box.classList.remove('show');
+    localStorage.setItem('md-install-hide', '1');
+  });
+})();
 </script>
 </body>
 </html>"""
@@ -267,6 +362,192 @@ def _build_html(sessions: list[dict]) -> str:
     return _HTML_TEMPLATE.replace("PROJECTS_PLACEHOLDER", placeholder)
 
 
+# --- PWA assets -----------------------------------------------------------
+# So the uploader installs to the phone home screen as a standalone app: a web
+# manifest + icons + a service worker. Icons are rendered in pure Python (an
+# upload arrow on the catppuccin background) so there are no binary assets to
+# ship and no image library to depend on. The service worker only registers in
+# a secure context, so it's a no-op over plain HTTP today and lights up offline
+# support automatically if the server is ever fronted with HTTPS.
+
+_BG_RGBA = (30, 30, 46, 255)        # #1e1e2e  catppuccin base
+_FG_RGBA = (166, 227, 161, 255)     # #a6e3a1  catppuccin green (upload arrow)
+_TRANSPARENT = (0, 0, 0, 0)
+
+_icon_cache: dict[tuple[int, bool], bytes] = {}
+_icon_lock = threading.Lock()
+
+
+def _png(width: int, height: int, rgba: bytes) -> bytes:
+    """Encode raw RGBA bytes into a PNG (8-bit, color type 6). No deps."""
+    import struct
+    import zlib
+
+    def chunk(typ: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + typ + data
+                + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF))
+
+    stride = width * 4
+    raw = bytearray()
+    for y in range(height):
+        raw.append(0)  # filter type 0 (none) per scanline
+        raw.extend(rgba[y * stride:(y + 1) * stride])
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", ihdr)
+            + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+            + chunk(b"IEND", b""))
+
+
+def _in_rounded(px: float, py: float, n: int, r: float) -> bool:
+    cx = min(max(px, r), n - r)
+    cy = min(max(py, r), n - r)
+    dx, dy = px - cx, py - cy
+    return dx * dx + dy * dy <= r * r
+
+
+def _in_tri(px, py, a, b, c) -> bool:
+    def sign(p, q, rr):
+        return (px - rr[0]) * (q[1] - rr[1]) - (q[0] - rr[0]) * (py - rr[1])
+    d1, d2, d3 = sign(a, a, b), sign(b, b, c), sign(c, c, a)
+    has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
+    has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
+    return not (has_neg and has_pos)
+
+
+def render_icon(size: int, rounded: bool) -> bytes:
+    """An upload arrow (green) on the dark base. ``rounded`` = transparent
+    rounded corners (free-standing icon); else full-bleed square (Apple/maskable,
+    where the OS applies its own mask)."""
+    key = (size, rounded)
+    with _icon_lock:
+        if key in _icon_cache:
+            return _icon_cache[key]
+    r = 0.18 * size
+    cx = size / 2
+    apex_y, base_y, half_w = 0.24 * size, 0.56 * size, 0.26 * size
+    stem_half, stem_top, stem_bot = 0.085 * size, 0.50 * size, 0.80 * size
+    head = ((cx, apex_y), (cx - half_w, base_y), (cx + half_w, base_y))
+    buf = bytearray(size * size * 4)
+    for y in range(size):
+        py = y + 0.5
+        in_stem_row = stem_top <= py <= stem_bot
+        for x in range(size):
+            px = x + 0.5
+            i = (y * size + x) * 4
+            if rounded and not _in_rounded(px, py, size, r):
+                color = _TRANSPARENT
+            elif _in_tri(px, py, *head) or (in_stem_row and abs(px - cx) <= stem_half):
+                color = _FG_RGBA
+            else:
+                color = _BG_RGBA
+            buf[i:i + 4] = bytes(color)
+    png = _png(size, size, bytes(buf))
+    with _icon_lock:
+        _icon_cache[key] = png
+    return png
+
+
+_MANIFEST = json.dumps({
+    "name": "multideck upload",
+    "short_name": "md upload",
+    "description": "Send images straight into your md: sessions",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "background_color": "#1e1e2e",
+    "theme_color": "#1e1e2e",
+    "icons": [
+        {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    ],
+}).encode("utf-8")
+
+# Cache the shell; never the dynamic session list or the upload endpoint.
+_SERVICE_WORKER = b"""\
+const C = 'md-v1';
+const SHELL = ['/icon-192.png', '/icon-512.png', '/manifest.webmanifest'];
+self.addEventListener('install', e => {
+  self.skipWaiting();
+  e.waitUntil(caches.open(C).then(c => c.addAll(SHELL)).catch(() => {}));
+});
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', e => {
+  const u = new URL(e.request.url);
+  if (e.request.method !== 'GET' || u.pathname === '/upload' || u.pathname === '/api/sessions'
+      || u.pathname === '/install.mobileconfig') return;
+  e.respondWith(
+    fetch(e.request).then(r => {
+      const copy = r.clone();
+      caches.open(C).then(c => c.put(e.request, copy)).catch(() => {});
+      return r;
+    }).catch(() => caches.match(e.request))
+  );
+});
+"""
+
+# Static PWA routes: (content-type, lazy bytes factory). Served with a long
+# immutable cache since the icons/manifest/sw rarely change.
+_PWA_ROUTES = {
+    "/manifest.webmanifest": ("application/manifest+json", lambda: _MANIFEST),
+    "/sw.js": ("application/javascript", lambda: _SERVICE_WORKER),
+    "/icon-192.png": ("image/png", lambda: render_icon(192, True)),
+    "/icon-512.png": ("image/png", lambda: render_icon(512, True)),
+    "/icon-maskable-512.png": ("image/png", lambda: render_icon(512, False)),
+    "/apple-touch-icon.png": ("image/png", lambda: render_icon(180, False)),
+}
+
+# iOS "Web Clip" configuration profile. Tapping a link to this in Safari prompts
+# to install a profile that drops a Home Screen icon (our green arrow) opening
+# the uploader -- a true one-tap install, no Share-sheet hunt. The target URL is
+# built from the request's Host header so it matches whatever the phone typed
+# (tailnet name + port). Fixed UUIDs so reinstalling replaces rather than dupes.
+_WEBCLIP_UUID = "9D3B7E10-0001-4A00-9000-000000000001"
+_PROFILE_UUID = "9D3B7E10-0002-4A00-9000-000000000002"
+
+
+def _mobileconfig(host: str) -> bytes:
+    import base64
+    import html as _html
+    icon_b64 = base64.b64encode(render_icon(180, False)).decode("ascii")
+    url = _html.escape(f"http://{host}/")
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>FullScreen</key><true/>
+      <key>IgnoreManifestScope</key><true/>
+      <key>Icon</key>
+      <data>{icon_b64}</data>
+      <key>IsRemovable</key><true/>
+      <key>Label</key><string>md upload</string>
+      <key>PayloadDescription</key><string>Adds the md upload Home Screen icon.</string>
+      <key>PayloadDisplayName</key><string>md upload</string>
+      <key>PayloadIdentifier</key><string>ca.devino.multideck.webclip</string>
+      <key>PayloadType</key><string>com.apple.webClip.managed</string>
+      <key>PayloadUUID</key><string>{_WEBCLIP_UUID}</string>
+      <key>PayloadVersion</key><integer>1</integer>
+      <key>Precomposed</key><true/>
+      <key>URL</key><string>{url}</string>
+    </dict>
+  </array>
+  <key>PayloadDescription</key><string>Install the md upload app on your Home Screen.</string>
+  <key>PayloadDisplayName</key><string>md upload</string>
+  <key>PayloadIdentifier</key><string>ca.devino.multideck</string>
+  <key>PayloadRemovalDisallowed</key><false/>
+  <key>PayloadType</key><string>Configuration</string>
+  <key>PayloadUUID</key><string>{_PROFILE_UUID}</string>
+  <key>PayloadVersion</key><integer>1</integer>
+</dict>
+</plist>
+""".encode("utf-8")
+
+
 def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], dict[str, tuple[str, bytes]]]:
     """Minimal multipart/form-data parser. Returns (fields, files)."""
     content_type = handler.headers.get("Content-Type", "")
@@ -315,6 +596,31 @@ def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], d
     return fields, files
 
 
+_FOCUS_TARGET_FILE = Path.home() / ".multideck" / "focus-target"
+_PICKER_ATTACHED_FILE = Path.home() / ".multideck" / "picker-attached"
+
+
+def _request_focus(project: str) -> None:
+    """Ask the SSH session picker to switch to <project>: write a focus-target
+    file and detach the picker's currently-attached client so its loop wakes,
+    consumes the target, and re-attaches to it."""
+    _FOCUS_TARGET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _FOCUS_TARGET_FILE.with_suffix(".tmp")
+    tmp.write_text(project, encoding="utf-8")
+    os.replace(tmp, _FOCUS_TARGET_FILE)
+    psmux = find_psmux()
+    try:
+        current = _PICKER_ATTACHED_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        current = ""
+    if psmux and current:
+        try:
+            subprocess.run([psmux, "-L", current, "detach-client"],
+                           capture_output=True, timeout=3)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 class UploadHandler(BaseHTTPRequestHandler):
     config_path: str | None = None
     cached_sessions: list[dict] = []
@@ -327,21 +633,54 @@ class UploadHandler(BaseHTTPRequestHandler):
             UploadHandler.sessions_ts = now
         return UploadHandler.cached_sessions
 
+    def _send_bytes(self, data: bytes, content_type: str, cache: bool = False) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(data)))
+        if cache:
+            self.send_header("Cache-Control", "public, max-age=604800, immutable")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
-        if self.path == "/" or self.path == "":
-            page = _build_html(self._sessions()).encode("utf-8")
+        path = urlparse(self.path).path
+        if path == "/" or path == "":
+            self._send_bytes(_build_html(self._sessions()).encode("utf-8"),
+                             "text/html; charset=utf-8")
+        elif path == "/api/sessions":
+            self._send_bytes(json.dumps(self._sessions()).encode(), "application/json")
+        elif path == "/install.mobileconfig":
+            # Built per-request: the Web Clip URL must match the host:port the
+            # phone actually used, which only the Host header knows.
+            host = self.headers.get("Host", "localhost")
+            data = _mobileconfig(host)
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(page)))
+            self.send_header("Content-Type", "application/x-apple-aspen-config")
+            self.send_header("Content-Disposition", 'attachment; filename="md-upload.mobileconfig"')
+            self.send_header("Content-Length", str(len(data)))
             self.end_headers()
-            self.wfile.write(page)
-        elif self.path == "/api/sessions":
-            body = json.dumps(self._sessions()).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(data)
+        elif path == "/focus":
+            project = parse_qs(urlparse(self.path).query).get("project", [""])[0]
+            if project in {s["name"] for s in self._sessions()}:
+                _request_focus(project)
+                safe = html.escape(project)
+                body = (
+                    "<!doctype html><meta charset=utf-8>"
+                    "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                    "<body style='margin:0;background:#1e1e2e;color:#cdd6f4;"
+                    "font-family:system-ui;display:flex;align-items:center;"
+                    "justify-content:center;height:100vh;text-align:center'>"
+                    f"<div>Switched to <b style='color:#a6e3a1'>{safe}</b>.<br>"
+                    "<span style='color:#6c7086;font-size:.85rem'>Open your terminal "
+                    "(multideck sessions) to continue.</span></div></body>"
+                ).encode("utf-8")
+                self._send_bytes(body, "text/html; charset=utf-8")
+            else:
+                self.send_error(404)
+        elif path in _PWA_ROUTES:
+            content_type, factory = _PWA_ROUTES[path]
+            self._send_bytes(factory(), content_type, cache=True)
         else:
             self.send_error(404)
 
@@ -365,7 +704,9 @@ class UploadHandler(BaseHTTPRequestHandler):
         if flagged:
             n = _inflight_inc(flagged)
             tail = f" ({n})" if n > 1 else ""
-            _flash(psmux, flagged, f"multideck  {_FB_UP} uploading image{tail}", _FLASH_UP_MS)
+            _flash(psmux, flagged,
+                   f"multideck  {_FB_UP} uploading image{tail}",
+                   _FLASH_UP_MS, style=_MSG_GREEN)
 
         ok = False
         project = flagged
@@ -418,9 +759,13 @@ class UploadHandler(BaseHTTPRequestHandler):
             if done:
                 more = f"  ({remaining} more)" if remaining else ""
                 if ok:
-                    _flash(psmux, done, f"multideck  {_FB_OK} image uploaded{more}", _FLASH_OK_MS)
+                    _flash(psmux, done,
+                           f"multideck  {_FB_OK} image uploaded{more}",
+                           _FLASH_OK_MS, style=_MSG_GREEN)
                 else:
-                    _flash(psmux, done, f"multideck  {_FB_NO} upload failed{more}", _FLASH_NO_MS)
+                    _flash(psmux, done,
+                           f"multideck  {_FB_NO} upload failed{more}",
+                           _FLASH_NO_MS, style=_MSG_RED)
 
     def _json_response(self, data: dict, status: int = 200):
         body = json.dumps(data).encode()
