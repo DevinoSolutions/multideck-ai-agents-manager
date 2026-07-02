@@ -1799,8 +1799,221 @@ def serve_cmd(ctx: click.Context, port: int, ensure: bool) -> None:
         click.echo(f"\n  {S('Server stopped.', dim=True)}")
 
 
+def _force_utf8_console() -> None:
+    """Make stdout render UTF-8 (block chars for the QR, box glyphs) on Windows
+    consoles that default to a legacy code page. Best-effort, never raises."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except Exception:
+        pass
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _tailnet_host() -> str:
+    """Best host for the phone URL: Tailscale MagicDNS name, then its IP, then
+    the LAN IP. MagicDNS gives the prettiest, most stable URL."""
+    import socket
+    import subprocess
+
+    try:
+        r = subprocess.run(["tailscale", "status", "--json"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            dns = (json.loads(r.stdout).get("Self") or {}).get("DNSName", "")
+            if dns:
+                return dns.rstrip(".")
+    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
+        pass
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip().splitlines()[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return "localhost"
+
+
+def _pid_alive(pid: int | None) -> bool:
+    """Portable best-effort liveness check for a pid."""
+    if not pid:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+        k.CloseHandle(h)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _running_upload_port() -> int | None:
+    """Port of a *live* locally-running upload server, from its pid file. Skips
+    stale pid files (a port whose recorded process is gone)."""
+    import re
+    from multideck.upload_server import server_pid
+    d = Path.home() / ".multideck"
+    if not d.exists():
+        return None
+    ports = []
+    for f in d.glob("upload_server-*.pid"):
+        m = re.match(r"upload_server-(\d+)\.pid", f.name)
+        if m:
+            ports.append(int(m.group(1)))
+    alive = [p for p in ports if _pid_alive(server_pid(p))]
+    return min(alive) if alive else None
+
+
+def _print_qr(url: str) -> None:
+    """Print a scannable QR for the URL if the qrcode lib is available."""
+    try:
+        import qrcode
+    except ImportError:
+        click.echo(f"  {S('Tip:', dim=True)} {S('pip install qrcode', bold=True)} "
+                   f"{S('to print a scannable QR code here.', dim=True)}")
+        return
+    qr = qrcode.QRCode(border=2)
+    qr.add_data(url)
+    qr.make(fit=True)
+    qr.print_ascii(invert=True)
+
+
+@main.command("mobile")
+@click.option("--port", "-p", default=None, type=int,
+              help="Upload server port (default: running server, else 8033).")
+@click.option("--host", default=None,
+              help="Host/IP for the phone URL (default: Tailscale name or IP).")
+@click.pass_context
+def mobile_cmd(ctx: click.Context, port: int | None, host: str | None) -> None:
+    """Show the phone URL + QR for the image-upload app.
+
+    Scan it once on your phone, then 'Add to Home Screen' to install the
+    uploader as a standalone app -- after that it's one tap to send an image
+    into any md: session. Run this on the host that serves the uploader.
+    """
+    _force_utf8_console()
+    if port is None:
+        port = _running_upload_port() or 8033
+    if not host:
+        host = _tailnet_host()
+    url = f"http://{host}:{port}/"
+
+    _banner()
+    click.echo(f"  {S('Mobile uploader', bold=True)}  {S('- install as a home-screen app', dim=True)}")
+    _divider()
+    click.echo()
+    click.echo(f"  {S('Open on phone:', bold=True)}  {S(url, fg='cyan', bold=True)}")
+    click.echo()
+    _print_qr(url)
+    click.echo()
+    click.echo(f"  {S('Install:', bold=True)}  {S('iOS', fg='cyan')} Share {S('>', dim=True)} Add to Home Screen"
+               f"     {S('Android', fg='cyan')} menu {S('>', dim=True)} Add to Home screen")
+    click.echo(f"  {S('Then it opens straight to the uploader - pick a project, send an image.', dim=True)}")
+    click.echo()
+
+
+def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
+    """Each live session's working directory (psmux ``pane_current_path``) -- the
+    key we match against the agent-state store. Fetched concurrently."""
+    import subprocess
+    from concurrent.futures import ThreadPoolExecutor
+
+    def cwd(name: str) -> str:
+        try:
+            r = subprocess.run(
+                [psmux, "-L", name, "display-message", "-p", "#{pane_current_path}"],
+                capture_output=True, text=True, timeout=3,
+                encoding="utf-8", errors="replace")
+        except (OSError, subprocess.SubprocessError):
+            return ""
+        return (r.stdout or "").strip()
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        return dict(zip(names, pool.map(cwd, names)))
+
+
+def _status_label(state: str | None) -> str:
+    from multideck import agent_state
+    return {
+        agent_state.WORKING: S("working...", fg="yellow", bold=True),
+        agent_state.DONE: S("done", fg="green", bold=True),
+        agent_state.NEEDS_INPUT: S("needs input", fg="red", bold=True),
+        agent_state.ERROR: S("error", fg="red", bold=True),
+    }.get(state, "")
+
+
+def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
+    """Map each session to a status label read from the agent-state store, which
+    agents populate via their own lifecycle events (Claude Code hooks, Codex
+    notify, ...) -- ground truth, not terminal scraping. A staleness guard keeps
+    a session killed mid-turn from showing 'working...' forever."""
+    import time
+    from multideck import agent_state
+    stale = {agent_state.WORKING: 1800, agent_state.NEEDS_INPUT: 3600}
+    out: dict[str, str] = {}
+    for sock, cwd in cwds.items():
+        rec = agent_state.state_for(cwd) if cwd else None
+        state = rec.get("state") if rec else None
+        if rec and state in stale and (time.time() - rec.get("ts", 0)) > stale[state]:
+            state = None
+        out[sock] = _status_label(state)
+    return out
+
+
+_FOCUS_TARGET_FILE = Path.home() / ".multideck" / "focus-target"
+_PICKER_ATTACHED_FILE = Path.home() / ".multideck" / "picker-attached"
+
+
+def _consume_focus_target() -> str | None:
+    """Read and clear the session a notification/web tap asked us to jump to."""
+    try:
+        t = _FOCUS_TARGET_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    try:
+        _FOCUS_TARGET_FILE.unlink()
+    except OSError:
+        pass
+    return t or None
+
+
+def _set_picker_attached(name: str | None) -> None:
+    """Record which session this picker is attached to, so the /focus endpoint
+    knows whose client to detach to trigger a switch (None = at the menu)."""
+    try:
+        if name:
+            _PICKER_ATTACHED_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _PICKER_ATTACHED_FILE.write_text(name, encoding="utf-8")
+        else:
+            _PICKER_ATTACHED_FILE.unlink()
+    except OSError:
+        pass
+
+
 def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
-    """Looping psmux session picker: list live sessions, attach to a choice, repeat."""
+    """Looping psmux session picker: list live sessions, attach to a choice, repeat.
+
+    A focus-target file (set by the upload server's /focus endpoint, e.g. from a
+    notification tap) lets the currently-attached session be switched remotely:
+    /focus detaches this picker's client, the attach returns, and the loop jumps
+    straight to the requested project."""
     import subprocess
 
     from multideck.launch import _psmux_session_name
@@ -1837,20 +2050,46 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
             subprocess.run(["stty", "sane"], capture_output=True)
             subprocess.run(["tput", "reset"], capture_output=True)
 
+    def _attach(target):
+        # Record the attachment so /focus can detach us to trigger a switch.
+        _set_picker_attached(target)
+        try:
+            subprocess.call([psmux, "-L", target, "attach"])
+        finally:
+            _set_picker_attached(None)
+            _reset_terminal()
+
     if name:
         matches = [s for s in sessions if name.lower() in s.lower()]
         if matches:
-            subprocess.call([psmux, "-L", matches[0], "attach"])
-            _reset_terminal()
+            _attach(matches[0])
+
+    # Tappable from a phone SSH client: one tap opens the uploader, then Add to
+    # Home Screen (iOS: tap to install the Web Clip profile). Shown only when a
+    # live upload server is detected, so the link always works.
+    port = _running_upload_port()
+    upload_url = f"http://{_tailnet_host()}:{port}/" if port else None
 
     while True:
+        # Remote switch: a notification/web tap dropped a target here -> jump to it.
+        focus = _consume_focus_target()
+        if focus and focus in sessions:
+            _attach(focus)
+            continue
+
         click.clear()
         _banner()
         click.echo(f"  {S('psmux sessions', bold=True)}  {S('(synced with desktop)', dim=True)}")
         _divider()
         click.echo()
+        if upload_url:
+            click.echo(f"  {S('WebApp To Upload Images', bold=True)}  {S(upload_url, fg='cyan', bold=True)}")
+            click.echo()
+        statuses = _session_statuses(_session_cwds(psmux, sessions))
         for i, sess in enumerate(sessions, 1):
-            _menu_item(str(i), sess)
+            status = statuses.get(sess, "")
+            extra = (" " * max(2, 26 - len(sess)) + status) if status else ""
+            _menu_item(str(i), sess, extra=extra)
         click.echo()
         _menu_item("q", "Back", key_fg="yellow")
         click.echo()
@@ -1874,8 +2113,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
                 target = matches[0]
 
         if target:
-            subprocess.call([psmux, "-L", target, "attach"])
-            _reset_terminal()
+            _attach(target)
         else:
             click.echo(f"  {S('x', fg='red')} Invalid choice.")
 
