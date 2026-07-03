@@ -15,7 +15,15 @@ from tests.conftest import FakePlatform
 
 from multideck.config import MultideckConfig, ProjectConfig, Settings
 from multideck.grid import MonitorRect, Rect, compute_grid
-from multideck.launch import RunOpts, _Target, _start_psmux_and_upload, _tile_targets, run_multideck
+from multideck.launch import (
+    RunOpts,
+    _LaunchResult,
+    _Target,
+    _launch_projects,
+    _start_psmux_and_upload,
+    _tile_targets,
+    run_multideck,
+)
 from multideck.platform import PsmuxWindowOpts
 
 
@@ -164,7 +172,8 @@ class TestTileTargets:
 class TestStartPsmuxAndUpload:
     """Direct unit tests for the extracted psmux+upload-server phase (R4,
     Step 3; renamed from the plan's _bring_up_psmux -- launch.py already has
-    a public bring_up_psmux for the attach-path session creator)."""
+    a public bring_up_psmux for the attach-path session creator). Takes the
+    explicit-args form narrowed to _LaunchResult in Step 4."""
 
     def test_attaches_each_window(self):
         fp = FakePlatform(supports_psmux=True)
@@ -174,8 +183,9 @@ class TestStartPsmuxAndUpload:
         ]
         colors = {"a": "#111111", "b": None}
         cfg = MultideckConfig(projects=[])
+        result = _LaunchResult(targets=[], psmux_windows=windows, psmux_colors=colors)
 
-        _start_psmux_and_upload(fp, cfg, RunOpts(), windows, colors)
+        _start_psmux_and_upload(fp, cfg, RunOpts(), result)
 
         assert fp.launched_psmux == windows
         assert len(fp.attached_psmux) == 2
@@ -186,8 +196,44 @@ class TestStartPsmuxAndUpload:
         fp = FakePlatform(supports_psmux=True)
         windows = [PsmuxWindowOpts(window_name="a", cwd="/tmp/a", command="claude")]
         cfg = MultideckConfig(projects=[])
+        result = _LaunchResult(targets=[], psmux_windows=windows, psmux_colors={"a": None})
 
-        _start_psmux_and_upload(fp, cfg, RunOpts(dry_run=True), windows, {"a": None})
+        _start_psmux_and_upload(fp, cfg, RunOpts(dry_run=True), result)
 
         assert fp.launched_psmux == []
         assert fp.attached_psmux == []
+
+
+class TestLaunchProjects:
+    """Direct unit tests for the extracted per-project dispatch loop (R4,
+    Step 4), which returns the typed _LaunchResult the downstream phases
+    consume."""
+
+    def test_builds_targets_and_psmux(self, tmp_path, fake_sleep):
+        fp = FakePlatform(supports_psmux=True)
+        projects = [ProjectConfig(path=str(tmp_path), tool="claude", title="proj")]
+        cfg = MultideckConfig(
+            projects=projects,
+            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude", psmux=True),
+        )
+
+        result = _launch_projects(fp, cfg, RunOpts(), projects, None)
+
+        assert result.targets == [_Target(name="proj", key="proj", mode="exact", is_new=True)]
+        assert len(result.psmux_windows) == 1
+        assert result.psmux_windows[0].window_name == "proj"
+
+    def test_ide_populates_targets(self, tmp_path, fake_sleep):
+        fp = FakePlatform()
+        projects = [ProjectConfig(path=str(tmp_path), tool="code")]
+        cfg = MultideckConfig(
+            projects=projects,
+            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+        )
+
+        result = _launch_projects(fp, cfg, RunOpts(), projects, None)
+
+        assert len(result.targets) == 1
+        assert result.targets[0].mode == "contains"
+        assert result.targets[0].is_new is True
+        assert len(fp.launched_vscode) == 1
