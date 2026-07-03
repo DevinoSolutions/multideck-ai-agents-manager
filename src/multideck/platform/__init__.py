@@ -6,7 +6,7 @@ import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from multideck.grid import Rect, MonitorRect
 
@@ -56,7 +56,7 @@ class Platform(ABC):
     def list_monitors(self) -> list[MonitorRect]: ...
 
     @abstractmethod
-    def find_window(self, title: str, mode: str = "exact") -> Any | None: ...
+    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> Any | None: ...
 
     @abstractmethod
     def move_window(self, handle: Any, rect: Rect) -> None: ...
@@ -73,6 +73,19 @@ class Platform(ABC):
 
     def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
         raise NotImplementedError("psmux is only supported on Windows")
+
+    def attach_psmux(self, session_name: str, title: str,
+                     color: str | None = None,
+                     config_path: str | None = None) -> None:
+        raise NotImplementedError("psmux is only supported on Windows")
+
+    def supports_psmux(self) -> bool:
+        """True if this platform can run persistent psmux sessions."""
+        return False
+
+    def supports_hotkey(self) -> bool:
+        """True if this platform can run the Alt+V clipboard-image listener."""
+        return False
 
 
 def get_platform() -> Platform:

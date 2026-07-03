@@ -4,7 +4,7 @@ import ctypes
 import ctypes.wintypes
 import subprocess
 from ctypes import POINTER, WINFUNCTYPE, byref, create_unicode_buffer, windll
-from typing import Any
+from typing import Any, Literal
 
 
 from multideck.grid import MonitorRect, Rect
@@ -80,7 +80,9 @@ class WindowsPlatform(Platform):
         user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(callback), 0)
         return monitors
 
-    def find_window(self, title: str, mode: str = "exact") -> int | None:
+    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> int | None:
+        if mode not in ("exact", "contains"):
+            raise ValueError(f"unknown find_window mode: {mode!r}")
         result: int | None = None
 
         WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
@@ -214,5 +216,11 @@ class WindowsPlatform(Platform):
         args.append("--suppressApplicationTitle")
         args.extend(["--", psmux, "-L", session_name, "attach"])
         subprocess.Popen(args)
+
+    def supports_psmux(self) -> bool:
+        return True
+
+    def supports_hotkey(self) -> bool:
+        return True
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, Literal
 
 from multideck.grid import MonitorRect, Rect
 from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts
@@ -49,7 +49,9 @@ class LinuxPlatform(Platform):
 
         return monitors
 
-    def find_window(self, title: str, mode: str = "exact") -> str | None:
+    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> str | None:
+        if mode not in ("exact", "contains"):
+            raise ValueError(f"unknown find_window mode: {mode!r}")
         if shutil.which("xdotool"):
             pattern = f"^{re.escape(title)}$" if mode == "exact" else re.escape(title)
             result = subprocess.run(

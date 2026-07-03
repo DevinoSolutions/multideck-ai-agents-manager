@@ -256,7 +256,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     if psmux_windows and not opts.dry_run:
         plat.launch_psmux_session(psmux_windows)
         for pw in psmux_windows:
-            plat.attach_psmux(pw.window_name, pw.window_name,  # type: ignore[attr-defined]  # TODO(E4): Platform.attach_psmux not on base class
+            plat.attach_psmux(pw.window_name, pw.window_name,
                               _psmux_colors.get(pw.window_name))
         click.echo(f"\n  {S('#', fg='yellow')} psmux: {S(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"
                     f" {S('(synced with mobile)', dim=True)}")
