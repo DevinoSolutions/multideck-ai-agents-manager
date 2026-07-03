@@ -5,7 +5,7 @@ import subprocess
 import sys
 import pytest
 
-pytestmark = pytest.mark.e2e
+pytestmark = [pytest.mark.e2e, pytest.mark.needs_ssh]
 
 
 def _path_without_ssh():
