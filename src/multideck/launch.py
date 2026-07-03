@@ -13,9 +13,7 @@ from multideck.config import MultideckConfig
 from multideck.grid import compute_grid
 from multideck.log import get_logger
 from multideck.platform import PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
-from multideck.sessions import build_resume_command
-from multideck.sessions.claude import get_claude_session_ids
-from multideck.sessions.codex import get_codex_session_ids
+from multideck.sessions import AGENT_TOOLS, build_resume_command
 from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name
 
@@ -69,14 +67,13 @@ def _resolve_path(raw: str, base_dir: str | None) -> str | None:
 
 
 def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None]:
-    if tool == "claude":
-        return get_claude_session_ids(project_dir, count)
-    if tool == "codex":
-        return get_codex_session_ids(project_dir, count)
+    caps = AGENT_TOOLS.get(tool)
+    if caps and caps.session_ids:
+        return caps.session_ids(project_dir, count)
     return [None] * count
 
 
-HAPPY_AGENTS = {"claude", "codex"}
+HAPPY_AGENTS = {t for t, c in AGENT_TOOLS.items() if c.happy}   # derived; name kept for tests
 
 S = click.style
 
@@ -188,7 +185,8 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
         window_count = len(titles)
 
         session_ids: list[str | None] = [None] * window_count
-        if window_count > 1 and tool in ("claude", "codex") and not is_remote:
+        caps = AGENT_TOOLS.get(tool)
+        if window_count > 1 and caps and caps.multi_window and not is_remote:
             resolved_dir = _resolve_path(proj.path, base_dir)
             if resolved_dir:
                 session_ids = _get_session_ids(tool, resolved_dir, window_count)
