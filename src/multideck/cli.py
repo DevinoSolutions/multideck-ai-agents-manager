@@ -703,12 +703,14 @@ def main(
             break
 
     from multideck.launch import run_multideck, RunOpts
-    run_multideck(cfg, RunOpts(
+    rc = run_multideck(cfg, RunOpts(
         retile_all=retile_all,
         dry_run=dry_run,
         group=group,
         config_path=str(config_file),
     ))
+    if rc:
+        sys.exit(rc)
 
 
 def _default_attach_host() -> str | None:

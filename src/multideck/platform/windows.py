@@ -8,6 +8,7 @@ from typing import Any
 
 
 from multideck.grid import MonitorRect, Rect
+from multideck.log import get_logger
 from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, find_psmux
 
 user32 = windll.user32
@@ -29,7 +30,7 @@ class WindowsPlatform(Platform):
         try:
             user32.SetProcessDPIAware()
         except (OSError, AttributeError):
-            pass
+            get_logger("platform").warning("could not set DPI awareness; tiling may be misaligned")
 
     def list_monitors(self) -> list[MonitorRect]:
         monitors: list[MonitorRect] = []
@@ -64,7 +65,7 @@ class WindowsPlatform(Platform):
                 shcore.GetDpiForMonitor(hmon, 0, byref(dpi_x), byref(dpi_y))
                 scale = dpi_x.value / 96.0
             except (OSError, AttributeError):
-                pass
+                get_logger("platform").warning("DPI query failed for a monitor; assuming scale 1.0")
 
             monitors.append(MonitorRect(
                 x=wa.left,
