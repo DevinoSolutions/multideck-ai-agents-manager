@@ -516,3 +516,53 @@ class TestStopServer:
 
         assert mod.stop_server(9999) is True
         assert not pid_file.exists()
+
+
+class TestBindAddresses:
+    """R7: the upload server must never bind the LAN wildcard 0.0.0.0 --
+    only loopback (so the cli.py liveness probe + localhost URL keep
+    working) plus the Tailscale IP when one is available."""
+
+    def test_auto_bind_loopback_only_when_no_tailscale(self, monkeypatch):
+        import multideck.upload_server as mod
+        monkeypatch.setattr(mod, "_tailscale_ip", lambda: None)
+        assert mod._bind_addresses(None) == ["127.0.0.1"]
+        assert "0.0.0.0" not in mod._bind_addresses(None)
+
+    def test_auto_bind_includes_tailscale(self, monkeypatch):
+        import multideck.upload_server as mod
+        monkeypatch.setattr(mod, "_tailscale_ip", lambda: "100.64.1.2")
+        assert mod._bind_addresses(None) == ["127.0.0.1", "100.64.1.2"]
+
+    def test_explicit_host_honored(self):
+        import multideck.upload_server as mod
+        # The --host escape hatch is honored verbatim, including 0.0.0.0.
+        assert mod._bind_addresses("0.0.0.0") == ["0.0.0.0"]
+
+    def test_run_server_binds_expected(self, tmp_path, monkeypatch):
+        import multideck.upload_server as mod
+        monkeypatch.setattr(mod, "_tailscale_ip", lambda: None)
+        monkeypatch.setattr(mod, "_pid_path", lambda port: tmp_path / f"upload-{port}.pid")
+
+        constructed = []
+
+        class _FakeServer:
+            def __init__(self, address, handler_cls):
+                self.server_address = address
+                constructed.append(address)
+
+            def serve_forever(self):
+                raise KeyboardInterrupt
+
+            def shutdown(self):
+                pass
+
+            def server_close(self):
+                pass
+
+        monkeypatch.setattr(mod, "ThreadingHTTPServer", _FakeServer)
+
+        with pytest.raises(KeyboardInterrupt):
+            mod.run_server(port=0)
+
+        assert constructed == [("127.0.0.1", 0)]  # loopback only, never 0.0.0.0

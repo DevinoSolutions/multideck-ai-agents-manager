@@ -831,26 +831,75 @@ class UploadHandler(BaseHTTPRequestHandler):
         get_logger("upload").debug(fmt, *args)
 
 
-def run_server(port: int = 8080, config_path: str | None = None) -> None:
+def _tailscale_ip() -> str | None:
+    """Best-effort Tailscale IPv4 address, or None if Tailscale isn't
+    installed, isn't running, or doesn't answer in time."""
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip().splitlines()[0]
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+    return None
+
+
+def _bind_addresses(host: str | None) -> list[str]:
+    """Addresses run_server should bind.
+
+    An explicit `host` (the `serve --host` escape hatch) is honored
+    verbatim, including "0.0.0.0" for a user who knowingly wants a LAN-wide
+    bind. Otherwise: loopback is always included -- the daily
+    `_maybe_start_upload_server` liveness probe and the advertised
+    `http://localhost:<port>` URL both depend on it -- plus the Tailscale IP
+    when one is available. The LAN wildcard is never chosen automatically.
+    """
+    if host is not None:
+        return [host]
+    addrs = ["127.0.0.1"]
+    ip = _tailscale_ip()
+    if ip:
+        addrs.append(ip)
+    else:
+        get_logger("upload").warning(
+            "Tailscale IP unavailable; upload server bound to 127.0.0.1 only "
+            "(phone upload disabled until Tailscale is up)."
+        )
+    return addrs
+
+
+def run_server(port: int = 8080, config_path: str | None = None, host: str | None = None) -> None:
     log = get_logger("upload")
     UploadHandler.config_path = config_path
-    try:
-        server = ThreadingHTTPServer(("0.0.0.0", port), UploadHandler)
-    except OSError as e:
-        log.error("failed to bind 0.0.0.0:%d: %s", port, e)
-        raise
+
+    servers: list[ThreadingHTTPServer] = []
+    bound_addrs: list[str] = []
+    for addr in _bind_addresses(host):
+        try:
+            servers.append(ThreadingHTTPServer((addr, port), UploadHandler))
+            bound_addrs.append(addr)
+        except OSError as e:
+            log.warning("upload server: cannot bind %s:%d (%s)", addr, port, e)
+    if not servers:
+        raise RuntimeError(f"upload server: no bindable address on port {port}")
 
     UploadHandler.port = port
     UploadHandler.pid = os.getpid()
     UploadHandler.started_at = time.time()
-    log.info("listening on 0.0.0.0:%d pid %d", port, UploadHandler.pid)
+    log.info("listening on %s:%d pid %d", ", ".join(bound_addrs), port, UploadHandler.pid)
 
     pid_file = _pid_path(port)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
+
+    for s in servers[1:]:
+        threading.Thread(target=s.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        servers[0].serve_forever()
     finally:
+        for s in servers[1:]:
+            s.shutdown()       # called from a different thread than its serve_forever -> safe
+        for s in servers:
+            s.server_close()   # servers[0] exited via KeyboardInterrupt; just closes the socket
         try:
             pid_file.unlink()
         except OSError:

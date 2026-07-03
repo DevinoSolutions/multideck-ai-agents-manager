@@ -1770,17 +1770,21 @@ Host multideck
 
 @main.command("serve")
 @click.option("--port", "-p", default=8033, help="Port to listen on")
+@click.option("--host", default=None,
+              help="Bind a specific address instead of the default "
+                   "(loopback + Tailscale IP, never the LAN wildcard). "
+                   "Pass 0.0.0.0 to restore an explicit LAN-wide bind.")
 @click.option("--ensure", is_flag=True,
               help="Start the server detached if it isn't already running, then exit (used by attach).")
 @click.pass_context
-def serve_cmd(ctx: click.Context, port: int, ensure: bool) -> None:
+def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> None:
     """Start upload server for mobile image transfer.
 
     Opens a web page on your phone (via Tailscale) where you pick a project,
     upload an image, and the file path is auto-pasted into that project's
     Claude session via psmux send-keys.
     """
-    import subprocess
+    from multideck.upload_server import _tailscale_ip, run_server
 
     config_path = ctx.obj.get("config_path")
     if ensure:
@@ -1792,20 +1796,13 @@ def serve_cmd(ctx: click.Context, port: int, ensure: bool) -> None:
         click.echo(f"upload server ensured on port {port}")
         return
 
-    ip = "0.0.0.0"
-    try:
-        result = subprocess.run(["tailscale", "ip", "-4"],
-                                capture_output=True, text=True, timeout=5)
-        if result.returncode == 0 and result.stdout.strip():
-            ip = result.stdout.strip().splitlines()[0]
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    ip = _tailscale_ip()
 
     _banner()
     click.echo(f"  {S('Upload server', bold=True)}  {S('for mobile image transfer', dim=True)}")
     _divider()
     click.echo()
-    if ip != "0.0.0.0":
+    if ip:
         click.echo(f"  {S('Open on phone:', bold=True)}  {S(f'http://{ip}:{port}', fg='cyan', bold=True)}")
     click.echo(f"  {S('Local:', dim=True)}         {S(f'http://localhost:{port}', fg='cyan')}")
     click.echo()
@@ -1813,9 +1810,8 @@ def serve_cmd(ctx: click.Context, port: int, ensure: bool) -> None:
     click.echo(f"  {S('Ctrl+C to stop.', dim=True)}")
     click.echo()
 
-    from multideck.upload_server import run_server
     try:
-        run_server(port=port, config_path=config_path)
+        run_server(port=port, config_path=config_path, host=host)
     except KeyboardInterrupt:
         click.echo(f"\n  {S('Server stopped.', dim=True)}")
 
