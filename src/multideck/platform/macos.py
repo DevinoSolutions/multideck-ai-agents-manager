@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from typing import Any
+from typing import Any, Literal
 
 from multideck.grid import MonitorRect, Rect
 from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts
@@ -56,7 +56,9 @@ class MacOSPlatform(Platform):
             ))
         return monitors
 
-    def find_window(self, title: str, mode: str = "exact") -> dict | None:
+    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> dict | None:
+        if mode not in ("exact", "contains"):
+            raise ValueError(f"unknown find_window mode: {mode!r}")
         script = """
         tell application "System Events"
             set windowList to {}
