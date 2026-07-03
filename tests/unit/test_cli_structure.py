@@ -140,13 +140,13 @@ class TestAttachFlowCharacterization:
             "uploadPort": 8033,
             "projects": [{"name": "myapp", "path": "myapp"}],
         }
-        monkeypatch.setattr(cli, "_ssh_json", lambda *a, **k: status)
-        monkeypatch.setattr(cli, "_ssh_capture", lambda *a, **k: (0, "", ""))
+        monkeypatch.setattr("multideck.cli.attach._ssh_json", lambda *a, **k: status)
+        monkeypatch.setattr("multideck.cli.attach._ssh_capture", lambda *a, **k: (0, "", ""))
         popen_calls = []
         monkeypatch.setattr(subprocess, "Popen", lambda args, **k: popen_calls.append(args))
         tiled = []
-        monkeypatch.setattr(cli, "_tile_titles", lambda titles: tiled.append(titles))
-        monkeypatch.setattr(cli, "_maybe_start_hotkey", lambda url: 1234)
+        monkeypatch.setattr("multideck.cli.attach._tile_titles", lambda titles: tiled.append(titles))
+        monkeypatch.setattr("multideck.cli.attach._maybe_start_hotkey", lambda url: 1234)
 
         class _FakePlat:
             def supports_hotkey(self) -> bool:
@@ -164,7 +164,7 @@ class TestAttachFlowCharacterization:
         assert tiled == [["md:myapp"]]
 
     def test_no_host_prompts_then_exits(self, monkeypatch):
-        monkeypatch.setattr(cli, "_default_attach_host", lambda: None)
+        monkeypatch.setattr("multideck.cli.attach._default_attach_host", lambda: None)
         prompted = []
 
         def fake_prompt(text, **k):

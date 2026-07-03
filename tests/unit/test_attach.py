@@ -81,13 +81,13 @@ class TestDefaultAttachHost:
             {"path": "c", "host": "u@h2"},
             {"path": "d"},
         ]}))
-        monkeypatch.setattr(cli, "find_config", lambda *_: cfgfile)
+        monkeypatch.setattr("multideck.cli.attach.find_config", lambda *_: cfgfile)
         assert cli._default_attach_host() == "u@h1"
 
     def test_none_when_no_hosts(self, tmp_path, monkeypatch):
         cfgfile = tmp_path / "c.json"
         cfgfile.write_text(json.dumps({"projects": [{"path": "a"}]}))
-        monkeypatch.setattr(cli, "find_config", lambda *_: cfgfile)
+        monkeypatch.setattr("multideck.cli.attach.find_config", lambda *_: cfgfile)
         assert cli._default_attach_host() is None
 
 
@@ -104,9 +104,9 @@ class TestSplitTarget:
 class TestSshJsonParsing:
     def test_skips_banner_lines(self, monkeypatch):
         noisy = "WARNING: banner\nMOTD line\n{\"up\": [], \"down\": []}\n"
-        monkeypatch.setattr(cli, "_ssh_capture", lambda *a, **k: (0, noisy, ""))
+        monkeypatch.setattr("multideck.cli.attach._ssh_capture", lambda *a, **k: (0, noisy, ""))
         assert cli._ssh_json("u@h", "multideck up --json") == {"up": [], "down": []}
 
     def test_returns_none_without_json(self, monkeypatch):
-        monkeypatch.setattr(cli, "_ssh_capture", lambda *a, **k: (255, "no route to host", "err"))
+        monkeypatch.setattr("multideck.cli.attach._ssh_capture", lambda *a, **k: (255, "no route to host", "err"))
         assert cli._ssh_json("u@h", "multideck up --json") is None
