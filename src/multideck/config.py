@@ -9,6 +9,13 @@ from pathlib import Path
 
 SCHEMA_VERSION = 1
 
+DEFAULT_TOOLS: dict[str, str] = {
+    "claude": "claude --continue",
+    "codex": "codex",
+    "cursor-agent": "cursor-agent",
+    "agy": "agy",
+}
+
 
 class ConfigError(ValueError):
     """Structurally invalid multideck config: bad JSON, wrong-typed field, or missing required key."""
@@ -35,12 +42,7 @@ class Settings:
     upload_server: bool = False
     upload_port: int = 8033
     ssh: SSHConfig = field(default_factory=SSHConfig)
-    tools: dict[str, str] = field(default_factory=lambda: {
-        "claude": "claude --continue",
-        "codex": "codex",
-        "cursor-agent": "cursor-agent",
-        "agy": "agy",
-    })
+    tools: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_TOOLS))
 
 
 @dataclass
@@ -84,13 +86,42 @@ def _parse_settings(raw: dict | None) -> Settings:
         upload_server=raw.get("uploadServer", False),
         upload_port=raw.get("uploadPort", 8033),
         ssh=_parse_ssh(raw.get("ssh")),
-        tools=raw.get("tools", {
-            "claude": "claude --continue",
-            "codex": "codex",
-            "cursor-agent": "cursor-agent",
-            "agy": "agy",
-        }),
+        tools=raw.get("tools", dict(DEFAULT_TOOLS)),
     )
+
+
+def layout_to_dict(layout: LayoutConfig) -> dict:
+    return {"columns": layout.columns, "rows": layout.rows}
+
+
+def settings_to_dict(settings: Settings) -> dict:
+    """Inverse of _parse_settings -- the single serializer every config
+    generator (init_config, discover) delegates to via default_config, so
+    the emitted envelope can never drift from what the loader parses (R9)."""
+    return {
+        "defaultTool": settings.default_tool,
+        "settleSeconds": settings.settle_seconds,
+        "launchDelayMs": settings.launch_delay_ms,
+        "happy": settings.happy,
+        "psmux": settings.psmux,
+        "uploadServer": settings.upload_server,
+        "uploadPort": settings.upload_port,
+        "ssh": {"shell": settings.ssh.shell},
+        "tools": dict(settings.tools),
+    }
+
+
+def default_config(projects: list[dict], base_dir: str | None = None) -> dict:
+    """The one envelope factory. init_config.generate_config and
+    discover.projects_to_config both delegate here for version/layout/
+    settings so the three generators can't hand-build divergent defaults."""
+    return {
+        "version": SCHEMA_VERSION,
+        "baseDir": (base_dir or "").replace("\\", "/"),
+        "layout": layout_to_dict(LayoutConfig()),
+        "settings": settings_to_dict(Settings()),
+        "projects": projects,
+    }
 
 
 def _parse_project(raw: dict) -> ProjectConfig:

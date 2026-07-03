@@ -8,6 +8,7 @@ from pathlib import Path
 
 from urllib.parse import unquote, urlparse
 
+from multideck.config import _random_tab_color, default_config
 from multideck.sessions.claude import encode_claude_project_path
 
 
@@ -274,8 +275,6 @@ def projects_to_config(projects: list[dict]) -> dict:
     leaf_counts = Counter(Path(p["path"]).name for p in projects)
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
 
-    from multideck.config import _random_tab_color
-
     used: set[str] = set()
     config_projects = []
     for p in projects:
@@ -301,17 +300,4 @@ def projects_to_config(projects: list[dict]) -> dict:
         entry["color"] = color
         config_projects.append(entry)
 
-    return {
-        "baseDir": base_dir.replace("\\", "/"),
-        "layout": {"columns": 2, "rows": 1},
-        "settings": {
-            "defaultTool": "claude",
-            "settleSeconds": 3,
-            "launchDelayMs": 400,
-            "tools": {
-                "claude": "claude --continue",
-                "codex": "codex",
-            },
-        },
-        "projects": config_projects,
-    }
+    return default_config(config_projects, base_dir=base_dir)

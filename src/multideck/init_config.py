@@ -4,15 +4,12 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from multideck.config import _random_tab_color, default_config
+
 SKIP_DIRS = {
     ".git", "node_modules", ".svn", ".hg", "bin", "obj",
     ".next", "dist", "vendor", ".venv", "target",
 }
-
-PALETTE = [
-    "#3b82f6", "#22c55e", "#f59e0b", "#a855f7", "#ef4444", "#06b6d4",
-    "#ec4899", "#84cc16", "#f97316", "#14b8a6", "#6366f1", "#eab308",
-]
 
 
 def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
@@ -43,8 +40,9 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
     leaf_counts = Counter(leaves)
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
 
+    used: set[str] = set()
     projects: list[dict] = []
-    for i, d in enumerate(dirs):
+    for d in dirs:
         rel = d.relative_to(root_path).as_posix()
         parts = rel.split("/")
         proj: dict = {"path": rel}
@@ -52,7 +50,9 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
             proj["group"] = parts[0]
         if parts[-1] in dup_leaves:
             proj["title"] = rel.replace("/", "-")
-        proj["color"] = PALETTE[i % len(PALETTE)]
+        color = _random_tab_color(used)
+        used.add(color)
+        proj["color"] = color
         projects.append(proj)
 
     return projects
@@ -60,20 +60,7 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
 
 def generate_config(root: str) -> dict:
     projects = scan_for_projects(root)
-    return {
-        "baseDir": str(Path(root).resolve()).replace("\\", "/"),
-        "layout": {"columns": 2, "rows": 1},
-        "settings": {
-            "defaultTool": "claude",
-            "settleSeconds": 3,
-            "launchDelayMs": 400,
-            "tools": {
-                "claude": "claude --continue",
-                "codex": "codex",
-            },
-        },
-        "projects": projects,
-    }
+    return default_config(projects, base_dir=str(Path(root).resolve()))
 
 
 def write_config(root: str, out_path: str, force: bool = False) -> bool:
