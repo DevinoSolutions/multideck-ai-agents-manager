@@ -149,7 +149,11 @@ class TestProjectsToConfig:
 
 class TestDiscoverProjects:
     @pytest.fixture(autouse=True)
-    def _isolate_vscode(self, monkeypatch):
+    def _isolate_vscode_global(self, monkeypatch):
+        """Isolate the non-hermetic global `_discover_vscode_projects`, which
+        ignores `home` and reads live OS storage -- keeps these codex/claude-
+        focused tests deterministic. The real three-way merge (including the
+        vscode source) is covered in test_discover_merge.py."""
         import multideck.discover
         monkeypatch.setattr(multideck.discover, "_discover_vscode_projects", lambda: [])
 
@@ -196,8 +200,8 @@ class TestDiscoverProjects:
         os.utime(sess_file, (old_time, old_time))
 
         projects, days = discover_projects(home=tmp_path)
-        if projects:
-            assert days >= 90
+        assert projects
+        assert days >= 90
 
     def test_claude_preferred_over_codex_when_newer(self, tmp_path):
         proj_dir = tmp_path / "deep" / "nested" / "projects" / "myapp"
@@ -221,5 +225,5 @@ class TestDiscoverProjects:
 
         projects, _ = discover_projects(home=tmp_path)
         matching = [p for p in projects if "myapp" in p["path"]]
-        if matching:
-            assert matching[0]["tool"] == "claude"
+        assert matching
+        assert matching[0]["tool"] == "claude"
