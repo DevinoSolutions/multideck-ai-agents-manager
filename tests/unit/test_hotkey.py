@@ -86,6 +86,13 @@ class TestUploadImage:
         assert b"marka" in self.last_request["body"]
         assert b"FAKEBMP" in self.last_request["body"]
         assert "multipart/form-data" in self.last_request["content_type"]
+        # Boundary consistency: the Content-Type header's boundary must match
+        # the delimiters actually written into the body.
+        ct = self.last_request["content_type"]
+        boundary = ct.split("boundary=")[1].strip()
+        body = self.last_request["body"]
+        assert f"--{boundary}\r\n".encode() in body
+        assert f"\r\n--{boundary}--\r\n".encode() in body
 
     def test_returns_false_on_network_error(self):
         from multideck.hotkey import upload_image
