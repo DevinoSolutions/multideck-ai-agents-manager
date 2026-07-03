@@ -11,6 +11,7 @@ import click
 
 from multideck.config import MultideckConfig
 from multideck.grid import compute_grid, Rect
+from multideck.log import get_logger
 from multideck.platform import PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import build_resume_command
 from multideck.sessions.claude import get_claude_session_ids
@@ -103,14 +104,16 @@ def _wrap_happy(tool: str, cmd: str) -> str:
     return cmd
 
 
-def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
+def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
+    log = get_logger("launch")
     plat = get_platform()
     plat.set_dpi_aware()
 
     monitors = plat.list_monitors()
     if not monitors:
+        log.error("no monitors detected; aborting")
         click.echo(f"  {S('✗', fg='red')} No monitors detected.", err=True)
-        return
+        return 2
 
     slots = compute_grid(monitors, config.layout.columns, config.layout.rows)
 
@@ -133,7 +136,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         if not projects:
             groups = sorted({p.group for p in config.projects if p.group})
             click.echo(f"No projects in group '{opts.group}'. Available: {', '.join(groups)}", err=True)
-            return
+            return 0
         click.echo(f"Group '{opts.group}': {len(projects)} project(s)")
 
     has_remote = any(p.host for p in projects)
@@ -276,7 +279,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
 
     if not to_place:
         click.echo(f"\n  {S('+', fg='green')} All windows already positioned.")
-        return
+        return 0
 
     mode_label = S(" retile all", fg="yellow") if opts.retile_all else (S(" dry run", fg="yellow") if opts.dry_run else "")
     click.echo(f"\n  {S('#', fg='cyan')} Tiling {S(str(len(to_place)), fg='cyan', bold=True)} window(s)...{mode_label}")
@@ -289,7 +292,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
             at = S(f"({pos.x},{pos.y})", dim=True)
             click.echo(f"    {S('>', fg='cyan')} {target.name:<28} {S('->', dim=True)} screen {screen_num}  {dims} {at}")
         click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
-        return
+        return 0
 
     def _lookup(snap: dict[str, int], key: str, mode: str) -> int | None:
         if mode == "exact":
@@ -338,6 +341,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> None:
         click.echo(f"    {S('x', fg='red')} {target.name} {S('not found', dim=True)}")
 
     click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
+    return 0
 
 
 def _log_project(name: str, tool: str, running: bool, host: str | None,
