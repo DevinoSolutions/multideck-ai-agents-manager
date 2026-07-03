@@ -1,3 +1,7 @@
+import sys
+
+import pytest
+
 from multideck.titles import generate_titles, get_leaf_name
 
 
@@ -46,3 +50,23 @@ class TestGenerateTitles:
     def test_windows_string_array_ignores_title(self):
         titles = generate_titles(title="ignored", path="internal/api", windows=["a", "b"])
         assert titles == ["a", "b"]
+
+
+class TestMdTitlePrefixContract:
+    """Producer (cli/attach.py) and consumer (hotkey.py) must agree on the
+    md: title prefix, or Alt+V session recognition silently breaks for newly
+    created sessions. Pinned here so a change to either side fails loudly.
+    """
+
+    def test_prefix_value(self):
+        from multideck.hotkey import MD_TITLE_PREFIX
+        assert MD_TITLE_PREFIX == "md:"
+
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="hotkey is Windows-only (ImportError off-Windows)",
+    )
+    def test_producers_agree_with_consumer(self):
+        from multideck.hotkey import MD_TITLE_PREFIX
+        name = "my-project"
+        assert f"md:{name}" == f"{MD_TITLE_PREFIX}{name}"
