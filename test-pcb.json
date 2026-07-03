@@ -1,8 +1,0 @@
-{
-  "layout": { "columns": 2, "rows": 1 },
-  "settings": {
-    "attachTo": "amind@amin-desktop.basa-ulmer.ts.net",
-    "uploadPort": 8099
-  },
-  "projects": []
-}
