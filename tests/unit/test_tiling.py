@@ -18,8 +18,14 @@ import pytest
 
 from multideck import cli
 from multideck.config import load_config
-from multideck.grid import MonitorRect, Rect
+from multideck.grid import MonitorRect, Rect, TileSlot
 from multideck.launch import RunOpts, run_multideck
+from multideck.tiling import (
+    RETRY_SECS_CONTAINS,
+    RETRY_SECS_EXACT,
+    Placement,
+    place_windows,
+)
 
 
 class _FakeTilePlat:
@@ -149,3 +155,79 @@ class TestRunMultideckTilingPin:
 
         assert rc == 0
         assert (HANDLE, Rect(x=0, y=0, w=960, h=1080)) in fake_platform.moved
+
+
+def _slot(x=0, y=0, w=960, h=1080, monitor_index=0):
+    return TileSlot(x=x, y=y, w=w, h=h, monitor_index=monitor_index, label="r1c1")
+
+
+class TestPlaceWindows:
+    """Direct unit tests for the new shared helper (E9.md Step 2)."""
+
+    def test_places_found_on_first_pass(self, fake_sleep):
+        fp = _FakeTilePlat(windows={"X": 1})
+        placed_cb: list[Placement] = []
+        placements = [Placement(key="X", mode="exact", slot=_slot())]
+
+        placed, missing = place_windows(fp, placements, on_placed=placed_cb.append)
+
+        assert placed == placements
+        assert missing == []
+        assert placed_cb == placements
+        assert fake_sleep == []  # found immediately -> zero sleeps, no retry
+        assert fp.moved == [(1, Rect(x=0, y=0, w=960, h=1080))]
+
+    def test_retries_until_window_appears(self, fake_sleep):
+        fp = _FakeTilePlat(windows=[{}, {}, {"X": 42}])
+        placements = [Placement(key="X", mode="exact", slot=_slot())]
+
+        placed, missing = place_windows(fp, placements)
+
+        assert [p.key for p in placed] == ["X"]
+        assert missing == []
+        assert len(fake_sleep) == 2  # appears on the 3rd snapshot -> 2 poll waits
+        assert all(s == 1.0 for s in fake_sleep)
+
+    def test_never_found_logs_warning_and_calls_on_missing(self, fake_sleep, caplog):
+        fp = _FakeTilePlat(windows={})
+        missing_cb: list[Placement] = []
+        placements = [Placement(key="ghost", mode="exact", slot=_slot())]
+
+        with caplog.at_level("WARNING", logger="multideck.launch"):
+            placed, missing = place_windows(fp, placements, on_missing=missing_cb.append)
+
+        assert placed == []
+        assert missing == placements
+        assert missing_cb == placements
+        assert "ghost" in caplog.text
+        assert len(fake_sleep) == RETRY_SECS_EXACT
+
+    def test_settle_sleeps_before_first_snapshot(self, fake_sleep):
+        fp = _FakeTilePlat(windows={"X": 1})
+        placements = [Placement(key="X", mode="exact", slot=_slot())]
+
+        place_windows(fp, placements, settle_s=3)
+
+        assert fake_sleep[0] == 3
+
+    def test_exact_vs_contains_lookup(self, fake_sleep):
+        fp = _FakeTilePlat(windows={"Visual Studio Code - foo": 7})
+        exact = Placement(key="Visual Studio Code - foo", mode="exact", slot=_slot())
+        contains = Placement(key="foo", mode="contains", slot=_slot())
+        no_match = Placement(key="Visual Studio Code", mode="exact", slot=_slot())
+
+        placed, missing = place_windows(fp, [exact, contains, no_match])
+
+        assert {p.key for p in placed} == {"Visual Studio Code - foo", "foo"}
+        assert [p.key for p in missing] == ["Visual Studio Code"]
+
+    def test_deadline_uses_contains_when_any_contains(self, fake_sleep):
+        fp = _FakeTilePlat(windows={})
+        placements = [
+            Placement(key="exact-ghost", mode="exact", slot=_slot()),
+            Placement(key="contains-ghost", mode="contains", slot=_slot()),
+        ]
+
+        place_windows(fp, placements)
+
+        assert len(fake_sleep) == RETRY_SECS_CONTAINS
