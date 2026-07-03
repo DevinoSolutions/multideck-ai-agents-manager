@@ -1,0 +1,373 @@
+"""SSH/attach orchestration: the remote-PC attach flow (`_attach_flow`,
+radon D/29 -- relocated unchanged per E6.md S2.5), its no-mux sibling, and
+the `up`/`attach`/`hotkey` commands. Carries E4's supports_hotkey() gates
+(hotkey_cmd, _attach_flow) verbatim.
+"""
+from __future__ import annotations
+
+import getpass
+import json
+import subprocess
+import sys
+import time
+from collections import Counter
+
+import click
+
+from multideck.cli.app import main
+from multideck.cli.spawns import _maybe_start_hotkey, _maybe_start_upload_server
+from multideck.cli.ui import _banner, _divider, _print_session_overview
+from multideck.config import load_config
+from multideck.grid import compute_grid
+from multideck.log import get_logger
+from multideck.paths import find_config
+from multideck.style import S
+from multideck.tiling import Placement, place_windows
+
+
+def _default_attach_host() -> str | None:
+    """Best-guess SSH target from the local config's project ``host`` fields."""
+    try:
+        data = json.loads(find_config(None).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    hosts = [p.get("host") for p in data.get("projects", []) if p.get("host")]
+    if not hosts:
+        return None
+    return Counter(hosts).most_common(1)[0][0]
+
+
+def _split_target(host: str) -> tuple[str, str]:
+    if "@" in host:
+        user, hostname = host.split("@", 1)
+        return user, hostname
+    return getpass.getuser(), host
+
+
+def _ssh_capture(target: str, remote_cmd: str, timeout: int = 30) -> tuple[int, str, str]:
+    """Run a single non-interactive SSH command, returning (rc, stdout, stderr)."""
+    try:
+        r = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target, remote_cmd],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return r.returncode, r.stdout, r.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", "ssh timed out"
+    except FileNotFoundError:
+        return 127, "", "ssh not found on PATH"
+
+
+def _ssh_json(target: str, remote_cmd: str, timeout: int = 30) -> dict | None:
+    """Run a remote command and parse its last single-line JSON object (skips banners)."""
+    _, out, _ = _ssh_capture(target, remote_cmd, timeout)
+    for line in reversed([ln.strip() for ln in out.splitlines() if ln.strip()]):
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                return json.loads(line)
+            except ValueError:
+                continue
+    return None
+
+
+def _tile_titles(titles: list[str]) -> None:
+    """Tile already-opened windows (matched by exact title) into the monitor grid."""
+    from multideck.platform import get_platform  # heavy subsystem: in-body per policy
+
+    plat = get_platform()
+    plat.set_dpi_aware()
+    monitors = plat.list_monitors()
+    if not monitors:
+        get_logger("launch").error("no monitors detected; windows opened but not tiled")
+        click.echo(f"  {S('!', fg='yellow')} No monitors detected; windows opened but not tiled.")
+        return
+    slots = compute_grid(monitors, 2, 1)
+
+    click.echo(f"\n  {S('#', fg='cyan')} Tiling {len(titles)} window(s)...")
+    placements = [
+        Placement(name=title, key=title, mode="exact", slot=slots[i % len(slots)])
+        for i, title in enumerate(titles)
+    ]
+    place_windows(
+        plat, placements, settle_s=3,
+        on_placed=lambda p: click.echo(f"    {S('+', fg='green')} {p.name}"),
+        on_missing=lambda p: click.echo(f"    {S('x', fg='red')} {p.name} {S('not found', dim=True)}"),
+    )
+
+
+def _bring_up_and_requery(target: str, grp_suffix: str, fallback_up: list[dict]) -> list[dict]:
+    click.echo(f"  {S('o', fg='cyan')} starting sessions on host (this can take a moment)...")
+    rc, _, err = _ssh_capture(target, f"multideck up{grp_suffix}", timeout=300)
+    if rc != 0:
+        click.echo(f"  {S('!', fg='yellow')} bring-up exited {rc}: {S(err.strip()[:200], dim=True)}")
+    time.sleep(1)
+    new = _ssh_json(target, f"multideck up --json{grp_suffix}", timeout=30)
+    return new.get("up", fallback_up) if new else fallback_up
+
+
+def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = None,
+                 yes: bool = False) -> None:
+    """Remote-PC attach: bring the host's sessions up, then open local windows.
+
+    Default (psmux): tile one local window per remote psmux session and run the
+    Alt+V image hotkey. ``--no-mux``: open one plain SSH window per project that
+    runs the agent directly (no multiplexer). ``group`` limits the whole flow to
+    one project group on the host; ``yes`` skips the bring-up prompt.
+    """
+
+    grp = f' -g "{group}"' if group else ""
+
+    if not host:
+        default = _default_attach_host()
+        host = click.prompt(
+            f"  {S('SSH host', fg='cyan')} {S('(user@host -- blank uses config)', dim=True)}",
+            default=default or "", show_default=bool(default),
+        ).strip()
+    if not host:
+        click.echo(f"  {S('x', fg='red')} No host provided.")
+        sys.exit(1)
+
+    user, hostname = _split_target(host)
+    target = f"{user}@{hostname}"
+
+    _banner()
+    mode_tag = S("[no-mux]", fg="yellow") if no_mux else S("[psmux]", fg="cyan")
+    grp_tag = f"  {S(f'group={group}', fg='cyan')}" if group else ""
+    click.echo(f"  {S('Attach', bold=True)}  {S(f'-> {target}', dim=True)}  {mode_tag}{grp_tag}")
+    _divider()
+    click.echo()
+
+    click.echo(f"  {S('Querying projects on host...', dim=True)}")
+    status = _ssh_json(target, f"multideck up --json{grp}", timeout=30)
+    if status is None:
+        rc, _, _ = _ssh_capture(target, "multideck --version")
+        click.echo(f"\n  {S('x', fg='red')} Could not read project status from {target}.")
+        if rc != 0:
+            click.echo(f"  {S('Is multideck installed and on PATH on the host?', dim=True)}")
+        sys.exit(1)
+    if status.get("error"):
+        click.echo(f"\n  {S('x', fg='red')} Host error: {status['error']}")
+        sys.exit(1)
+    if not status.get("projects"):
+        where = f" in group '{group}'" if group else ""
+        click.echo(f"\n  {S('x', fg='red')} No eligible projects{where} on the host.")
+        sys.exit(1)
+
+    if no_mux:
+        _attach_nomux(target, status)
+        return
+
+    up = status.get("up", [])
+    down = status.get("down", [])
+    port = status.get("uploadPort", 8033)
+
+    if down and yes:
+        up = _bring_up_and_requery(target, grp, up)
+    elif down:
+        pickable = _print_session_overview(hostname, up, down)
+        opts = [f"{S('a', fg='cyan', bold=True)}=all {len(down)}"]
+        if pickable:
+            opts.append(f"{S('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
+        opts.append(f"{S('n', fg='cyan', bold=True)}=none")
+        click.echo(f"  {S('Bring up', bold=True)}   " + "   ".join(opts))
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="a",
+                              show_default=False, prompt_suffix=" ").strip().lower()
+
+        if choice in ("n", "no", "none", "q"):
+            pass
+        elif choice in ("a", "y", "all", ""):
+            up = _bring_up_and_requery(target, grp, up)
+        else:
+            sel = None
+            if choice.isdigit() and 1 <= int(choice) <= len(pickable):
+                sel = pickable[int(choice) - 1]
+            else:
+                sel = next((g for g in pickable if g.lower() == choice), None)
+            if sel:
+                up = _bring_up_and_requery(target, f' -g "{sel}"', up)
+            else:
+                click.echo(f"  {S('?', fg='yellow')} unrecognized choice -- bringing up none.")
+
+    if not up:
+        click.echo(f"\n  {S('x', fg='red')} No sessions are up on the host.")
+        sys.exit(1)
+
+    titles: list[str] = []
+    for sess in up:
+        name = sess["name"]
+        title = f"md:{name}"
+        click.echo(f"  {S('o', fg='cyan')} {title}")
+        subprocess.Popen([
+            "wt", "-w", "new", "--title", title, "--suppressApplicationTitle",
+            "--", "ssh", "-t", target, f"multideck sessions {name}",
+        ])
+        titles.append(title)
+        time.sleep(0.4)
+
+    _tile_titles(titles)
+
+    # Guarantee the host runs an upload server for Alt+V -- independent of the
+    # host's uploadServer flag and of whether anything was just brought up.
+    rc, _, _ = _ssh_capture(target, f"multideck serve -p {port} --ensure", timeout=15)
+    if rc != 0:
+        click.echo(f"  {S('!', fg='yellow')} couldn't confirm an upload server on the host"
+                   f" {S('-- Alt+V may not work', dim=True)}")
+
+    server_url = f"http://{hostname}:{port}"
+    click.echo(f"\n  {S('#', fg='magenta')} Hotkey {S('Alt+V', bold=True)} pastes clipboard images"
+               f" {S('(only in md: windows)', dim=True)} {S('->', dim=True)} {S(server_url, fg='cyan')}")
+    from multideck.platform import get_platform  # heavy subsystem: in-body per policy
+    if get_platform().supports_hotkey():
+        pid = _maybe_start_hotkey(server_url)
+        if pid:
+            click.echo(f"  {S('+', fg='green')} Alt+V listener running in the background "
+                       f"{S(f'(pid {pid})', dim=True)}")
+            click.echo(f"  {S('Progress shows in each md: window. Stop with', dim=True)} "
+                       f"{S('multideck down --all', bold=True)}{S('.', dim=True)}")
+        else:
+            click.echo(f"  {S('!', fg='yellow')} couldn't start the Alt+V listener")
+
+
+def _attach_nomux(target: str, status: dict) -> None:
+    """Open one plain SSH window per project, running the agent directly (no psmux)."""
+
+    projects = status.get("projects", [])
+    if not projects:
+        click.echo(f"  {S('x', fg='red')} No eligible projects in the host config.")
+        sys.exit(1)
+
+    click.echo(f"  {S(str(len(projects)), fg='green', bold=True)} project(s) "
+               f"{S('-- direct SSH, no multiplexer', dim=True)}\n")
+
+    titles: list[str] = []
+    for p in projects:
+        title = f"md:{p['name']}"
+        remote_dir = p.get("resolved") or p["path"]
+        cmd = p.get("cmd") or "claude --continue"
+        click.echo(f"  {S('o', fg='cyan')} {title}")
+        subprocess.Popen([
+            "wt", "-w", "new", "--title", title, "--suppressApplicationTitle",
+            "--", "ssh", "-t", target, f"cd {remote_dir} && {cmd}",
+        ])
+        titles.append(title)
+        time.sleep(0.4)
+
+    _tile_titles(titles)
+    click.echo(f"\n  {S('Done.', fg='green', bold=True)} "
+               f"{S('(no-mux mode: Alt+V image paste is not available)', dim=True)}")
+
+
+@main.command("up")
+@click.option("--json", "as_json", is_flag=True, help="Print session status as JSON without changing anything")
+@click.option("--all", "do_all", is_flag=True, help="Recreate every session, not just the ones that are down")
+@click.option("-g", "--group", default=None, help="Only projects tagged with this group")
+@click.pass_context
+def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -> None:
+    """Ensure a persistent psmux session per project (host side of `attach`)."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    try:
+        cfg = load_config(str(config_file))
+    except (ValueError, FileNotFoundError) as e:
+        if as_json:
+            click.echo(json.dumps({"error": str(e)}))
+        else:
+            click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    from multideck.launch import bring_up_psmux, psmux_status  # heavy subsystem: in-body per policy
+
+    up, down, projects = psmux_status(cfg, group=group)
+
+    if as_json:
+        click.echo(json.dumps({
+            "platform": sys.platform,
+            "psmux": cfg.settings.psmux,
+            "uploadServer": cfg.settings.upload_server,
+            "uploadPort": cfg.settings.upload_port,
+            "up": up,
+            "down": down,
+            "projects": [
+                {"name": p["name"], "path": p["path"], "tool": p["tool"],
+                 "group": p["group"], "resolved": p["resolved"], "cmd": p["cmd"]}
+                for p in projects
+            ],
+        }))
+        return
+
+    _banner()
+    click.echo(f"  {S('Bring up sessions', bold=True)}  {S(str(config_file), dim=True)}")
+    _divider()
+    click.echo()
+
+    targets = None if do_all else [d["name"] for d in down]
+    if not projects:
+        where = f" in group '{group}'" if group else ""
+        click.echo(f"  {S('!', fg='yellow')} No eligible projects{where}.")
+    elif not do_all and not down:
+        click.echo(f"  {S('+', fg='green')} All {len(up)} session(s) already up.")
+    else:
+        created = bring_up_psmux(cfg, only=targets, group=group)
+        click.echo(f"  {S('+', fg='green')} Brought up {S(str(len(created)), fg='green', bold=True)}"
+                   f" session(s): {S(', '.join(created) or '(none)', dim=True)}")
+
+    if cfg.settings.upload_server:
+        _maybe_start_upload_server(cfg.settings.upload_port, str(config_file))
+        click.echo(f"  {S('#', fg='magenta')} upload server on port {S(str(cfg.settings.upload_port), fg='cyan')}")
+
+
+@main.command("attach")
+@click.argument("host", required=False)
+@click.option("--no-mux", is_flag=True, help="One plain SSH window per project (no psmux/tmux)")
+@click.option("-g", "--group", default=None, help="Only attach/bring up projects in this group")
+@click.option("-y", "--yes", is_flag=True, help="Skip the bring-up prompt (bring up everything that's down)")
+@click.pass_context
+def attach_cmd(ctx: click.Context, host: str | None, no_mux: bool, group: str | None, yes: bool) -> None:
+    """Attach to another machine's multideck sessions over SSH.
+
+    HOST is user@host (omit to be prompted; blank uses the host from your local
+    config). Default tiles one window per remote psmux session with Alt+V image
+    paste; --no-mux opens a direct SSH window per project instead. -g limits the
+    flow to one project group on the host; -y skips the bring-up prompt.
+    """
+    _attach_flow(host, no_mux=no_mux, group=group, yes=yes)
+
+
+@main.command("hotkey")
+@click.option("--server", "-s", default="http://localhost:8033", help="Upload server URL")
+@click.pass_context
+def hotkey_cmd(ctx: click.Context, server: str) -> None:
+    """Listen for Alt+V to upload clipboard images to psmux sessions.
+
+    Only activates when a 'md:' titled window is focused. Otherwise
+    the keystroke passes through normally.
+    """
+    from multideck.platform import get_platform  # heavy subsystem: in-body per policy
+    if not get_platform().supports_hotkey():
+        click.echo(f"  {S('x', fg='red')} Hotkey listener is Windows-only.")
+        sys.exit(1)
+
+    from multideck.hotkey import listener_pid  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    existing = listener_pid()
+    if existing:
+        click.echo(f"  {S('!', fg='yellow')} An Alt+V listener is already running "
+                   f"{S(f'(pid {existing})', dim=True)}.")
+        click.echo(f"  {S('Stop it first with', dim=True)} {S('multideck down --all', bold=True)}{S('.', dim=True)}")
+        return
+
+    _banner()
+    click.echo(f"  {S('Hotkey listener', bold=True)}  {S(f'-> {server}', dim=True)}")
+    _divider()
+    click.echo()
+    click.echo(f"  {S('Alt+V', fg='cyan', bold=True)} uploads clipboard image to the focused project")
+    click.echo(f"  {S('Only active in windows titled md:<project>', dim=True)}")
+    click.echo(f"  {S('Ctrl+C to stop.', dim=True)}")
+    click.echo()
+
+    from multideck.hotkey import run_hotkey  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    try:
+        run_hotkey(server)
+    except KeyboardInterrupt:
+        click.echo(f"\n  {S('Stopped.', dim=True)}")
+    except RuntimeError as e:
+        click.echo(f"  {S('x', fg='red')} {e}")
+        sys.exit(1)
