@@ -12,6 +12,8 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import URLError
 
+from multideck.log import HEARTBEAT_INTERVAL, get_logger, write_heartbeat
+
 if sys.platform != "win32":
     raise ImportError("hotkey module is Windows-only")
 
@@ -243,13 +245,19 @@ def listener_pid() -> int | None:
 
 
 def stop_listener() -> bool:
-    """Stop the running Alt+V listener. Returns True if one was stopped."""
+    """Stop the running Alt+V listener. Returns True only if the kill actually
+    succeeded. On failure the pid file is kept (not unlinked) so `status` or a
+    retry can still find the process."""
     import subprocess
 
+    log = get_logger("hotkey")
     pid = listener_pid()
     if not pid:
         return False
-    subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+    result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+    if result.returncode != 0:
+        log.warning("taskkill pid %d failed rc=%d", pid, result.returncode)
+        return False
     try:
         _PID_PATH.unlink()
     except OSError:
@@ -279,12 +287,31 @@ def _do_upload(server_url: str, project: str) -> None:
     No feedback is printed here: progress shows in the md:<project> window's own
     status line, driven by the upload server (see upload_server._flash).
     """
-    image_data = get_clipboard_image()
-    if image_data:
-        upload_image(server_url, project, image_data)
+    log = get_logger("hotkey")
+    try:
+        image_data = get_clipboard_image()
+        if image_data:
+            ok = upload_image(server_url, project, image_data)
+            log.info("upload project=%s ok=%s", project, ok)
+    except Exception:
+        log.exception("upload project=%s failed", project)
+
+
+def _heartbeat_loop(stop_event: threading.Event) -> None:
+    """Pulse a liveness heartbeat on an interval until told to stop.
+
+    Runs on its own daemon thread -- GetMessageW blocks when idle, so a
+    heartbeat cannot live inside the message loop. This proves the loop is
+    alive, not that Alt+V itself works; per-keystroke callback failures are
+    E8's `log.exception` in hook_proc, not this heartbeat.
+    """
+    while not stop_event.is_set():
+        write_heartbeat("hotkey")
+        stop_event.wait(HEARTBEAT_INTERVAL)
 
 
 def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
+    log = get_logger("hotkey")
     alt_held = False
 
     def hook_proc(nCode, wParam, lParam):
@@ -326,11 +353,16 @@ def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
     # Record the pid only once the hook is actually installed, so a failed
     # listener never leaves a pid file claiming it's running.
     _write_pid()
+    stop_event = threading.Event()
+    threading.Thread(target=_heartbeat_loop, args=(stop_event,), daemon=True).start()
+    log.info("listener started")
     msg = ctypes.wintypes.MSG()
     try:
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0):
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
     finally:
+        stop_event.set()
         user32.UnhookWindowsHookEx(hook)
         _clear_pid()
+        log.info("listener stopped")
