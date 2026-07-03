@@ -72,6 +72,24 @@ class TestParseMultipart:
         assert files["file"][0] == "test.png"
         assert files["file"][1] == b"PNGDATA"
 
+    def test_parse_multipart_missing_boundary_returns_empty(self):
+        # F-D3-006: Content-Type with no boundary= is treated as "no body".
+        class FakeHandler:
+            headers = {"Content-Type": "multipart/form-data", "Content-Length": "0"}
+            rfile = io.BytesIO(b"")
+
+        assert _parse_multipart(FakeHandler()) == ({}, {})
+
+    def test_parse_multipart_non_numeric_content_length_raises(self):
+        # F-D3-002 CHARACTERIZATION: uncaught ValueError from int() today;
+        # fix returns a clean 400 -- update this pin when fixed.
+        class FakeHandler:
+            headers = {"Content-Type": "multipart/form-data; boundary=X", "Content-Length": "abc"}
+            rfile = io.BytesIO(b"")
+
+        with pytest.raises(ValueError):
+            _parse_multipart(FakeHandler())
+
 
 class TestUploadServerIntegration:
     @pytest.fixture(autouse=True)

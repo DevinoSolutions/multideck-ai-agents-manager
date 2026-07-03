@@ -134,6 +134,36 @@ class TestLoadConfig:
         cfg = load_config(path)
         assert cfg.settings.psmux is True
 
+    def test_load_config_backfills_colors_and_rewrites_file(self, tmp_config):
+        # F-D6-003/007 CHARACTERIZATION: load_config has a surprising side
+        # effect -- it writes the backfilled color back to disk at load time.
+        path = tmp_config({"projects": [{"path": "api"}]})
+        load_config(path)
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        assert "color" in data["projects"][0]
+
+    def test_load_config_drops_unknown_settings_key(self, tmp_config):
+        # F-D6-004 CHARACTERIZATION: unknown settings keys are silently
+        # dropped rather than rejected.
+        path = tmp_config({
+            "settings": {"bogusKey": 1, "defaultTool": "codex"},
+            "projects": [{"path": "api"}],
+        })
+        cfg = load_config(path)
+        assert not hasattr(cfg.settings, "bogusKey")
+        assert cfg.settings.default_tool == "codex"
+
+    def test_load_config_wrong_typed_columns_raises(self, tmp_config):
+        # F-D6-005 CHARACTERIZATION: raw TypeError today; should be a clean
+        # ValueError -- update this pin when fixed.
+        path = tmp_config({
+            "layout": {"columns": "2"},
+            "projects": [{"path": "api"}],
+        })
+        with pytest.raises(TypeError):
+            load_config(path)
+
 
 class TestPathResolution:
     def test_resolve_relative(self, tmp_config):
