@@ -13,7 +13,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from multideck.launch import _psmux_session_name
 from multideck.log import get_logger
+from multideck.paths import find_config
 from multideck.platform import find_psmux
 
 
@@ -324,10 +326,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 
 def _config_sessions(config_path: str | None) -> list[dict]:
     """Eligible psmux session names from config -- no psmux calls, so it's fast."""
-    from multideck.cli import _find_config
-    from multideck.launch import _psmux_session_name
-
-    config_file = _find_config(config_path)
+    config_file = find_config(config_path)
     if not config_file.exists():
         return []
 

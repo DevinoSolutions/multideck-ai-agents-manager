@@ -11,117 +11,23 @@ from multideck import __version__
 from multideck.config import MultideckConfig, _random_tab_color, load_config
 from multideck.init_config import write_config
 from multideck.log import heartbeat_fresh
-
-S = click.style
-
-LOGO_LINES = [
-    r"           _ _   _    _        _   ",
-    r" _ __ _  _| | |_(_)__| |___ __| |__",
-    r"| '  \ || | |  _| / _` / -_) _| / /",
-    r"|_|_|_\_,_|_|\__|_\__,_\___\__|_\_\\",
-]
-
-
-def _config_dir() -> Path:
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "multideck"
-
-
-def _config_path() -> Path:
-    return _config_dir() / "config.json"
-
-
-def _find_config(config_arg: str | None) -> Path:
-    if config_arg:
-        return Path(config_arg)
-    cwd = Path.cwd()
-    for name in ("multideck.config.json",):
-        for loc in (cwd, cwd / "scripts"):
-            if (loc / name).exists():
-                return loc / name
-    return _config_path()
-
-
-def _banner() -> None:
-    click.echo()
-    for line in LOGO_LINES:
-        click.echo(f"  {S(line, fg='cyan')}")
-    click.echo(f"  {S(f'v{__version__}', dim=True)}  {S('auto-tile your AI workspace', dim=True)}")
-    click.echo()
-
-
-def _divider() -> None:
-    click.echo(f"  {S('-' * 40, dim=True)}")
-
-
-def _menu_item(key: str, label: str, key_fg: str = "cyan", extra: str = "") -> None:
-    click.echo(f"   {S(key, fg=key_fg, bold=True)}   {label}{extra}")
-
-
-def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
-    cell_w = 10
-    lines: list[str] = []
-    border = "+" + (f"{'-' * cell_w}+") * cols
-    for r in range(rows):
-        lines.append(f"{indent}{S(border, dim=True)}")
-        cells = ""
-        for c in range(cols):
-            n = r * cols + c + 1
-            label = f"win {n}"
-            pad = cell_w - len(label)
-            left = pad // 2
-            right = pad - left
-            cells += S("|", dim=True) + " " * left + S(label, fg="cyan") + " " * right
-        cells += S("|", dim=True)
-        lines.append(f"{indent}{cells}")
-    lines.append(f"{indent}{S(border, dim=True)}")
-    return lines
-
-
-def _open_in_editor(path: Path) -> None:
-    path_str = str(path)
-    if sys.platform == "win32":
-        os.startfile(path_str)
-    elif sys.platform == "darwin":
-        import subprocess
-        subprocess.Popen(["open", path_str])
-    else:
-        import subprocess
-        editor = os.environ.get("EDITOR", "xdg-open")
-        subprocess.Popen([editor, path_str])
-
-
-def _load_raw_config(path: Path) -> dict:
-    if not path.exists():
-        click.echo(f"No config found at: {path}", err=True)
-        click.echo(f"Run {S('multideck', bold=True)} to generate one.", err=True)
-        sys.exit(1)
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _save_raw_config(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-
-
-def _confirm_change(message: str) -> None:
-    click.echo(f"\n  {S('+', fg='green', bold=True)} {message}")
-    click.echo(f"  {S('Press Enter to continue...', dim=True)}", nl=False)
-    click.getchar()
-    click.echo()
-
-
-def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
-    hint = S("  (b to go back)", dim=True)
-    value = click.prompt(f"  {label}{hint}", default=default, **kwargs).strip()
-    if value.lower() == "b":
-        return None
-    return value
+from multideck.paths import _config_path, find_config
+from multideck.style import S
+from multideck.cli.ui import (
+    _banner,
+    _confirm_change,
+    _divider,
+    _force_utf8_console,
+    _grid_preview,
+    _grouped,
+    _menu_item,
+    _open_in_editor,
+    _print_names,
+    _print_qr,
+    _print_session_overview,
+    _prompt_or_back,
+)
+from multideck.cli.config_io import _load_config_or_exit, _load_raw_config, _save_raw_config
 
 
 def _config_menu(config_file: Path) -> None:
@@ -628,7 +534,7 @@ def main(
         _attach_flow(attach_host, no_mux=attach_no_mux, group=group)
         return
 
-    config_file = _find_config(config_path)
+    config_file = find_config(config_path)
 
     if do_edit:
         if not config_file.exists():
@@ -668,11 +574,7 @@ def main(
             click.echo("No config found. Run: multideck --init", err=True)
             sys.exit(1)
 
-    try:
-        cfg = load_config(str(config_file))
-    except (ValueError, FileNotFoundError) as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    cfg = _load_config_or_exit(config_file)
 
     has_directive = go or retile_all or dry_run or group
     if not has_directive and sys.stdin.isatty():
@@ -698,7 +600,7 @@ def main(
                 _menu_down(config_file)
                 continue
             if menu.get("reload"):
-                cfg = load_config(str(config_file))
+                cfg = _load_config_or_exit(config_file)
             retile_all = menu["retile_all"]
             group = menu.get("group")
             break
@@ -718,7 +620,7 @@ def _default_attach_host() -> str | None:
     """Best-guess SSH target from the local config's project ``host`` fields."""
     from collections import Counter
     try:
-        data = json.loads(_find_config(None).read_text(encoding="utf-8"))
+        data = json.loads(find_config(None).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     hosts = [p.get("host") for p in data.get("projects", []) if p.get("host")]
@@ -788,62 +690,6 @@ def _tile_titles(titles: list[str]) -> None:
         on_placed=lambda p: click.echo(f"    {S('+', fg='green')} {p.name}"),
         on_missing=lambda p: click.echo(f"    {S('x', fg='red')} {p.name} {S('not found', dim=True)}"),
     )
-
-
-def _grouped(entries: list[dict]) -> tuple[list[str], dict[str, list[str]]]:
-    """Bucket session entries by project group, preserving first-seen order."""
-    order: list[str] = []
-    buckets: dict[str, list[str]] = {}
-    for e in entries:
-        g = e.get("group") or "(no group)"
-        if g not in buckets:
-            buckets[g] = []
-            order.append(g)
-        buckets[g].append(e["name"])
-    return order, buckets
-
-
-def _print_names(names: list[str], indent: str = "       ", width: int = 66) -> None:
-    line = indent
-    for nm in names:
-        if line.strip() and len(line) + len(nm) + 2 > width:
-            click.echo(S(line, dim=True))
-            line = indent
-        line += nm + "  "
-    if line.strip():
-        click.echo(S(line, dim=True))
-
-
-def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> list[str]:
-    """Render a grouped up/down overview; return the ordered list of pickable groups."""
-    dn_order, dn_buckets = _grouped(down)
-    up_order, up_buckets = _grouped(up)
-
-    click.echo()
-    click.echo(f"  {S('Sessions on', bold=True)} {S(hostname, fg='cyan')}    "
-               f"{S(str(len(up)), fg='green', bold=True)} up  {S('/', dim=True)}  "
-               f"{S(str(len(down)), fg='yellow', bold=True)} down")
-    _divider()
-
-    pickable: list[str] = []
-    for g in dn_order:
-        names = dn_buckets[g]
-        up_n = len(up_buckets.get(g, []))
-        total = up_n + len(names)
-        if g == "(no group)":
-            click.echo(f"     {S(g, dim=True)}  {S(f'{up_n}/{total}', dim=True)}")
-        else:
-            pickable.append(g)
-            num = S(str(len(pickable)), fg="cyan", bold=True)
-            click.echo(f"  {num}  {S(g, bold=True)}  {S(f'{up_n}/{total} up', dim=True)}")
-        _print_names(names)
-
-    for g in up_order:
-        if g not in dn_buckets:
-            cnt = len(up_buckets[g])
-            click.echo(f"     {S(g, dim=True)}  {S(f'{cnt}/{cnt} ready', fg='green')}")
-    _divider()
-    return pickable
 
 
 def _bring_up_and_requery(target: str, grp_suffix: str, fallback_up: list[dict]) -> list[dict]:
@@ -1075,7 +921,7 @@ def _maybe_start_hotkey(server_url: str) -> int | None:
 @click.pass_context
 def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -> None:
     """Ensure a persistent psmux session per project (host side of `attach`)."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     try:
         cfg = load_config(str(config_file))
     except (ValueError, FileNotFoundError) as e:
@@ -1199,7 +1045,7 @@ def config(ctx: click.Context) -> None:
 @click.pass_context
 def config_show(ctx: click.Context) -> None:
     """Display current configuration."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
 
     _banner()
@@ -1251,7 +1097,7 @@ def config_migrate(ctx: click.Context) -> None:
     """Migrate the config file to the current schema version, persisting any backfilled colors."""
     from multideck.config import migrate_config_file
 
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     try:
         changed = migrate_config_file(str(config_file))
     except (ValueError, FileNotFoundError) as e:
@@ -1270,7 +1116,7 @@ def config_migrate(ctx: click.Context) -> None:
 @click.pass_context
 def config_layout(ctx: click.Context, columns: int, rows: int) -> None:
     """Set grid layout. Usage: multideck config layout 3 2"""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     data.setdefault("layout", {})
     data["layout"]["columns"] = max(1, columns)
@@ -1284,7 +1130,7 @@ def config_layout(ctx: click.Context, columns: int, rows: int) -> None:
 @click.pass_context
 def config_base_dir(ctx: click.Context, path: str) -> None:
     """Set the base directory for project paths."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     resolved = str(Path(path).resolve()).replace("\\", "/")
     data["baseDir"] = resolved
@@ -1297,7 +1143,7 @@ def config_base_dir(ctx: click.Context, path: str) -> None:
 @click.pass_context
 def config_default_tool(ctx: click.Context, tool: str) -> None:
     """Set the default tool for new projects."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     data.setdefault("settings", {})
     data["settings"]["defaultTool"] = tool
@@ -1311,7 +1157,7 @@ def config_default_tool(ctx: click.Context, tool: str) -> None:
 @click.pass_context
 def config_tool(ctx: click.Context, name: str, command: str) -> None:
     """Add or update a tool command. Usage: multideck config tool aider 'aider --model sonnet'"""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     data.setdefault("settings", {}).setdefault("tools", {})
     data["settings"]["tools"][name] = command
@@ -1324,7 +1170,7 @@ def config_tool(ctx: click.Context, name: str, command: str) -> None:
 @click.pass_context
 def config_remove_tool(ctx: click.Context, name: str) -> None:
     """Remove a tool."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     tools = data.get("settings", {}).get("tools", {})
     if name not in tools:
@@ -1355,7 +1201,7 @@ def config_add(
     windows: int | None,
 ) -> None:
     """Add a project. Usage: multideck config add ./myapp -g INTERNAL -t claude"""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     data.setdefault("projects", [])
 
@@ -1383,7 +1229,7 @@ def config_add(
 @click.pass_context
 def config_remove(ctx: click.Context, path: str) -> None:
     """Remove a project by path (or leaf name)."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     projects = data.get("projects", [])
     normalized = path.replace("\\", "/")
@@ -1444,7 +1290,7 @@ def config_set(ctx: click.Context, path: str, field: str, value: str) -> None:
 @click.pass_context
 def config_open(ctx: click.Context) -> None:
     """Open config file in your default editor."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     if not config_file.exists():
         click.echo(f"No config at {config_file}. Run multideck first.", err=True)
         sys.exit(1)
@@ -1456,11 +1302,11 @@ def config_open(ctx: click.Context) -> None:
 @click.pass_context
 def config_path_cmd(ctx: click.Context) -> None:
     """Print the config file path."""
-    click.echo(str(_find_config(ctx.obj.get("config_path"))))
+    click.echo(str(find_config(ctx.obj.get("config_path"))))
 
 
 def _set_project_field(ctx: click.Context, path: str, field: str, value: object) -> None:
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
     normalized = path.replace("\\", "/")
 
@@ -1816,22 +1662,6 @@ def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> 
         click.echo(f"\n  {S('Server stopped.', dim=True)}")
 
 
-def _force_utf8_console() -> None:
-    """Make stdout render UTF-8 (block chars for the QR, box glyphs) on Windows
-    consoles that default to a legacy code page. Best-effort, never raises."""
-    if sys.platform != "win32":
-        return
-    try:
-        import ctypes
-        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
-    except Exception:
-        pass
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # guarded by try/except; reconfigure exists on the real TextIOWrapper
-    except Exception:
-        pass
-
-
 def _tailnet_host() -> str:
     """Best host for the phone URL: Tailscale MagicDNS name, then its IP, then
     the LAN IP. MagicDNS gives the prettiest, most stable URL."""
@@ -1896,20 +1726,6 @@ def _running_upload_port() -> int | None:
             ports.append(int(m.group(1)))
     alive = [p for p in ports if _pid_alive(server_pid(p))]
     return min(alive) if alive else None
-
-
-def _print_qr(url: str) -> None:
-    """Print a scannable QR for the URL if the qrcode lib is available."""
-    try:
-        import qrcode
-    except ImportError:
-        click.echo(f"  {S('Tip:', dim=True)} {S('pip install qrcode', bold=True)} "
-                   f"{S('to print a scannable QR code here.', dim=True)}")
-        return
-    qr = qrcode.QRCode(border=2)
-    qr.add_data(url)
-    qr.make(fit=True)
-    qr.print_ascii(invert=True)
 
 
 @main.command("mobile")
@@ -2140,7 +1956,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 @click.pass_context
 def sessions_cmd(ctx: click.Context, name: str | None) -> None:
     """List psmux sessions or attach to one. Usage: multideck sessions [name]"""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     _run_sessions_picker(config_file, name)
 
 
@@ -2214,7 +2030,7 @@ def _render_status(config_file: Path) -> bool:
     (dead/stale). Never exits -- shared with the menu's _menu_status."""
     from multideck.launch import psmux_status
 
-    cfg = load_config(str(config_file))
+    cfg = _load_config_or_exit(config_file)
     up, down, _ = psmux_status(cfg)
 
     _banner()
@@ -2258,7 +2074,7 @@ def _render_status(config_file: Path) -> bool:
 @click.pass_context
 def status_cmd(ctx: click.Context, as_json: bool) -> None:
     """Show which psmux sessions and services are currently running."""
-    config_file = _find_config(ctx.obj.get("config_path"))
+    config_file = find_config(ctx.obj.get("config_path"))
     if not config_file.exists():
         if as_json:
             click.echo(json.dumps({"error": "No config found."}))
@@ -2267,7 +2083,7 @@ def status_cmd(ctx: click.Context, as_json: bool) -> None:
         sys.exit(1)
 
     if as_json:
-        cfg = load_config(str(config_file))
+        cfg = _load_config_or_exit(config_file)
         status = _gather_status(cfg)
         click.echo(json.dumps(status))
         sys.exit(3 if _is_degraded(status) else 0)
@@ -2286,12 +2102,8 @@ def status_cmd(ctx: click.Context, as_json: bool) -> None:
 def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
              do_all: bool, stop_srv: bool) -> None:
     """Shut down running psmux sessions (and optionally the upload server)."""
-    config_file = _find_config(ctx.obj.get("config_path"))
-    try:
-        cfg = load_config(str(config_file))
-    except (ValueError, FileNotFoundError) as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    config_file = find_config(ctx.obj.get("config_path"))
+    cfg = _load_config_or_exit(config_file)
 
     from multideck.launch import kill_psmux, psmux_status
 
@@ -2335,7 +2147,7 @@ def _menu_status(config_file: Path) -> None:
 def _menu_up(config_file: Path) -> None:
     from multideck.launch import bring_up_psmux, psmux_status
 
-    cfg = load_config(str(config_file))
+    cfg = _load_config_or_exit(config_file)
     up, down, projects = psmux_status(cfg)
     _banner()
     click.echo(f"  {S('Bring up sessions in background', bold=True)}  {S('(no windows)', dim=True)}")
@@ -2378,7 +2190,7 @@ def _menu_up(config_file: Path) -> None:
 def _menu_down(config_file: Path) -> None:
     from multideck.launch import kill_psmux, psmux_status
 
-    cfg = load_config(str(config_file))
+    cfg = _load_config_or_exit(config_file)
     up, _, _ = psmux_status(cfg)
     _banner()
     click.echo(f"  {S('Shut down sessions', bold=True)}")
