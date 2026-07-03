@@ -1,5 +1,3 @@
-import pytest
-
 from multideck.discover import discover_projects
 
 
@@ -42,16 +40,15 @@ class TestThreeWayMerge:
         assert projects[0]["tool"] == "claude"
         assert projects[0]["last_active"] == 300
 
-    @pytest.mark.xfail(
-        strict=True, raises=AssertionError,
-        reason="R9: merge compares claude only vs the current source, not the running best "
-               "(discover.py:208); traced codex=250,vscode=90,claude=150 -> wrongly 150. "
-               "E7 owns the fix; when fixed this XPASSes and strict flips it red -> delete this marker.",
-    )
     def test_three_way_merge_newest_source_wins_R9(self, monkeypatch, tmp_path):
-        """Pins the CORRECT outcome (codex/250 is the newest source overall);
-        currently wrong because the vscode(90) pass re-compares claude(150)
-        only against itself and wrongly beats the stored codex(250) best."""
+        """Pins the CORRECT outcome (codex/250 is the newest source overall).
+        Was xfail: the old merge compared claude only against the current
+        source, not the running best (discover.py:208), so the vscode(90)
+        pass re-compared claude(150) only against itself and wrongly beat
+        the stored codex(250) best. Fixed by _merge_candidate offering every
+        candidate through one max-keyed comparison (R9) -- this is now the
+        one authoritative pin for the three-way merge (no separate
+        test_merge_three_sources_keeps_max_last_active; would duplicate)."""
         self._seed(monkeypatch, tmp_path, codex_active=250, vscode_active=90, claude_active=150)
 
         projects, _ = discover_projects(home=tmp_path)
