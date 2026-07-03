@@ -28,8 +28,8 @@ class TestEncodeClaudeProjectPath:
 
 
 class TestGetClaudeSessionIds:
-    def test_returns_ids_sorted_by_mtime(self, fake_claude_sessions):
-        home = getattr(fake_claude_sessions, "__wrapped_tmp")
+    def test_returns_ids_sorted_by_mtime(self, fake_claude_sessions, tmp_path):
+        home = tmp_path
         encoded = "test-project"
         fake_claude_sessions(encoded, [
             ("uuid-oldest", 1000.0),
@@ -39,15 +39,15 @@ class TestGetClaudeSessionIds:
         ids = get_claude_session_ids("test-project", 3, home_override=home)
         assert ids == ["uuid-newest", "uuid-middle", "uuid-oldest"]
 
-    def test_returns_fewer_than_requested(self, fake_claude_sessions):
-        home = getattr(fake_claude_sessions, "__wrapped_tmp")
+    def test_returns_fewer_than_requested(self, fake_claude_sessions, tmp_path):
+        home = tmp_path
         encoded = "test-project"
         fake_claude_sessions(encoded, [("uuid-1", 1000.0), ("uuid-2", 2000.0)])
         ids = get_claude_session_ids("test-project", 5, home_override=home)
         assert ids == ["uuid-2", "uuid-1", None, None, None]
 
-    def test_empty_dir(self, fake_claude_sessions):
-        home = getattr(fake_claude_sessions, "__wrapped_tmp")
+    def test_empty_dir(self, fake_claude_sessions, tmp_path):
+        home = tmp_path
         fake_claude_sessions("test-project", [])
         ids = get_claude_session_ids("test-project", 3, home_override=home)
         assert ids == [None, None, None]
@@ -56,8 +56,8 @@ class TestGetClaudeSessionIds:
         ids = get_claude_session_ids("nonexistent", 2, home_override=tmp_path)
         assert ids == [None, None]
 
-    def test_count_one(self, fake_claude_sessions):
-        home = getattr(fake_claude_sessions, "__wrapped_tmp")
+    def test_count_one(self, fake_claude_sessions, tmp_path):
+        home = tmp_path
         encoded = "test-project"
         fake_claude_sessions(encoded, [("uuid-1", 1000.0), ("uuid-2", 2000.0)])
         ids = get_claude_session_ids("test-project", 1, home_override=home)
@@ -69,39 +69,39 @@ from multideck.sessions.codex import get_codex_session_ids
 
 
 class TestGetCodexSessionIds:
-    def test_returns_matching_sessions_sorted_by_mtime(self, fake_codex_sessions):
+    def test_returns_matching_sessions_sorted_by_mtime(self, fake_codex_sessions, tmp_path):
         fake_codex_sessions([
             ("/home/user/api", "uuid-oldest", 1000.0),
             ("/home/user/api", "uuid-newest", 3000.0),
             ("/home/user/other", "uuid-other", 2000.0),
             ("/home/user/api", "uuid-middle", 2000.0),
         ])
-        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        home = tmp_path
         ids = get_codex_session_ids("/home/user/api", 3, home_override=home)
         assert ids == ["uuid-newest", "uuid-middle", "uuid-oldest"]
 
-    def test_case_insensitive_on_windows(self, fake_codex_sessions, monkeypatch):
+    def test_case_insensitive_on_windows(self, fake_codex_sessions, monkeypatch, tmp_path):
         monkeypatch.setattr(sys, "platform", "win32")
         fake_codex_sessions([
             ("C:\\Users\\User\\api", "uuid-1", 1000.0),
         ])
-        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        home = tmp_path
         ids = get_codex_session_ids("c:\\users\\user\\api", 1, home_override=home)
         assert ids == ["uuid-1"]
 
-    def test_fewer_than_requested(self, fake_codex_sessions):
+    def test_fewer_than_requested(self, fake_codex_sessions, tmp_path):
         fake_codex_sessions([
             ("/home/user/api", "uuid-1", 1000.0),
         ])
-        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        home = tmp_path
         ids = get_codex_session_ids("/home/user/api", 3, home_override=home)
         assert ids == ["uuid-1", None, None]
 
-    def test_no_matching_sessions(self, fake_codex_sessions):
+    def test_no_matching_sessions(self, fake_codex_sessions, tmp_path):
         fake_codex_sessions([
             ("/home/user/other", "uuid-1", 1000.0),
         ])
-        home = getattr(fake_codex_sessions, "__wrapped_tmp")
+        home = tmp_path
         ids = get_codex_session_ids("/home/user/api", 2, home_override=home)
         assert ids == [None, None]
 

@@ -44,7 +44,6 @@ def fake_claude_sessions(tmp_path):
             f.write_text('{"type":"message"}\n')
             os.utime(f, (mtime, mtime))
         return sess_dir
-    _create.__wrapped_tmp = tmp_path
     return _create
 
 
@@ -62,7 +61,6 @@ def fake_codex_sessions(tmp_path):
             f.write_text(json.dumps(meta) + "\n")
             os.utime(f, (mtime, mtime))
         return sess_root
-    _create.__wrapped_tmp = tmp_path
     return _create
 
 
