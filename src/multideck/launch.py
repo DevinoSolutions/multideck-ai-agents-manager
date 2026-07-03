@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 import click
@@ -60,11 +61,11 @@ class _Target:
 
 def _resolve_path(raw: str, base_dir: str | None) -> str | None:
     expanded = os.path.expandvars(os.path.expanduser(raw))
-    if os.path.isabs(expanded):
-        return expanded if os.path.isdir(expanded) else None
+    if Path(expanded).is_absolute():
+        return expanded if Path(expanded).is_dir() else None
     if base_dir:
         joined = os.path.join(base_dir, expanded)
-        return joined if os.path.isdir(joined) else None
+        return joined if Path(joined).is_dir() else None
     return None
 
 

@@ -6,6 +6,7 @@ import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Literal
 
 from multideck.grid import Rect, MonitorRect
@@ -17,9 +18,9 @@ def find_psmux() -> str | None:
     if found:
         return found
     if sys.platform == "win32":
-        local = os.path.join(os.environ.get("LOCALAPPDATA", ""), "psmux", "psmux.exe")
-        if os.path.isfile(local):
-            return local
+        local = Path(os.environ.get("LOCALAPPDATA", "")) / "psmux" / "psmux.exe"
+        if local.is_file():
+            return str(local)
     return None
 
 
