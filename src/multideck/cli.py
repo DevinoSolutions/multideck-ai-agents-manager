@@ -970,7 +970,8 @@ def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = Non
     server_url = f"http://{hostname}:{port}"
     click.echo(f"\n  {S('#', fg='magenta')} Hotkey {S('Alt+V', bold=True)} pastes clipboard images"
                f" {S('(only in md: windows)', dim=True)} {S('->', dim=True)} {S(server_url, fg='cyan')}")
-    if sys.platform == "win32":
+    from multideck.platform import get_platform
+    if get_platform().supports_hotkey():
         pid = _maybe_start_hotkey(server_url)
         if pid:
             click.echo(f"  {S('+', fg='green')} Alt+V listener running in the background "
@@ -1043,7 +1044,8 @@ def _maybe_start_hotkey(server_url: str) -> int | None:
     terminal on a message loop. Returns the listener pid (existing or freshly
     started), or None if it couldn't be confirmed.
     """
-    if sys.platform != "win32":
+    from multideck.platform import get_platform
+    if not get_platform().supports_hotkey():
         return None
     import time
 
@@ -1150,7 +1152,8 @@ def hotkey_cmd(ctx: click.Context, server: str) -> None:
     Only activates when a 'md:' titled window is focused. Otherwise
     the keystroke passes through normally.
     """
-    if sys.platform != "win32":
+    from multideck.platform import get_platform
+    if not get_platform().supports_hotkey():
         click.echo(f"  {S('x', fg='red')} Hotkey listener is Windows-only.")
         sys.exit(1)
 
@@ -2170,7 +2173,8 @@ def _upload_state(port: int) -> str:
 
 def _listener_state() -> str:
     """"on" (heartbeat fresh) / "stale" (pid alive, heartbeat expired) / "off"."""
-    if sys.platform != "win32":
+    from multideck.platform import get_platform
+    if not get_platform().supports_hotkey():
         return "off"
     from multideck.hotkey import listener_pid
     pid = listener_pid()
@@ -2298,7 +2302,8 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
         else:
             click.echo(f"  {S('-', dim=True)} Upload server not running, or could not be stopped (see logs).")
 
-    if do_all and sys.platform == "win32":
+    from multideck.platform import get_platform
+    if do_all and get_platform().supports_hotkey():
         from multideck.hotkey import stop_listener
         if stop_listener():
             click.echo(f"  {S('+', fg='green')} Stopped the Alt+V listener.")
