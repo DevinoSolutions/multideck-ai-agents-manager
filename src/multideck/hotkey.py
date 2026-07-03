@@ -123,6 +123,10 @@ def get_clipboard_image() -> bytes | None:
     return _dib_to_bmp(dib_data)
 
 
+_DIB_HEADER_SIZES = frozenset({40, 52, 56, 108, 124})   # BITMAPINFOHEADER..V5
+_DIB_BPP = frozenset({1, 4, 8, 16, 24, 32})
+
+
 def _dib_to_bmp(dib: bytearray) -> bytes | None:
     """Wrap a clipboard DIB in a BMP file header.
 
@@ -142,6 +146,12 @@ def _dib_to_bmp(dib: bytearray) -> bytes | None:
     compression = int.from_bytes(dib[16:20], "little")
     clr_used = int.from_bytes(dib[32:36], "little")
 
+    # Reject malformed/hostile headers before the offset arithmetic below,
+    # which can otherwise overflow a 4-byte field (OverflowError) on a
+    # clipboard payload we don't control.
+    if header_size not in _DIB_HEADER_SIZES or bpp not in _DIB_BPP or clr_used > 256:
+        return None
+
     extra = 0
     # Masks only trail a plain BITMAPINFOHEADER; V4/V5 headers embed them.
     if compression == BI_BITFIELDS and header_size == 40:
@@ -150,6 +160,8 @@ def _dib_to_bmp(dib: bytearray) -> bytes | None:
         extra += (clr_used or (1 << bpp)) * 4
 
     px_start = header_size + extra
+    if px_start > len(dib):     # pixel offset past the buffer -> malformed
+        return None
 
     if bpp == 32 and px_start < len(dib):
         n = len(range(px_start + 3, len(dib), 4))
