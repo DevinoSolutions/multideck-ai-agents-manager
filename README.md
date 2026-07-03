@@ -122,6 +122,18 @@ Enable [psmux](https://github.com/psmux/psmux) (native Windows terminal multiple
 
 Requires psmux installed (`choco install psmux` or download from GitHub). When enabled, multideck creates a detached psmux session per project and opens Windows Terminal attached to it. From any SSH client: `psmux attach -t project-name`.
 
+### Mobile image upload (over Tailscale)
+
+Send screenshots from your phone straight into a project's agent session:
+
+```json
+"settings": { "psmux": true, "uploadServer": true, "uploadPort": 8033 }
+```
+
+`multideck serve` (or `uploadServer: true` during launch) starts a small HTTP server; `multideck mobile` prints the phone URL + a QR code you can install as a home-screen app. Pick a project on the phone, upload an image, and its path is pasted into that project's session. The Alt+V hotkey (Windows) does the same for whatever `md:` session is focused.
+
+This works **over Tailscale**: the server binds only the loopback and your machine's Tailscale IP — never the LAN wildcard — and `attach`/`mobile`/`termius` shell out to the `tailscale` CLI to resolve hosts. Devices must be on your tailnet; there is deliberately no auth token, since the bind set is the access control. To bind something else (e.g. LAN-wide), use the escape hatch: `multideck serve --host 0.0.0.0`.
+
 ## Usage
 
 Run `multideck` with no arguments for the interactive menu:
@@ -156,6 +168,15 @@ Or skip the menu with flags:
 | `multideck docs` | Print full config reference (Markdown). |
 | `multideck sessions` | List active psmux sessions, pick one to attach. |
 | `multideck sessions <name>` | Attach directly to a psmux session by name. |
+| `multideck up [--json] [-g <group>]` | Host side: ensure a persistent psmux session per project. |
+| `multideck attach <host>` | From another PC: bring host sessions up over SSH, tile locally, Alt+V uploads. |
+| `multideck status [--json]` | Session + daemon health. Exit codes: 0 healthy, 1 config error, 3 degraded. |
+| `multideck down [--all] [--server]` | Stop sessions; `--all`/`--server` also stop the upload server (and listener). |
+| `multideck serve [--host <addr>]` | Run the mobile upload server (see below). |
+| `multideck mobile` | Phone URL + QR code for installing the uploader as a home-screen app. |
+| `multideck termius` | Generate an SSH config entry that opens the session picker. |
+| `multideck hotkey` | Run the Alt+V clipboard-upload listener standalone (Windows). |
+| `multideck config <subcommand>` | Edit config from the CLI — 14 subcommands incl. `migrate`; see `multideck config --help`. |
 
 ## Configuration
 
@@ -165,34 +186,24 @@ Config is stored at a platform-standard location:
 - **macOS:** `~/Library/Application Support/multideck/config.json`
 - **Linux:** `~/.config/multideck/config.json`
 
-Or place `multideck.config.json` in your working directory.
+Or place `multideck.config.json` in your working directory (it is gitignored — your personal config never gets committed).
+
+Start from the committed sample, [`multideck.config.example.json`](multideck.config.example.json) — it is generated from the config factory and exercises every surface (groups, remote `host`/`remotePath`, `ssh`, the full `settings` block):
 
 ```json
 {
+  "version": 1,
   "baseDir": "C:/Users/you/projects",
   "layout": { "columns": 2, "rows": 1 },
-  "settings": {
-    "defaultTool": "claude",
-    "settleSeconds": 3,
-    "launchDelayMs": 400,
-    "happy": false,
-    "tools": {
-      "claude": "claude --continue",
-      "codex": "codex",
-      "cursor-agent": "cursor-agent",
-      "agy": "agy",
-      "aider": "aider --model sonnet"
-    }
-  },
+  "settings": { "defaultTool": "claude", "...": "see the example file / multideck docs" },
   "projects": [
-    { "path": "INTERNAL/api",  "group": "INTERNAL", "color": "#3b82f6" },
-    { "path": "INTERNAL/web",  "group": "INTERNAL", "color": "#22c55e" },
-    { "path": "LEAD-GEN/outreach", "group": "LEAD-GEN", "tool": "codex" },
-    { "path": "docs", "tool": "vscode" },
-    { "path": "frontend", "tool": "cursor" }
+    { "path": "backend/api", "group": "backend", "tool": "claude", "color": "#3b82f6" },
+    { "path": "gpu-worker", "group": "infra", "host": "gpu-box.example.com", "remotePath": "/home/dev/worker", "tool": "codex" }
   ]
 }
 ```
+
+Configs are versioned (`"version": 1`). A config without a current version still loads but prints a warning until you run `multideck config migrate` — loading never rewrites your file; `migrate` is the only writer (it also persists auto-assigned project colors, which are otherwise re-randomized per run).
 
 ### Project fields
 
@@ -255,8 +266,8 @@ CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
     <tr>
       <td><strong>Unit</strong></td>
       <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
-      <td>Windows / macOS / Linux<br/>Python 3.10 -- 3.13</td>
-      <td>Config parsing, grid computation, title generation, session resume, discovery, grouping (12 matrix jobs)</td>
+      <td>Windows / macOS / Linux<br/>Python 3.10 -- 3.14</td>
+      <td>Config parsing, grid computation, title generation, session resume, discovery, grouping (15 matrix jobs)</td>
     </tr>
     <tr>
       <td><strong>Platform</strong></td>
@@ -283,11 +294,13 @@ CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
 
 ```bash
 pip install -e ".[dev]"
-pytest                    # all tests
-pytest tests/unit/ -v     # unit tests only
-pytest tests/e2e/ -v      # end-to-end tests
-pytest tests/platform/ -v # platform-specific tests (needs display)
+pytest tests/unit/ -q                        # fast, safe anywhere
+pytest tests/e2e/ -m "e2e and not needs_ssh" # subprocess dry-runs; no SSH server needed
+pytest tests/platform/ -v -m platform        # real monitors/terminals — CI-grade env only
+python scripts/check.py                      # the quality gate: ruff + compileall + mypy + pytest w/ coverage
 ```
+
+A bare `pytest` collects **all** tiers, including tests that enumerate real monitors, launch real terminals, and expect an SSH server — run those only in an environment set up like CI (`.github/workflows/ci.yml`). `scripts/check.py` is the repo's commit gate; it must pass before every commit.
 
 ## Cross-platform support
 

@@ -1,0 +1,54 @@
+# multideck — agent guide
+
+Open every project in its own terminal, launch an AI agent in it, and auto-tile every window across every monitor. Entry point: `multideck = multideck.cli:main` (pyproject.toml). User-facing docs live in README.md and `multideck docs` (generated config-schema reference); architectural rationale and the known-debt ledger live in DESIGN.md — this file is the terse map for a cold agent session, not a restatement of either.
+
+## Commands
+
+- Setup: `pip install -e ".[dev]"` (uv equivalent: `uv sync --extra dev`; `uv.lock` is committed).
+- Quality gate — **must pass before every commit**: `uv run python scripts/check.py` (or `python scripts/check.py`) runs ruff (`select = ["E4","E7","E9","F"]`, pinned explicitly in `pyproject.toml` rather than left on ruff's floating default) + `compileall` + mypy (`warn_unused_ignores = true`) + `pytest tests/unit/ --cov=multideck`. CI's `quality` job runs `uv lock --check` then the same gate via `uv sync --extra dev --frozen --python 3.13`; the separate `unit` job runs the OS x Python matrix (3.10–3.14, windows/macos/linux) via plain `pip install -e ".[dev]"`.
+- Unit tests: `pytest tests/unit/ -q` — last measured 321 passed, 2 skipped, 0 xfailed on this branch; re-run rather than trusting that count indefinitely.
+- Single test: `pytest tests/unit/test_x.py::test_y`.
+- e2e locally: `pytest tests/e2e/ -m "e2e and not needs_ssh"`. WARN: a bare `pytest` also collects `tests/platform/` (needs a real display/terminal) and the `needs_ssh` e2e tests — CI splits these into separate jobs/legs; don't run bare `pytest` locally and read a clean exit as "the gate passed".
+- Run: `multideck` (interactive menu), `--go` (skip menu, launch+tile), `--dry-run`, `multideck config migrate` (stamps `SCHEMA_VERSION` and persists backfilled project colors — `load_config` itself never writes to disk), `multideck serve --host <addr>` escape hatch (default bind is loopback + Tailscale IP, never the LAN wildcard; pass `--host 0.0.0.0` to explicitly restore a LAN-wide bind).
+- `multideck status` exit codes (`cli/status.py::status_cmd`): 0 healthy, 1 config missing/invalid, 3 degraded (upload server dead, or listener heartbeat stale). Click itself exits 2 on usage errors — framework behavior, not this codebase's.
+- Logs: rotating files under `~/.multideck/logs/<name>.log` via `log.get_logger(name)`; names in use: `"launch"`, `"upload"`, `"hotkey"`, `"platform"`.
+
+## Architecture
+
+- `cli/__init__.py` is a ~24-line registration hub: imports every command module (running their `@main.command` decorators) and re-exports the names tests/external code reach via `multideck.cli.<name>`. `cli/app.py` holds the `main` click group alone, with no top-level imports of sibling command modules, so every command module can `from multideck.cli.app import main` without a cycle; the no-subcommand interactive path re-imports its handlers in-body as a documented cycle-break.
+- `launch.py::run_multideck` is a phase pipeline: `_prepare_grid` → `_select_projects` → `_launch_projects` (per-project dispatch to `_dispatch_ide_project`/`_dispatch_cli_agent_project`) → `_start_psmux_and_upload` → `_tile_targets` (delegates to `tiling.place_windows`). The shell owns the exit code; phases return data.
+- `platform/__init__.py`: `Platform` ABC + `get_platform()`. `supports_psmux()`/`supports_hotkey()` default False; `attach_psmux`/`launch_psmux_session` default to `NotImplementedError`. Only `platform/windows.py::WindowsPlatform` overrides those; `macos.py`/`linux.py` implement the abstract methods and take the ABC defaults for the rest.
+- `sessions/__init__.py`: the `AGENT_TOOLS` registry (`AgentTool` dataclass: `session_ids`/`resume_command`/`happy`), one `sessions/<tool>.py` per deeply-integrated CLI agent (today: `claude.py`, `codex.py`).
+- `config.py`: `SCHEMA_VERSION`, `DEFAULT_TOOLS`, the typed dataclasses, pure `load_config` (validates + warns, never writes), `default_config`/`settings_to_dict` (the one envelope factory every generator shares), and `migrate_config_file` (the only function in this module that writes to disk). `cli/config_editor.py` hosts the interactive editor (`_config_menu`) and every `config <subcommand>`, including `migrate`.
+- Leaves with no dependency on the cli package: `paths.py` (`find_config`), `style.py` (`style = click.style`), `titles.py` (`MD_TITLE_PREFIX`), `tiling.py` (`place_windows`, shared by launch-path and attach-path tiling), `log.py` (`get_logger` + heartbeat helpers), `grid.py` (`compute_grid`).
+- `upload_server.py` imports `launch`, `log`, `paths`, `platform` at top level; the real invariant (LS-A-001) is narrower than "depends on paths only" — it never imports the **cli package**, because `cli/__init__` imports every command module for registration and a reverse import would cycle.
+- `hotkey.py` raises `ImportError` at import time off win32 (by design); every caller imports it lazily behind a `supports_hotkey()` check.
+
+## Conventions in force
+
+- Adding a new deeply-integrated agent tool = one new `sessions/<tool>.py` + one `AGENT_TOOLS` entry, with no dispatcher change required — proven by `tests/unit/test_tool_registry.py::TestOneEditExtensionProof::test_adding_a_tool_is_one_dict_entry`.
+- Adding a new platform capability = a default on the `Platform` ABC (a False-returning probe, or a `NotImplementedError` body) plus per-OS overrides; gate call sites with `supports_*()`, never a bare `sys.platform` check in business logic. (The handful of remaining `sys.platform` branches — e.g. `cli/ui.py::_open_in_editor`'s editor-command selection — are genuinely OS-behavioral, not capability gates, and are correctly left alone.)
+- Subsystem modules (`launch.py`, etc.) return ints or raise; `sys.exit()` decisions live only in the `cli/` command shells.
+- Import policy inside `cli/` command modules: stdlib + leaf imports at top; heavy subsystems (`launch`, `upload_server`, `discover`, `agent_state`, and the platform backends via `get_platform()`) are imported in-body with a one-line why-comment — grep `heavy subsystem: in-body per policy` to find every site. Reason: the registration hub imports every command module eagerly, so a top-level heavy import would make `multideck --help` pay that subsystem's startup cost. (`hotkey` imports must stay in-body for a second reason: it raises `ImportError` off-Windows.)
+- Tests: JSON-body assertions read `result.stdout`, never `result.output` — Click 8.4's `CliRunner` merges stdout+stderr into `.output`, so a stderr diagnostic (e.g. the config version warning) can silently corrupt `json.loads(result.output)` (NF-S3-002). Characterization/pin tests are written and green BEFORE the refactor they pin, not after. Shared fixtures `runner`/`fake_platform` and the `FakePlatform` test double live in `tests/conftest.py`; CLI tests pass `--config <tmp_path>` rather than monkeypatching the config location.
+- `style(...)` comes from `multideck.style`; there is no local `S = click.style` anywhere in the repo — the historical alias was renamed out repo-wide.
+- The `"md:"` window-title prefix is built only from `titles.MD_TITLE_PREFIX` (two build sites, both in `cli/attach.py`; `hotkey.py` consumes it); there are no `f"md:` literals anywhere else in `src/`.
+- Raw-dict config I/O (round-trips unknown/unmodeled keys) lives only in `cli/config_io.py` (`_load_raw_config`/`_save_raw_config`, used by the interactive editor), plus one documented exception: `cli/attach.py::up_cmd` calls `load_config` directly (not `_load_config_or_exit`) so its `--json` mode can emit a JSON-shaped error instead of a stderr `Error:` line. Every other CLI call site goes through `config_io._load_config_or_exit`.
+- Commit style is conventional (`feat(scope): ...`, `fix`, `refactor`, `test`, `chore`, `ci`, `docs`) — check `git log --oneline` for the pattern in force.
+
+## Gotchas
+
+- This machine's shell hook (`rtk`) filters shell output; if a result looks surprising, re-run via `rtk proxy <cmd>` for the raw output — it has been observed to mislabel a pytest `1 xfailed` as `1 failed`.
+- A file literally named `nul` reappears at the repo root from `> nul` redirects under Git Bash on Windows. Delete it; never commit it (same for the untracked `vscode_debug.txt`).
+- Click 8.3 vs 8.4 render a bare `--help` usage line differently (`[COMMAND]` bracketed vs not, for `invoke_without_command=True` groups). `tests/unit/test_cli_structure.py::_normalize_help` normalizes exactly that one substring so the help-snapshot pins pass under either installed version.
+- A config file with no `version` field (or an old one) prints a stderr warning on every load until `multideck config migrate` is run; `load_config` itself never writes.
+- `qrcode` (used by `cli/ui.py::_print_qr` for `multideck mobile`) is an optional dependency: imported in a try/except with an install tip, plus a dedicated mypy override in `pyproject.toml`. This is deliberate — don't "declare" it as a missing dependency.
+
+## Hard boundaries
+
+- Never `git add` the local `nul` file, `vscode_debug.txt`, the `audit/` directory, or `multideck.config.json` (personal, gitignored — `multideck.config.example.json` is the committed sample).
+- `scripts/check.py` must exit 0 before every commit.
+- The upload server has no auth token by design — the loopback + Tailscale bind IS the access control. Do not add a token; do not widen the default bind.
+- Four findings live in code as known, tracked debt — do not drive-by fix them (full rationale in DESIGN.md's known-debt ledger): `cli/status.py::_menu_down`'s unconditional "Stopped upload server." echo regardless of whether `stop_server()` actually succeeded; `cli/docs.py::_generate_docs`'s hand-rolled example config block (includes a fabricated `"aider"` tool that isn't in `DEFAULT_TOOLS`); `cli/attach.py::_attach_nomux`'s `"claude --continue"` literal fallback instead of deriving from `DEFAULT_TOOLS`; `status --json`'s plain-text (not JSON) error shape when the config is missing/invalid.
+
+See README.md for user-facing usage, `multideck docs` for the generated config-schema reference, and DESIGN.md for architectural rationale, deliberate-design decisions, and the full known-debt ledger.
