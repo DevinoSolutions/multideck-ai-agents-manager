@@ -95,6 +95,11 @@ _FLASH_NO_MS = 3000
 _inflight: dict[str, int] = {}
 _inflight_lock = threading.Lock()
 
+# Guards UploadHandler.cached_sessions / sessions_ts: UploadHandler is
+# instantiated per-request by ThreadingHTTPServer, so refresh must be
+# single-flight or concurrent requests can race the read-check-write.
+_sessions_lock = threading.Lock()
+
 
 def _inflight_inc(project: str) -> int:
     with _inflight_lock:
@@ -646,10 +651,11 @@ class UploadHandler(BaseHTTPRequestHandler):
 
     def _sessions(self) -> list[dict]:
         now = time.time()
-        if now - UploadHandler.sessions_ts > 10:
-            UploadHandler.cached_sessions = _discover_sessions(UploadHandler.config_path)
-            UploadHandler.sessions_ts = now
-        return UploadHandler.cached_sessions
+        with _sessions_lock:
+            if now - UploadHandler.sessions_ts > 10:
+                UploadHandler.cached_sessions = _discover_sessions(UploadHandler.config_path)
+                UploadHandler.sessions_ts = now
+            return UploadHandler.cached_sessions
 
     def _send_bytes(self, data: bytes, content_type: str, cache: bool = False) -> None:
         self.send_response(200)
