@@ -102,3 +102,32 @@ def test_termius_prints_block(runner):
     result = runner.invoke(main, ["termius", "--host", "h.example", "--user", "u"])
     assert result.exit_code == 0
     assert "Host multideck" in result.output
+
+
+def test_main_dry_run_dispatch(runner, fake_platform, tmp_config, tmp_path):
+    """Pins the whole main -> run_multideck happy-path dispatch: dry-run reaches
+    the tiling plan but launches nothing (every launch call is guarded behind
+    `not opts.dry_run` in launch.py)."""
+    project_dir = tmp_path / "myapp"
+    project_dir.mkdir()
+    cfgpath = tmp_config({"projects": [{"path": str(project_dir), "tool": "vscode"}]})
+
+    result = runner.invoke(main, ["--config", cfgpath, "--dry-run"])
+
+    assert result.exit_code == 0
+    assert "DRY RUN" in result.output
+    assert fake_platform.launched_terminals == []
+    assert fake_platform.launched_vscode == []
+    assert fake_platform.launched_psmux == []
+    assert fake_platform.dpi_aware_calls >= 1
+
+
+def test_up_json(runner, tmp_config, monkeypatch):
+    monkeypatch.setattr("multideck.launch.psmux_status", lambda cfg, group=None: ([], [], []))
+    cfgpath = tmp_config({"projects": [{"path": "myapp"}]})
+
+    result = runner.invoke(main, ["--config", cfgpath, "up", "--json"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.output)
+    assert {"platform", "up", "down", "projects"}.issubset(data.keys())
