@@ -20,6 +20,7 @@ from multideck.launch import (
     _LaunchResult,
     _Target,
     _launch_projects,
+    _prepare_grid,
     _start_psmux_and_upload,
     _tile_targets,
     run_multideck,
@@ -237,3 +238,28 @@ class TestLaunchProjects:
         assert result.targets[0].mode == "contains"
         assert result.targets[0].is_new is True
         assert len(fp.launched_vscode) == 1
+
+
+class TestPrepareGrid:
+    """Direct unit tests for the extracted grid phase (R4, Step 5)."""
+
+    def test_returns_none_without_monitors(self, capsys):
+        fp = FakePlatform(monitors=[])
+        cfg = MultideckConfig(projects=[])
+
+        result = _prepare_grid(fp, cfg, RunOpts())
+
+        assert result is None
+        assert fp.dpi_aware_calls == 1
+        # the no-monitors echo/log stays in the shell, not in this phase
+        assert capsys.readouterr().out == ""
+
+    def test_returns_slots(self, capsys):
+        fp = FakePlatform()
+        cfg = MultideckConfig(projects=[])
+
+        result = _prepare_grid(fp, cfg, RunOpts())
+
+        assert result is not None
+        assert len(result) > 0
+        assert "screen(s)" in capsys.readouterr().out
