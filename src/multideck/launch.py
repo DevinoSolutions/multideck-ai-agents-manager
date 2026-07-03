@@ -147,7 +147,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     targets: list[_Target] = []
     new_count = 0
     tools = config.settings.tools
-    use_psmux = config.settings.psmux and sys.platform == "win32"
+    use_psmux = config.settings.psmux and plat.supports_psmux()
     psmux_windows: list[PsmuxWindowOpts] = []
     _psmux_colors: dict[str, str | None] = {}
 
