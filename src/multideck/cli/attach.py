@@ -23,6 +23,7 @@ from multideck.log import get_logger
 from multideck.paths import find_config
 from multideck.style import S
 from multideck.tiling import Placement, place_windows
+from multideck.titles import MD_TITLE_PREFIX
 
 
 def _default_attach_host() -> str | None:
@@ -195,7 +196,7 @@ def _attach_flow(host: str | None, no_mux: bool = False, group: str | None = Non
     titles: list[str] = []
     for sess in up:
         name = sess["name"]
-        title = f"md:{name}"
+        title = f"{MD_TITLE_PREFIX}{name}"
         click.echo(f"  {S('o', fg='cyan')} {title}")
         subprocess.Popen([
             "wt", "-w", "new", "--title", title, "--suppressApplicationTitle",
@@ -241,7 +242,7 @@ def _attach_nomux(target: str, status: dict) -> None:
 
     titles: list[str] = []
     for p in projects:
-        title = f"md:{p['name']}"
+        title = f"{MD_TITLE_PREFIX}{p['name']}"
         remote_dir = p.get("resolved") or p["path"]
         cmd = p.get("cmd") or "claude --continue"
         click.echo(f"  {S('o', fg='cyan')} {title}")

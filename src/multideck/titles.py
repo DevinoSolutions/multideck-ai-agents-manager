@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+MD_TITLE_PREFIX = "md:"
+
 
 def get_leaf_name(path: str) -> str:
     normalized = path.replace("\\", "/").rstrip("/")

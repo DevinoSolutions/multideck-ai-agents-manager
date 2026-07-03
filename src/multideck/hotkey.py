@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 from multideck.log import HEARTBEAT_INTERVAL, get_logger, write_heartbeat
+from multideck.titles import MD_TITLE_PREFIX
 
 if sys.platform != "win32":
     raise ImportError("hotkey module is Windows-only")
@@ -61,8 +62,6 @@ WH_KEYBOARD_LL = 13
 WM_KEYDOWN = 0x0100
 WM_SYSKEYDOWN = 0x0104
 HC_ACTION = 0
-
-MD_TITLE_PREFIX = "md:"
 
 HOOKPROC = ctypes.WINFUNCTYPE(
     ctypes.c_long,
