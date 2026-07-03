@@ -81,13 +81,13 @@ class TestDefaultAttachHost:
             {"path": "c", "host": "u@h2"},
             {"path": "d"},
         ]}))
-        monkeypatch.setattr(cli, "_find_config", lambda *_: cfgfile)
+        monkeypatch.setattr(cli, "find_config", lambda *_: cfgfile)
         assert cli._default_attach_host() == "u@h1"
 
     def test_none_when_no_hosts(self, tmp_path, monkeypatch):
         cfgfile = tmp_path / "c.json"
         cfgfile.write_text(json.dumps({"projects": [{"path": "a"}]}))
-        monkeypatch.setattr(cli, "_find_config", lambda *_: cfgfile)
+        monkeypatch.setattr(cli, "find_config", lambda *_: cfgfile)
         assert cli._default_attach_host() is None
 
 
