@@ -254,25 +254,25 @@ CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
   <tbody>
     <tr>
       <td><strong>Unit</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
       <td>Windows / macOS / Linux<br/>Python 3.10 -- 3.13</td>
       <td>Config parsing, grid computation, title generation, session resume, discovery, grouping (12 matrix jobs)</td>
     </tr>
     <tr>
       <td><strong>Platform</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
       <td>Windows / macOS / Linux</td>
       <td>Real monitor detection (ctypes/Swift/xrandr), real window find+move, real terminal launch, DPI scaling</td>
     </tr>
     <tr>
       <td><strong>E2E</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
       <td>Windows / macOS / Linux</td>
       <td>Full CLI dry-run, config loading, group filtering, SSH project handling, vscode/cursor tool alias, multi-window</td>
     </tr>
     <tr>
       <td><strong>Packaging</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
       <td>Linux</td>
       <td>Build wheel, install from wheel, <code>multideck --help</code> and <code>--version</code> smoke test</td>
     </tr>
