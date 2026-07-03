@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from multideck.titles import generate_titles, get_leaf_name
+from multideck.titles import MD_TITLE_PREFIX, generate_titles, get_leaf_name
 
 
 class TestGetLeafName:
@@ -59,14 +59,21 @@ class TestMdTitlePrefixContract:
     """
 
     def test_prefix_value(self):
-        from multideck.hotkey import MD_TITLE_PREFIX
         assert MD_TITLE_PREFIX == "md:"
 
     @pytest.mark.skipif(
         sys.platform != "win32",
         reason="hotkey is Windows-only (ImportError off-Windows)",
     )
+    def test_hotkey_imports_same_object(self):
+        from multideck import hotkey
+        assert hotkey.MD_TITLE_PREFIX is MD_TITLE_PREFIX
+
+    @pytest.mark.skipif(
+        sys.platform != "win32",
+        reason="hotkey is Windows-only (ImportError off-Windows)",
+    )
     def test_producers_agree_with_consumer(self):
-        from multideck.hotkey import MD_TITLE_PREFIX
+        from multideck.hotkey import MD_TITLE_PREFIX as consumer_prefix
         name = "my-project"
-        assert f"md:{name}" == f"{MD_TITLE_PREFIX}{name}"
+        assert f"md:{name}" == f"{consumer_prefix}{name}"
