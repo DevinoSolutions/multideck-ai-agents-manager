@@ -112,18 +112,13 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
         click.echo(f"  {S('✗', fg='red')} No monitors detected.", err=True)
         return 2
 
+    projects = _select_projects(config, opts)
+    if projects is None:
+        return 0
+
     base_dir = config.base_dir
     if base_dir:
         base_dir = os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)
-
-    projects = [p for p in config.projects if p.enabled]
-    if opts.group:
-        projects = [p for p in projects if p.group and p.group.lower() == opts.group.lower()]
-        if not projects:
-            groups = sorted({p.group for p in config.projects if p.group})
-            click.echo(f"No projects in group '{opts.group}'. Available: {', '.join(groups)}", err=True)
-            return 0
-        click.echo(f"Group '{opts.group}': {len(projects)} project(s)")
 
     result = _launch_projects(plat, config, opts, projects, base_dir)
 
@@ -156,6 +151,21 @@ def _prepare_grid(plat: Platform, config: MultideckConfig, opts: RunOpts) -> lis
         click.echo(f"  {S('! DRY RUN', fg='yellow', bold=True)} {S('-- nothing will be launched or moved.', dim=True)}\n")
 
     return slots
+
+
+def _select_projects(config: MultideckConfig, opts: RunOpts) -> list[ProjectConfig] | None:
+    """Enabled projects, optionally narrowed to opts.group. Returns None
+    (caller exits 0) when a named group matches nothing (after printing the
+    same 'No projects in group' message it does today)."""
+    projects = [p for p in config.projects if p.enabled]
+    if opts.group:
+        projects = [p for p in projects if p.group and p.group.lower() == opts.group.lower()]
+        if not projects:
+            groups = sorted({p.group for p in config.projects if p.group})
+            click.echo(f"No projects in group '{opts.group}'. Available: {', '.join(groups)}", err=True)
+            return None
+        click.echo(f"Group '{opts.group}': {len(projects)} project(s)")
+    return projects
 
 
 @dataclass(frozen=True)

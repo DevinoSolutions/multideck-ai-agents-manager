@@ -21,6 +21,7 @@ from multideck.launch import (
     _Target,
     _launch_projects,
     _prepare_grid,
+    _select_projects,
     _start_psmux_and_upload,
     _tile_targets,
     run_multideck,
@@ -263,3 +264,28 @@ class TestPrepareGrid:
         assert result is not None
         assert len(result) > 0
         assert "screen(s)" in capsys.readouterr().out
+
+
+class TestSelectProjects:
+    """Direct unit tests for the extracted project-selection phase (R4, Step 6)."""
+
+    def test_filters_group(self):
+        cfg = MultideckConfig(projects=[
+            ProjectConfig(path="/a", group="a"),
+            ProjectConfig(path="/b", group="b"),
+        ])
+
+        result = _select_projects(cfg, RunOpts(group="a"))
+
+        assert result is not None
+        assert [p.path for p in result] == ["/a"]
+
+    def test_empty_group_returns_none(self, capsys):
+        cfg = MultideckConfig(projects=[ProjectConfig(path="/a", group="a")])
+
+        result = _select_projects(cfg, RunOpts(group="nope"))
+
+        assert result is None
+        err = capsys.readouterr().err
+        assert "No projects in group" in err
+        assert "a" in err
