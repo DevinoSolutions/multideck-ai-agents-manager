@@ -764,34 +764,30 @@ def _ssh_json(target: str, remote_cmd: str, timeout: int = 30) -> dict | None:
 
 def _tile_titles(titles: list[str]) -> None:
     """Tile already-opened windows (matched by exact title) into the monitor grid."""
-    import time
-    from multideck.grid import Rect, compute_grid
+    from multideck.grid import compute_grid
+    from multideck.log import get_logger
     from multideck.platform import get_platform
+    from multideck.tiling import Placement, place_windows
 
     plat = get_platform()
     plat.set_dpi_aware()
     monitors = plat.list_monitors()
     if not monitors:
+        get_logger("launch").error("no monitors detected; windows opened but not tiled")
         click.echo(f"  {S('!', fg='yellow')} No monitors detected; windows opened but not tiled.")
         return
     slots = compute_grid(monitors, 2, 1)
 
     click.echo(f"\n  {S('#', fg='cyan')} Tiling {len(titles)} window(s)...")
-    time.sleep(3)
-    for i, title in enumerate(titles):
-        pos = slots[i % len(slots)]
-        handle = plat.find_window(title, mode="exact")
-        if handle is None:
-            for _ in range(6):
-                time.sleep(1)
-                handle = plat.find_window(title, mode="exact")
-                if handle is not None:
-                    break
-        if handle is not None:
-            plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
-            click.echo(f"    {S('+', fg='green')} {title}")
-        else:
-            click.echo(f"    {S('x', fg='red')} {title} {S('not found', dim=True)}")
+    placements = [
+        Placement(name=title, key=title, mode="exact", slot=slots[i % len(slots)])
+        for i, title in enumerate(titles)
+    ]
+    place_windows(
+        plat, placements, settle_s=3,
+        on_placed=lambda p: click.echo(f"    {S('+', fg='green')} {p.name}"),
+        on_missing=lambda p: click.echo(f"    {S('x', fg='red')} {p.name} {S('not found', dim=True)}"),
+    )
 
 
 def _grouped(entries: list[dict]) -> tuple[list[str], dict[str, list[str]]]:
