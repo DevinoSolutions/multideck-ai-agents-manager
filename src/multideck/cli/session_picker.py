@@ -17,7 +17,7 @@ from multideck.cli.config_io import _load_raw_config
 from multideck.cli.spawns import _running_upload_port, _tailnet_host
 from multideck.cli.ui import _banner, _divider, _menu_item
 from multideck.paths import find_config
-from multideck.style import S
+from multideck.style import style
 
 
 def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
@@ -41,10 +41,10 @@ def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
 def _status_label(state: str | None) -> str:
     from multideck import agent_state  # heavy subsystem: in-body per policy
     return {
-        agent_state.WORKING: S("working...", fg="yellow", bold=True),
-        agent_state.DONE: S("done", fg="green", bold=True),
-        agent_state.NEEDS_INPUT: S("needs input", fg="red", bold=True),
-        agent_state.ERROR: S("error", fg="red", bold=True),
+        agent_state.WORKING: style("working...", fg="yellow", bold=True),
+        agent_state.DONE: style("done", fg="green", bold=True),
+        agent_state.NEEDS_INPUT: style("needs input", fg="red", bold=True),
+        agent_state.ERROR: style("error", fg="red", bold=True),
     }.get(state, "")  # type: ignore[arg-type]  # F-D1-005: state is None-safe (.get returns default)
 
 
@@ -110,7 +110,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 
     psmux = find_psmux()
     if not psmux:
-        click.echo(f"  {S('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
+        click.echo(f"  {style('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
         return
 
     data = _load_raw_config(config_file)
@@ -127,9 +127,9 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
             sessions.append(sock)
 
     if not sessions:
-        click.echo(f"  {S('x', fg='red')} No active psmux sessions.")
-        click.echo(f"  {S('Run', dim=True)} {S('multideck up', bold=True)} {S('or', dim=True)} "
-                   f"{S('multideck --go', bold=True)} {S('first.', dim=True)}")
+        click.echo(f"  {style('x', fg='red')} No active psmux sessions.")
+        click.echo(f"  {style('Run', dim=True)} {style('multideck up', bold=True)} {style('or', dim=True)} "
+                   f"{style('multideck --go', bold=True)} {style('first.', dim=True)}")
         return
 
     def _reset_terminal():
@@ -168,11 +168,11 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 
         click.clear()
         _banner()
-        click.echo(f"  {S('psmux sessions', bold=True)}  {S('(synced with desktop)', dim=True)}")
+        click.echo(f"  {style('psmux sessions', bold=True)}  {style('(synced with desktop)', dim=True)}")
         _divider()
         click.echo()
         if upload_url:
-            click.echo(f"  {S('WebApp To Upload Images', bold=True)}  {S(upload_url, fg='cyan', bold=True)}")
+            click.echo(f"  {style('WebApp To Upload Images', bold=True)}  {style(upload_url, fg='cyan', bold=True)}")
             click.echo()
         statuses = _session_statuses(_session_cwds(psmux, sessions))
         for i, sess in enumerate(sessions, 1):
@@ -184,7 +184,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         click.echo()
 
         choice = click.prompt(
-            f"  {S('attach to', fg='cyan')}",
+            f"  {style('attach to', fg='cyan')}",
             default="1", show_default=False, prompt_suffix=" ",
         ).strip().lower()
 
@@ -204,7 +204,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         if target:
             _attach(target)
         else:
-            click.echo(f"  {S('x', fg='red')} Invalid choice.")
+            click.echo(f"  {style('x', fg='red')} Invalid choice.")
 
 
 @main.command("sessions")

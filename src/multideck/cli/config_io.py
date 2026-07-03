@@ -14,13 +14,13 @@ from pathlib import Path
 
 import click
 
-from multideck.style import S
+from multideck.style import style
 
 
 def _load_raw_config(path: Path) -> dict:
     if not path.exists():
         click.echo(f"No config found at: {path}", err=True)
-        click.echo(f"Run {S('multideck', bold=True)} to generate one.", err=True)
+        click.echo(f"Run {style('multideck', bold=True)} to generate one.", err=True)
         sys.exit(1)
     return json.loads(path.read_text(encoding="utf-8"))
 

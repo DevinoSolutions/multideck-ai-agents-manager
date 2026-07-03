@@ -16,7 +16,7 @@ from multideck.grid import TileSlot, compute_grid
 from multideck.log import get_logger
 from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import AGENT_TOOLS, build_resume_command
-from multideck.style import S
+from multideck.style import style
 from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name
 
@@ -110,7 +110,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     slots = _prepare_grid(plat, config, opts)
     if slots is None:
         log.error("no monitors detected; aborting")
-        click.echo(f"  {S('✗', fg='red')} No monitors detected.", err=True)
+        click.echo(f"  {style('✗', fg='red')} No monitors detected.", err=True)
         return 2
 
     projects = _select_projects(config, opts)
@@ -144,12 +144,12 @@ def _prepare_grid(plat: Platform, config: MultideckConfig, opts: RunOpts) -> lis
 
     grid_label = f"{config.layout.columns}x{config.layout.rows}"
     click.echo(
-        f"\n  {S('#', fg='cyan')} {S(str(len(monitors)), fg='cyan', bold=True)} screen(s)  "
-        f"{S('->', dim=True)}  {S(str(len(slots)), fg='green', bold=True)} tile slots  "
-        f"{S(f'({grid_label} per screen)', dim=True)}"
+        f"\n  {style('#', fg='cyan')} {style(str(len(monitors)), fg='cyan', bold=True)} screen(s)  "
+        f"{style('->', dim=True)}  {style(str(len(slots)), fg='green', bold=True)} tile slots  "
+        f"{style(f'({grid_label} per screen)', dim=True)}"
     )
     if opts.dry_run:
-        click.echo(f"  {S('! DRY RUN', fg='yellow', bold=True)} {S('-- nothing will be launched or moved.', dim=True)}\n")
+        click.echo(f"  {style('! DRY RUN', fg='yellow', bold=True)} {style('-- nothing will be launched or moved.', dim=True)}\n")
 
     return slots
 
@@ -184,7 +184,7 @@ def _launch_projects(plat: Platform, config: MultideckConfig, opts: RunOpts,
     moves a window."""
     has_remote = any(p.host for p in projects)
     if has_remote and not shutil.which("ssh"):
-        click.echo(S("  ! Remote projects configured but 'ssh' not on PATH.", fg="yellow"))
+        click.echo(style("  ! Remote projects configured but 'ssh' not on PATH.", fg="yellow"))
 
     targets: list[_Target] = []
     new_count = 0
@@ -344,10 +344,10 @@ def _start_psmux_and_upload(plat: Platform, config: MultideckConfig, opts: RunOp
         for pw in psmux_windows:
             plat.attach_psmux(pw.window_name, pw.window_name,
                               psmux_colors.get(pw.window_name))
-        click.echo(f"\n  {S('#', fg='yellow')} psmux: {S(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"
-                    f" {S('(synced with mobile)', dim=True)}")
-        click.echo(f"  {S('From SSH:', dim=True)} {S('psmux -L <name> attach', fg='cyan')}"
-                    f" {S('or', dim=True)} {S('multideck sessions', fg='cyan')}")
+        click.echo(f"\n  {style('#', fg='yellow')} psmux: {style(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"
+                    f" {style('(synced with mobile)', dim=True)}")
+        click.echo(f"  {style('From SSH:', dim=True)} {style('psmux -L <name> attach', fg='cyan')}"
+                    f" {style('or', dim=True)} {style('multideck sessions', fg='cyan')}")
 
         if config.settings.upload_server:
             port = config.settings.upload_port
@@ -359,8 +359,8 @@ def _start_psmux_and_upload(plat: Platform, config: MultideckConfig, opts: RunOp
             spawn_detached(serve_args)
             ip = _get_tailscale_ip()
             url = f"http://{ip}:{port}" if ip else f"http://localhost:{port}"
-            click.echo(f"\n  {S('#', fg='magenta')} upload server: {S(url, fg='cyan', bold=True)}"
-                        f" {S('(open on phone)', dim=True)}")
+            click.echo(f"\n  {style('#', fg='magenta')} upload server: {style(url, fg='cyan', bold=True)}"
+                        f" {style('(open on phone)', dim=True)}")
 
 
 def _tile_targets(plat: Platform, opts: RunOpts, slots: list[TileSlot], targets: list[_Target]) -> None:
@@ -370,20 +370,20 @@ def _tile_targets(plat: Platform, opts: RunOpts, slots: list[TileSlot], targets:
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 
     if not to_place:
-        click.echo(f"\n  {S('+', fg='green')} All windows already positioned.")
+        click.echo(f"\n  {style('+', fg='green')} All windows already positioned.")
         return
 
-    mode_label = S(" retile all", fg="yellow") if opts.retile_all else (S(" dry run", fg="yellow") if opts.dry_run else "")
-    click.echo(f"\n  {S('#', fg='cyan')} Tiling {S(str(len(to_place)), fg='cyan', bold=True)} window(s)...{mode_label}")
+    mode_label = style(" retile all", fg="yellow") if opts.retile_all else (style(" dry run", fg="yellow") if opts.dry_run else "")
+    click.echo(f"\n  {style('#', fg='cyan')} Tiling {style(str(len(to_place)), fg='cyan', bold=True)} window(s)...{mode_label}")
 
     if opts.dry_run:
         for slot_idx, target in enumerate(to_place):
             pos = slots[slot_idx % len(slots)]
             screen_num = pos.monitor_index + 1
-            dims = S(f"{pos.w}x{pos.h}", dim=True)
-            at = S(f"({pos.x},{pos.y})", dim=True)
-            click.echo(f"    {S('>', fg='cyan')} {target.name:<28} {S('->', dim=True)} screen {screen_num}  {dims} {at}")
-        click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
+            dims = style(f"{pos.w}x{pos.h}", dim=True)
+            at = style(f"({pos.x},{pos.y})", dim=True)
+            click.echo(f"    {style('>', fg='cyan')} {target.name:<28} {style('->', dim=True)} screen {screen_num}  {dims} {at}")
+        click.echo(f"\n  {style('Done!', fg='green', bold=True)}")
         return
 
     placements = [
@@ -392,31 +392,31 @@ def _tile_targets(plat: Platform, opts: RunOpts, slots: list[TileSlot], targets:
     ]
 
     def _placed(p: Placement) -> None:
-        click.echo(f"    {S('+', fg='green')} {p.name} {S('->', dim=True)} screen {p.slot.monitor_index + 1}")
+        click.echo(f"    {style('+', fg='green')} {p.name} {style('->', dim=True)} screen {p.slot.monitor_index + 1}")
 
     def _missing(p: Placement) -> None:
-        click.echo(f"    {S('x', fg='red')} {p.name} {S('not found', dim=True)}")
+        click.echo(f"    {style('x', fg='red')} {p.name} {style('not found', dim=True)}")
 
     place_windows(plat, placements, on_placed=_placed, on_missing=_missing)
 
-    click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
+    click.echo(f"\n  {style('Done!', fg='green', bold=True)}")
 
 
 def _log_project(name: str, tool: str, running: bool, host: str | None,
                   happy: bool = False, psmux: bool = False) -> None:
     if running:
-        icon = S("*", fg="green")
-        label = S("open", dim=True)
+        icon = style("*", fg="green")
+        label = style("open", dim=True)
     else:
-        icon = S("o", fg="cyan")
-        label = S("new", fg="cyan")
-    loc = S(f" @ {host}", dim=True) if host else ""
-    tool_badge = S(f"[{tool}]", dim=True)
+        icon = style("o", fg="cyan")
+        label = style("new", fg="cyan")
+    loc = style(f" @ {host}", dim=True) if host else ""
+    tool_badge = style(f"[{tool}]", dim=True)
     extras = ""
     if happy:
-        extras += S(" [happy]", fg="magenta")
+        extras += style(" [happy]", fg="magenta")
     if psmux:
-        extras += S(" [psmux]", fg="yellow")
+        extras += style(" [psmux]", fg="yellow")
     click.echo(f"  {icon} {name:<30} {label}  {tool_badge}{extras}{loc}")
 
 

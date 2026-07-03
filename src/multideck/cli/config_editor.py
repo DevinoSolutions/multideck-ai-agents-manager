@@ -15,7 +15,7 @@ from multideck.cli.config_io import _load_raw_config, _save_raw_config
 from multideck.cli.ui import _banner, _confirm_change, _divider, _grid_preview, _menu_item, _open_in_editor, _prompt_or_back
 from multideck.config import _random_tab_color, migrate_config_file
 from multideck.paths import find_config
-from multideck.style import S
+from multideck.style import style
 
 
 def _config_menu(config_file: Path) -> None:
@@ -33,56 +33,56 @@ def _config_menu(config_file: Path) -> None:
         total_slots = cols * rows
 
         click.echo()
-        click.echo(f"  {S('Settings', bold=True)}")
+        click.echo(f"  {style('Settings', bold=True)}")
         _divider()
         click.echo()
-        click.echo(f"  {S('Each screen is tiled like this:', dim=True)}")
+        click.echo(f"  {style('Each screen is tiled like this:', dim=True)}")
         click.echo()
         for line in _grid_preview(cols, rows, indent="      "):
             click.echo(line)
         click.echo()
-        _menu_item("1", f"Window grid      {S(f'{cols} cols x {rows} rows', fg='green')}"
-                   f"  {S(f'= {total_slots} windows per screen', dim=True)}")
-        _menu_item("2", f"Default AI tool   {S(dtool, fg='green')}"
-                   f"  {S('-- launched in each project', dim=True)}")
+        _menu_item("1", f"Window grid      {style(f'{cols} cols x {rows} rows', fg='green')}"
+                   f"  {style(f'= {total_slots} windows per screen', dim=True)}")
+        _menu_item("2", f"Default AI tool   {style(dtool, fg='green')}"
+                   f"  {style('-- launched in each project', dim=True)}")
         base = data.get("baseDir")
         if base:
             short = base if len(base) <= 35 else "..." + base[-32:]
-            _menu_item("3", f"Projects folder   {S(short, fg='green')}")
+            _menu_item("3", f"Projects folder   {style(short, fg='green')}")
         else:
-            _menu_item("3", f"Projects folder   {S('(not set -- using absolute paths)', dim=True)}")
-        _menu_item("4", f"Tool commands     {S(', '.join(tools.keys()) or '(none)', dim=True)}"
-                   f"  {S('-- what runs in the terminal', dim=True)}")
+            _menu_item("3", f"Projects folder   {style('(not set -- using absolute paths)', dim=True)}")
+        _menu_item("4", f"Tool commands     {style(', '.join(tools.keys()) or '(none)', dim=True)}"
+                   f"  {style('-- what runs in the terminal', dim=True)}")
         happy_on = settings.get("happy", False)
-        happy_label = S("ON", fg="green", bold=True) if happy_on else S("off", dim=True)
+        happy_label = style("ON", fg="green", bold=True) if happy_on else style("off", dim=True)
         _menu_item("5", f"Happy mobile      {happy_label}"
-                   f"  {S('-- monitor sessions from phone/web', dim=True)}")
+                   f"  {style('-- monitor sessions from phone/web', dim=True)}")
         psmux_on = settings.get("psmux", False)
-        psmux_label = S("ON", fg="green", bold=True) if psmux_on else S("off", dim=True)
+        psmux_label = style("ON", fg="green", bold=True) if psmux_on else style("off", dim=True)
         _menu_item("6", f"psmux sessions    {psmux_label}"
-                   f"  {S('-- attach from SSH / phone', dim=True)}")
+                   f"  {style('-- attach from SSH / phone', dim=True)}")
         upload_on = settings.get("uploadServer", False)
         upload_port = settings.get("uploadPort", 8033)
-        upload_label = S(f"ON :{upload_port}", fg="green", bold=True) if upload_on else S("off", dim=True)
+        upload_label = style(f"ON :{upload_port}", fg="green", bold=True) if upload_on else style("off", dim=True)
         _menu_item("7", f"Upload server     {upload_label}"
-                   f"  {S('-- send images from phone to Claude', dim=True)}")
+                   f"  {style('-- send images from phone to Claude', dim=True)}")
         click.echo()
-        click.echo(f"  {S('Projects', bold=True)}")
+        click.echo(f"  {style('Projects', bold=True)}")
         _divider()
         click.echo()
-        _menu_item("8", f"Add a project     {S('-- register a new folder', dim=True)}")
-        _menu_item("9", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        _menu_item("8", f"Add a project     {style('-- register a new folder', dim=True)}")
+        _menu_item("9", f"Remove a project  {style(f'({len(projects)} configured)', dim=True)}")
         click.echo()
         _menu_item("0", "Open config file in editor", key_fg="green")
         _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
-        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
+        choice = click.prompt(f"  {style('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
 
         if choice == "1":
             click.echo()
-            click.echo(f"  {S('How many windows per screen?', bold=True)}")
-            click.echo(f"  {S('Columns = side by side, Rows = stacked.', dim=True)}")
+            click.echo(f"  {style('How many windows per screen?', bold=True)}")
+            click.echo(f"  {style('Columns = side by side, Rows = stacked.', dim=True)}")
             click.echo()
             val = _prompt_or_back("Columns (side by side)", default=str(cols))
             if val is None:
@@ -99,7 +99,7 @@ def _config_menu(config_file: Path) -> None:
             except ValueError:
                 continue
             click.echo()
-            click.echo(f"  {S('Your screens will look like:', bold=True)}")
+            click.echo(f"  {style('Your screens will look like:', bold=True)}")
             click.echo()
             for line in _grid_preview(new_cols, new_rows, indent="      "):
                 click.echo(line)
@@ -107,17 +107,17 @@ def _config_menu(config_file: Path) -> None:
             data["layout"]["columns"] = new_cols
             data["layout"]["rows"] = new_rows
             _save_raw_config(config_file, data)
-            _confirm_change(f"Window grid set to {S(f'{new_cols} x {new_rows}', fg='green')}"
+            _confirm_change(f"Window grid set to {style(f'{new_cols} x {new_rows}', fg='green')}"
                             f" ({new_cols * new_rows} windows per screen).")
 
         elif choice == "2":
             click.echo()
-            click.echo(f"  {S('Which AI tool should open in each project by default?', bold=True)}")
-            click.echo(f"  {S('Individual projects can override this.', dim=True)}")
+            click.echo(f"  {style('Which AI tool should open in each project by default?', bold=True)}")
+            click.echo(f"  {style('Individual projects can override this.', dim=True)}")
             click.echo()
             available = list(tools.keys()) or ["claude", "codex"]
             for i, t in enumerate(available, 1):
-                marker = S(" <-- current", dim=True) if t == dtool else ""
+                marker = style(" <-- current", dim=True) if t == dtool else ""
                 _menu_item(str(i), f"{t}{marker}")
             click.echo()
             val = _prompt_or_back("Pick a number or type a name", default=dtool, show_default=False)
@@ -132,14 +132,14 @@ def _config_menu(config_file: Path) -> None:
             data.setdefault("settings", {})
             data["settings"]["defaultTool"] = val
             _save_raw_config(config_file, data)
-            _confirm_change(f"Default tool set to {S(val, fg='green')}.")
+            _confirm_change(f"Default tool set to {style(val, fg='green')}.")
 
         elif choice == "3":
             click.echo()
-            click.echo(f"  {S('Where are your projects?', bold=True)}")
-            click.echo(f"  {S('Project paths in your config are relative to this folder.', dim=True)}")
-            click.echo(f"  {S('Example: if base is C:/projects and a project path is', dim=True)}")
-            click.echo(f"  {S('api/backend, it opens C:/projects/api/backend.', dim=True)}")
+            click.echo(f"  {style('Where are your projects?', bold=True)}")
+            click.echo(f"  {style('Project paths in your config are relative to this folder.', dim=True)}")
+            click.echo(f"  {style('Example: if base is C:/projects and a project path is', dim=True)}")
+            click.echo(f"  {style('api/backend, it opens C:/projects/api/backend.', dim=True)}")
             click.echo()
             val = _prompt_or_back("Projects folder", default=data.get("baseDir", ""))
             if val is None or not val:
@@ -147,7 +147,7 @@ def _config_menu(config_file: Path) -> None:
             normalized = val.replace("\\", "/")
             data["baseDir"] = normalized
             _save_raw_config(config_file, data)
-            _confirm_change(f"Projects folder set to {S(normalized, fg='green')}.")
+            _confirm_change(f"Projects folder set to {style(normalized, fg='green')}.")
 
         elif choice == "4":
             _tools_menu(config_file, data)
@@ -158,10 +158,10 @@ def _config_menu(config_file: Path) -> None:
             data["settings"]["happy"] = new_val
             _save_raw_config(config_file, data)
             if new_val:
-                _confirm_change(f"Happy mobile {S('enabled', fg='green')}. "
+                _confirm_change(f"Happy mobile {style('enabled', fg='green')}. "
                                 f"Sessions will be accessible from your phone via the Happy app.")
             else:
-                _confirm_change(f"Happy mobile {S('disabled', dim=True)}. "
+                _confirm_change(f"Happy mobile {style('disabled', dim=True)}. "
                                 f"Sessions launch directly without Happy.")
 
         elif choice == "6":
@@ -170,10 +170,10 @@ def _config_menu(config_file: Path) -> None:
             data["settings"]["psmux"] = new_val
             _save_raw_config(config_file, data)
             if new_val:
-                _confirm_change(f"psmux sessions {S('enabled', fg='green')}. "
+                _confirm_change(f"psmux sessions {style('enabled', fg='green')}. "
                                 f"Each project runs in a named psmux session you can attach to via SSH.")
             else:
-                _confirm_change(f"psmux sessions {S('disabled', dim=True)}. "
+                _confirm_change(f"psmux sessions {style('disabled', dim=True)}. "
                                 f"Projects launch in regular Windows Terminal tabs.")
 
         elif choice == "7":
@@ -182,11 +182,11 @@ def _config_menu(config_file: Path) -> None:
             if currently_on:
                 data["settings"]["uploadServer"] = False
                 _save_raw_config(config_file, data)
-                _confirm_change(f"Upload server {S('disabled', dim=True)}.")
+                _confirm_change(f"Upload server {style('disabled', dim=True)}.")
             else:
                 click.echo()
                 cur_port = data["settings"].get("uploadPort", 8033)
-                val = _prompt_or_back(f"Port {S(f'(Enter for {cur_port})', dim=True)}",
+                val = _prompt_or_back(f"Port {style(f'(Enter for {cur_port})', dim=True)}",
                                       default=str(cur_port), show_default=False)
                 if val is None:
                     continue
@@ -197,36 +197,36 @@ def _config_menu(config_file: Path) -> None:
                 data["settings"]["uploadServer"] = True
                 data["settings"]["uploadPort"] = port
                 _save_raw_config(config_file, data)
-                _confirm_change(f"Upload server {S('enabled', fg='green')} on port {S(str(port), fg='cyan')}. "
+                _confirm_change(f"Upload server {style('enabled', fg='green')} on port {style(str(port), fg='cyan')}. "
                                 f"Starts automatically with multideck.")
 
         elif choice == "8":
             cwd = str(Path.cwd()).replace("\\", "/")
             click.echo()
-            click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
-            click.echo(f"  {S('Path can be absolute or relative to your projects folder.', dim=True)}")
-            click.echo(f"  {S('Press Enter to use the current folder.', dim=True)}")
+            click.echo(f"  {style('Add a project folder for multideck to open.', bold=True)}")
+            click.echo(f"  {style('Path can be absolute or relative to your projects folder.', dim=True)}")
+            click.echo(f"  {style('Press Enter to use the current folder.', dim=True)}")
             click.echo()
             path = _prompt_or_back("Folder path", default=cwd)
             if path is None or not path:
                 continue
             entry: dict = {"path": path.replace("\\", "/")}
             click.echo()
-            click.echo(f"  {S('Optional settings (Enter to skip, b to cancel):', dim=True)}")
+            click.echo(f"  {style('Optional settings (Enter to skip, b to cancel):', dim=True)}")
             click.echo()
-            group = _prompt_or_back(f"Group {S('-- for launching subsets, e.g. INTERNAL', dim=True)}",
+            group = _prompt_or_back(f"Group {style('-- for launching subsets, e.g. INTERNAL', dim=True)}",
                                     default="", show_default=False)
             if group is None:
                 continue
             if group:
                 entry["group"] = group
-            tool = _prompt_or_back(f"Tool  {S('-- override default, e.g. codex, vscode', dim=True)}",
+            tool = _prompt_or_back(f"Tool  {style('-- override default, e.g. codex, vscode', dim=True)}",
                                    default="", show_default=False)
             if tool is None:
                 continue
             if tool:
                 entry["tool"] = tool
-            color = _prompt_or_back(f"Color {S('-- terminal tab color, Enter for random', dim=True)}",
+            color = _prompt_or_back(f"Color {style('-- terminal tab color, Enter for random', dim=True)}",
                                     default="", show_default=False)
             if color is None:
                 continue
@@ -236,7 +236,7 @@ def _config_menu(config_file: Path) -> None:
             entry["color"] = color
             data.setdefault("projects", []).append(entry)
             _save_raw_config(config_file, data)
-            _confirm_change(f"Added project {S(path, fg='green')}.")
+            _confirm_change(f"Added project {style(path, fg='green')}.")
 
         elif choice == "9":
             _remove_project_menu(config_file, data)
@@ -254,28 +254,28 @@ def _tools_menu(config_file: Path, data: dict) -> None:
     while True:
         click.clear()
         _banner()
-        click.echo(f"  {S('Tool Commands', bold=True)}")
-        click.echo(f"  {S('Each tool name maps to the shell command that runs inside', dim=True)}")
+        click.echo(f"  {style('Tool Commands', bold=True)}")
+        click.echo(f"  {style('Each tool name maps to the shell command that runs inside', dim=True)}")
         tools_hint = 'the terminal. e.g. "claude" runs "claude --continue".'
-        click.echo(f"  {S(tools_hint, dim=True)}")
+        click.echo(f"  {style(tools_hint, dim=True)}")
         _divider()
         click.echo()
         for name, cmd in tools.items():
-            click.echo(f"    {S(name, fg='cyan'):<20} -> {S(cmd, dim=True)}")
+            click.echo(f"    {style(name, fg='cyan'):<20} -> {style(cmd, dim=True)}")
         if not tools:
-            click.echo(f"    {S('(no tools configured)', dim=True)}")
+            click.echo(f"    {style('(no tools configured)', dim=True)}")
         click.echo()
         _menu_item("a", "Add or edit a tool")
         _menu_item("r", "Remove a tool")
         _menu_item("b", "Back", key_fg="yellow")
         click.echo()
 
-        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
+        choice = click.prompt(f"  {style('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
 
         if choice == "a":
             click.echo()
-            click.echo(f"  {S('Name is a short label (e.g. aider, shell).', dim=True)}")
-            click.echo(f"  {S('Command is what runs in the terminal (e.g. aider --model sonnet).', dim=True)}")
+            click.echo(f"  {style('Name is a short label (e.g. aider, shell).', dim=True)}")
+            click.echo(f"  {style('Command is what runs in the terminal (e.g. aider --model sonnet).', dim=True)}")
             click.echo()
             name = _prompt_or_back("Tool name")
             if not name:
@@ -288,11 +288,11 @@ def _tools_menu(config_file: Path, data: dict) -> None:
             data["settings"]["tools"][name] = cmd
             tools = data["settings"]["tools"]
             _save_raw_config(config_file, data)
-            _confirm_change(f"Tool {S(name, fg='green')} set to {S(cmd, dim=True)}.")
+            _confirm_change(f"Tool {style(name, fg='green')} set to {style(cmd, dim=True)}.")
 
         elif choice == "r":
             if not tools:
-                click.echo(f"  {S('No tools to remove.', dim=True)}")
+                click.echo(f"  {style('No tools to remove.', dim=True)}")
                 continue
             click.echo()
             tool_names = list(tools.keys())
@@ -308,9 +308,9 @@ def _tools_menu(config_file: Path, data: dict) -> None:
                     removed_name = tool_names[idx]
                     del tools[removed_name]
                     _save_raw_config(config_file, data)
-                    _confirm_change(f"Removed tool {S(removed_name, fg='green')}.")
+                    _confirm_change(f"Removed tool {style(removed_name, fg='green')}.")
             except (ValueError, IndexError):
-                click.echo(f"  {S('x', fg='red')} Invalid choice.")
+                click.echo(f"  {style('x', fg='red')} Invalid choice.")
 
         elif choice == "b":
             return
@@ -319,7 +319,7 @@ def _tools_menu(config_file: Path, data: dict) -> None:
 def _remove_project_menu(config_file: Path, data: dict) -> None:
     projects = data.get("projects", [])
     if not projects:
-        click.echo(f"  {S('No projects to remove.', dim=True)}")
+        click.echo(f"  {style('No projects to remove.', dim=True)}")
         return
 
     click.clear()
@@ -328,10 +328,10 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
         leaf = Path(p.get("path", "?")).name
         extra = ""
         if p.get("group"):
-            extra = f"  {S(p['group'], dim=True)}"
+            extra = f"  {style(p['group'], dim=True)}"
         if not p.get("enabled", True):
-            extra += f"  {S('disabled', fg='red')}"
-        click.echo(f"   {S(str(i).rjust(2), dim=True)}  {leaf:<30}{extra}")
+            extra += f"  {style('disabled', fg='red')}"
+        click.echo(f"   {style(str(i).rjust(2), dim=True)}  {leaf:<30}{extra}")
 
     click.echo()
     val = _prompt_or_back("Remove which?")
@@ -342,11 +342,11 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
         if 0 <= idx < len(projects):
             removed = projects.pop(idx)
             _save_raw_config(config_file, data)
-            _confirm_change(f"Removed project {S(Path(removed.get('path', '?')).name, fg='green')}.")
+            _confirm_change(f"Removed project {style(Path(removed.get('path', '?')).name, fg='green')}.")
         else:
-            click.echo(f"  {S('x', fg='red')} Invalid number.")
+            click.echo(f"  {style('x', fg='red')} Invalid number.")
     except ValueError:
-        click.echo(f"  {S('x', fg='red')} Invalid choice.")
+        click.echo(f"  {style('x', fg='red')} Invalid choice.")
 
 
 @main.group()
@@ -364,28 +364,28 @@ def config_show(ctx: click.Context) -> None:
     data = _load_raw_config(config_file)
 
     _banner()
-    click.echo(f"  {S('Config:', bold=True)} {S(str(config_file), dim=True)}")
+    click.echo(f"  {style('Config:', bold=True)} {style(str(config_file), dim=True)}")
     click.echo()
 
-    click.echo(f"  {S('Base dir:', bold=True)}     {data.get('baseDir', S('(not set)', dim=True))}")
+    click.echo(f"  {style('Base dir:', bold=True)}     {data.get('baseDir', style('(not set)', dim=True))}")
 
     layout = data.get("layout", {})
     cols, rows = layout.get("columns", 2), layout.get("rows", 1)
-    click.echo(f"  {S('Layout:', bold=True)}       {cols} x {rows}")
+    click.echo(f"  {style('Layout:', bold=True)}       {cols} x {rows}")
 
     settings = data.get("settings", {})
-    click.echo(f"  {S('Default tool:', bold=True)} {settings.get('defaultTool', 'claude')}")
+    click.echo(f"  {style('Default tool:', bold=True)} {settings.get('defaultTool', 'claude')}")
     click.echo()
 
     tools = settings.get("tools", {})
     if tools:
-        click.echo(f"  {S('Tools:', bold=True)}")
+        click.echo(f"  {style('Tools:', bold=True)}")
         for name, cmd in tools.items():
-            click.echo(f"    {S(name, fg='cyan'):<20} {S(cmd, dim=True)}")
+            click.echo(f"    {style(name, fg='cyan'):<20} {style(cmd, dim=True)}")
         click.echo()
 
     projects = data.get("projects", [])
-    click.echo(f"  {S('Projects:', bold=True)} {len(projects)}")
+    click.echo(f"  {style('Projects:', bold=True)} {len(projects)}")
     for p in projects:
         path = p.get("path", "?")
         tool = p.get("tool", "")
@@ -395,11 +395,11 @@ def config_show(ctx: click.Context) -> None:
         leaf = Path(path).name
         parts = []
         if tool:
-            parts.append(S(tool, fg="cyan"))
+            parts.append(style(tool, fg="cyan"))
         if group:
-            parts.append(S(group, dim=True))
+            parts.append(style(group, dim=True))
         if not enabled:
-            parts.append(S("disabled", fg="red"))
+            parts.append(style("disabled", fg="red"))
         extra = f"  {' | '.join(parts)}" if parts else ""
         click.echo(f"    {leaf:<30}{extra}")
 
@@ -418,7 +418,7 @@ def config_migrate(ctx: click.Context) -> None:
         sys.exit(1)
 
     if changed:
-        click.echo(f"  Migrated {S(str(config_file), dim=True)}")
+        click.echo(f"  Migrated {style(str(config_file), dim=True)}")
     else:
         click.echo("  Already up to date; nothing to migrate.")
 
@@ -461,7 +461,7 @@ def config_default_tool(ctx: click.Context, tool: str) -> None:
     data.setdefault("settings", {})
     data["settings"]["defaultTool"] = tool
     _save_raw_config(config_file, data)
-    click.echo(f"  Default tool set to {S(tool, fg='cyan')}")
+    click.echo(f"  Default tool set to {style(tool, fg='cyan')}")
 
 
 @config.command("tool")
@@ -475,7 +475,7 @@ def config_tool(ctx: click.Context, name: str, command: str) -> None:
     data.setdefault("settings", {}).setdefault("tools", {})
     data["settings"]["tools"][name] = command
     _save_raw_config(config_file, data)
-    click.echo(f"  Tool {S(name, fg='cyan')} = {S(command, dim=True)}")
+    click.echo(f"  Tool {style(name, fg='cyan')} = {style(command, dim=True)}")
 
 
 @config.command("remove-tool")
@@ -491,7 +491,7 @@ def config_remove_tool(ctx: click.Context, name: str) -> None:
         sys.exit(1)
     del tools[name]
     _save_raw_config(config_file, data)
-    click.echo(f"  Removed tool {S(name, fg='cyan')}")
+    click.echo(f"  Removed tool {style(name, fg='cyan')}")
 
 
 @config.command("add")
@@ -534,7 +534,7 @@ def config_add(
 
     data["projects"].append(entry)
     _save_raw_config(config_file, data)
-    click.echo(f"  Added {S(path, fg='cyan')}")
+    click.echo(f"  Added {style(path, fg='cyan')}")
 
 
 @config.command("remove")
@@ -559,7 +559,7 @@ def config_remove(ctx: click.Context, path: str) -> None:
         sys.exit(1)
 
     _save_raw_config(config_file, data)
-    click.echo(f"  Removed {removed} project(s) matching {S(path, fg='cyan')}")
+    click.echo(f"  Removed {removed} project(s) matching {style(path, fg='cyan')}")
 
 
 @config.command("enable")
@@ -568,7 +568,7 @@ def config_remove(ctx: click.Context, path: str) -> None:
 def config_enable(ctx: click.Context, path: str) -> None:
     """Enable a disabled project."""
     _set_project_field(ctx, path, "enabled", True)
-    click.echo(f"  Enabled {S(path, fg='cyan')}")
+    click.echo(f"  Enabled {style(path, fg='cyan')}")
 
 
 @config.command("disable")
@@ -577,7 +577,7 @@ def config_enable(ctx: click.Context, path: str) -> None:
 def config_disable(ctx: click.Context, path: str) -> None:
     """Disable a project without removing it."""
     _set_project_field(ctx, path, "enabled", False)
-    click.echo(f"  Disabled {S(path, fg='cyan')}")
+    click.echo(f"  Disabled {style(path, fg='cyan')}")
 
 
 @config.command("set")
@@ -596,7 +596,7 @@ def config_set(ctx: click.Context, path: str, field: str, value: str) -> None:
         except ValueError:
             pass
     _set_project_field(ctx, path, field, parsed)
-    click.echo(f"  Set {S(field, bold=True)} = {S(str(value), fg='cyan')} on {path}")
+    click.echo(f"  Set {style(field, bold=True)} = {style(str(value), fg='cyan')} on {path}")
 
 
 @config.command("open")
@@ -608,7 +608,7 @@ def config_open(ctx: click.Context) -> None:
         click.echo(f"No config at {config_file}. Run multideck first.", err=True)
         sys.exit(1)
     _open_in_editor(config_file)
-    click.echo(f"  Opened {S(str(config_file), dim=True)}")
+    click.echo(f"  Opened {style(str(config_file), dim=True)}")
 
 
 @config.command("path")

@@ -15,7 +15,7 @@ import click
 from multideck.cli.config_editor import _config_menu
 from multideck.cli.ui import _banner, _divider, _menu_item, _open_in_editor
 from multideck.paths import _config_path
-from multideck.style import S
+from multideck.style import style
 
 
 def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
@@ -25,20 +25,20 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
         _banner()
         _divider()
         click.echo()
-        _menu_item("1", "Launch & tile new windows", extra=S("  (default)", dim=True))
+        _menu_item("1", "Launch & tile new windows", extra=style("  (default)", dim=True))
         _menu_item("2", "Re-tile all open windows")
         if groups:
-            group_list = S(f"  {' | '.join(groups)}", dim=True)
+            group_list = style(f"  {' | '.join(groups)}", dim=True)
             _menu_item("3", "Launch a group" + group_list)
         click.echo()
         _menu_item("u", "Bring up sessions in background", key_fg="cyan",
-                   extra=S("  (no windows)", dim=True))
+                   extra=style("  (no windows)", dim=True))
         _menu_item("s", "Open session switcher", key_fg="cyan",
-                   extra=S("  (one window, switch inside)", dim=True))
+                   extra=style("  (one window, switch inside)", dim=True))
         _menu_item("a", "Attach to a remote host", key_fg="cyan",
-                   extra=S("  (SSH to another PC)", dim=True))
+                   extra=style("  (SSH to another PC)", dim=True))
         click.echo()
-        _menu_item("t", "Status", extra=S("  (what's running)", dim=True))
+        _menu_item("t", "Status", extra=style("  (what's running)", dim=True))
         _menu_item("d", "Shut down sessions", key_fg="yellow")
         click.echo()
         _menu_item("e", "Edit config", key_fg="yellow")
@@ -46,7 +46,7 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
         click.echo()
 
         choice = click.prompt(
-            f"  {S('>', fg='cyan', bold=True)}",
+            f"  {style('>', fg='cyan', bold=True)}",
             default="1", show_default=False, prompt_suffix=" ",
         ).strip().lower()
 
@@ -70,7 +70,7 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
                 _menu_item(str(i), g)
             click.echo()
             idx_str = click.prompt(
-                f"  {S('group', fg='cyan')}",
+                f"  {style('group', fg='cyan')}",
                 default="1", show_default=False, prompt_suffix=" ",
             ).strip()
             try:
@@ -79,7 +79,7 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
                     return {"action": "run", "retile_all": False, "group": groups[idx], "reload": config_changed}
             except ValueError:
                 pass
-            click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
+            click.echo(f"\n  {style('x', fg='red')} Invalid choice.\n")
         elif choice == "e":
             if config_file and config_file.exists():
                 _config_menu(config_file)
@@ -92,14 +92,14 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
         elif choice == "q":
             return {"action": "quit", "reload": False}
         else:
-            click.echo(f"\n  {S('x', fg='red')} Invalid choice.\n")
+            click.echo(f"\n  {style('x', fg='red')} Invalid choice.\n")
 
 
 def _run_discovery(config_file: Path) -> bool:
     from multideck.discover import discover_projects, projects_to_config
 
     _banner()
-    click.echo(f"  {S('Welcome!', fg='green', bold=True)} multideck opens a terminal for each of your")
+    click.echo(f"  {style('Welcome!', fg='green', bold=True)} multideck opens a terminal for each of your")
     click.echo("  projects, launches your AI agent inside it, and tiles")
     click.echo("  all windows neatly across your screens.")
     click.echo()
@@ -109,18 +109,18 @@ def _run_discovery(config_file: Path) -> bool:
     projects, days = discover_projects()
 
     if not projects:
-        click.echo(f"  {S('No projects found', dim=True)} in Claude, Codex, or VS Code history.")
-        click.echo(f"  Create a config manually at: {S(str(config_file), bold=True)}")
+        click.echo(f"  {style('No projects found', dim=True)} in Claude, Codex, or VS Code history.")
+        click.echo(f"  Create a config manually at: {style(str(config_file), bold=True)}")
         return False
 
-    click.echo(f"  Found {S(str(len(projects)), fg='green', bold=True)} projects from the last {days} days:\n")
+    click.echo(f"  Found {style(str(len(projects)), fg='green', bold=True)} projects from the last {days} days:\n")
 
     tool_colors = {"claude": "magenta", "codex": "cyan", "vscode": "blue"}
     for i, p in enumerate(projects):
         leaf = Path(p["path"]).name
         tc = tool_colors.get(p["tool"], "white")
-        badge = S(f"[{p['tool']}]", fg=tc, dim=True)
-        num = S(f"{i + 1:>2}", dim=True)
+        badge = style(f"[{p['tool']}]", fg=tc, dim=True)
+        num = style(f"{i + 1:>2}", dim=True)
         click.echo(f"   {num}  {leaf:<34} {badge}")
 
     click.echo()
@@ -128,19 +128,19 @@ def _run_discovery(config_file: Path) -> bool:
     click.echo()
 
     if not click.confirm(f"  Generate config with these {len(projects)} projects?", default=True):
-        click.echo(f"\n  {S('Cancelled.', dim=True)}")
+        click.echo(f"\n  {style('Cancelled.', dim=True)}")
         return False
 
     config = projects_to_config(projects)
     config_file.parent.mkdir(parents=True, exist_ok=True)
     config_file.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    click.echo(f"\n  {S('+', fg='green', bold=True)} Saved to {S(str(config_file), fg='cyan')}")
+    click.echo(f"\n  {style('+', fg='green', bold=True)} Saved to {style(str(config_file), fg='cyan')}")
     click.echo()
-    click.echo(f"  Run {S('multideck', bold=True)} again to launch all your projects")
+    click.echo(f"  Run {style('multideck', bold=True)} again to launch all your projects")
     click.echo("  and tile them across your screens.")
     click.echo()
-    click.echo(f"  To tweak the config: {S('multideck config show', fg='cyan')}")
+    click.echo(f"  To tweak the config: {style('multideck config show', fg='cyan')}")
     click.echo()
 
     return True
