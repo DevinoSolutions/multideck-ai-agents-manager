@@ -1810,7 +1810,7 @@ def _force_utf8_console() -> None:
     except Exception:
         pass
     try:
-        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # guarded by try/except; reconfigure exists on the real TextIOWrapper
     except Exception:
         pass
 
@@ -1956,7 +1956,7 @@ def _status_label(state: str | None) -> str:
         agent_state.DONE: S("done", fg="green", bold=True),
         agent_state.NEEDS_INPUT: S("needs input", fg="red", bold=True),
         agent_state.ERROR: S("error", fg="red", bold=True),
-    }.get(state, "")
+    }.get(state, "")  # type: ignore[arg-type]  # F-D1-005: state is None-safe (.get returns default)
 
 
 def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
