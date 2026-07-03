@@ -105,24 +105,12 @@ def _wrap_happy(tool: str, cmd: str) -> str:
 def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     log = get_logger("launch")
     plat = get_platform()
-    plat.set_dpi_aware()
 
-    monitors = plat.list_monitors()
-    if not monitors:
+    slots = _prepare_grid(plat, config, opts)
+    if slots is None:
         log.error("no monitors detected; aborting")
         click.echo(f"  {S('✗', fg='red')} No monitors detected.", err=True)
         return 2
-
-    slots = compute_grid(monitors, config.layout.columns, config.layout.rows)
-
-    grid_label = f"{config.layout.columns}x{config.layout.rows}"
-    click.echo(
-        f"\n  {S('#', fg='cyan')} {S(str(len(monitors)), fg='cyan', bold=True)} screen(s)  "
-        f"{S('->', dim=True)}  {S(str(len(slots)), fg='green', bold=True)} tile slots  "
-        f"{S(f'({grid_label} per screen)', dim=True)}"
-    )
-    if opts.dry_run:
-        click.echo(f"  {S('! DRY RUN', fg='yellow', bold=True)} {S('-- nothing will be launched or moved.', dim=True)}\n")
 
     base_dir = config.base_dir
     if base_dir:
@@ -144,6 +132,30 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     _tile_targets(plat, opts, slots, result.targets)
 
     return 0
+
+
+def _prepare_grid(plat: Platform, config: MultideckConfig, opts: RunOpts) -> list[TileSlot] | None:
+    """DPI-init, enumerate monitors, compute the tile grid, print the grid/
+    dry-run banner. Returns the tile slots, or None when no monitors are
+    detected -- the caller owns the no-monitors echo/log/exit code."""
+    plat.set_dpi_aware()
+
+    monitors = plat.list_monitors()
+    if not monitors:
+        return None
+
+    slots = compute_grid(monitors, config.layout.columns, config.layout.rows)
+
+    grid_label = f"{config.layout.columns}x{config.layout.rows}"
+    click.echo(
+        f"\n  {S('#', fg='cyan')} {S(str(len(monitors)), fg='cyan', bold=True)} screen(s)  "
+        f"{S('->', dim=True)}  {S(str(len(slots)), fg='green', bold=True)} tile slots  "
+        f"{S(f'({grid_label} per screen)', dim=True)}"
+    )
+    if opts.dry_run:
+        click.echo(f"  {S('! DRY RUN', fg='yellow', bold=True)} {S('-- nothing will be launched or moved.', dim=True)}\n")
+
+    return slots
 
 
 @dataclass(frozen=True)
