@@ -40,7 +40,7 @@ def _discover_codex_projects(home: Path | None = None) -> list[dict]:
             with open(f, encoding="utf-8") as fh:
                 meta = json.loads(fh.readline())
             cwd = meta.get("payload", {}).get("cwd", "")
-            if not cwd or not os.path.isdir(cwd):
+            if not cwd or not Path(cwd).is_dir():
                 continue
             mtime = f.stat().st_mtime
             key = cwd.lower() if sys.platform == "win32" else cwd
@@ -96,7 +96,7 @@ def _discover_vscode_projects() -> list[dict]:
         if not folder_uri:
             continue
         folder = _uri_to_path(folder_uri)
-        if not folder or not os.path.isdir(folder):
+        if not folder or not Path(folder).is_dir():
             continue
         mtime = d.stat().st_mtime
         results.append({
@@ -145,13 +145,13 @@ def _try_decode(encoded: str) -> str | None:
             return None
         rest = encoded[3:]
         candidate = "C:\\" + rest.replace("-", "\\")
-        if os.path.isdir(candidate):
+        if Path(candidate).is_dir():
             return candidate
     else:
         if not encoded.startswith("-"):
             return None
         candidate = "/" + encoded[1:].replace("-", "/")
-        if os.path.isdir(candidate):
+        if Path(candidate).is_dir():
             return candidate
     return None
 
