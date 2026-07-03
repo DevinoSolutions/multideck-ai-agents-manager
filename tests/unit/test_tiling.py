@@ -117,16 +117,18 @@ class TestTileTitlesPin:
         out = capsys.readouterr().out
         assert "not found" in out
 
-    def test_no_monitors_returns(self, monkeypatch, capsys):
+    def test_no_monitors_returns(self, monkeypatch, capsys, caplog):
         fp = _FakeTilePlat(windows={}, monitors=[])
         monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
 
-        result = cli._tile_titles(["A"])
+        with caplog.at_level("ERROR", logger="multideck.launch"):
+            result = cli._tile_titles(["A"])
 
         assert result is None
         assert fp.moved == []
         out = capsys.readouterr().out
         assert "No monitors detected" in out
+        assert "no monitors detected" in caplog.text
 
 
 class TestRunMultideckTilingPin:
