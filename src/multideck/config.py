@@ -3,8 +3,15 @@ from __future__ import annotations
 import colorsys
 import json
 import random
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+SCHEMA_VERSION = 1
+
+
+class ConfigError(ValueError):
+    """Structurally invalid multideck config: bad JSON, wrong-typed field, or missing required key."""
 
 
 @dataclass
@@ -56,6 +63,7 @@ class MultideckConfig:
     base_dir: str | None = None
     layout: LayoutConfig = field(default_factory=LayoutConfig)
     settings: Settings = field(default_factory=Settings)
+    version: int = SCHEMA_VERSION
 
 
 def _parse_ssh(raw: dict | None) -> SSHConfig:
@@ -87,7 +95,7 @@ def _parse_settings(raw: dict | None) -> Settings:
 
 def _parse_project(raw: dict) -> ProjectConfig:
     if "path" not in raw:
-        raise ValueError("Each project must have a 'path' field")
+        raise ConfigError("Each project must have a 'path' field")
     return ProjectConfig(
         path=raw["path"],
         group=raw.get("group"),
@@ -125,6 +133,65 @@ def _backfill_colors(projects: list[ProjectConfig]) -> bool:
     return changed
 
 
+_TYPE_LABELS = {
+    int: "an integer", str: "a string", bool: "a boolean",
+    float: "a number", dict: "an object", list: "an array",
+}
+
+
+def _describe_type(t: type) -> str:
+    return _TYPE_LABELS.get(t, t.__name__)
+
+
+def _require_type(raw: dict, key: str, types: type | tuple[type, ...], label: str) -> None:
+    """Raise ConfigError if raw[key] is present but not an instance of `types`.
+
+    bool is rejected for int-only fields (bool is an int subclass in Python)
+    unless bool is explicitly included in `types`.
+    """
+    if key not in raw:
+        return
+    value = raw[key]
+    allowed = types if isinstance(types, tuple) else (types,)
+    if isinstance(value, bool) and bool not in allowed and int in allowed:
+        wrong_type = True
+    else:
+        wrong_type = not isinstance(value, allowed)
+    if wrong_type:
+        expected = " or ".join(_describe_type(t) for t in allowed)
+        raise ConfigError(f"{label} must be {expected}, got {type(value).__name__}")
+
+
+_ALLOWED_TOP_KEYS = {"version", "baseDir", "layout", "settings", "projects"}
+_ALLOWED_LAYOUT_KEYS = {"columns", "rows"}
+_ALLOWED_SETTINGS_KEYS = {
+    "defaultTool", "settleSeconds", "launchDelayMs", "happy", "psmux",
+    "uploadServer", "uploadPort", "ssh", "tools",
+}
+_ALLOWED_SSH_KEYS = {"shell"}
+_ALLOWED_PROJECT_KEYS = {
+    "path", "group", "color", "tool", "title", "enabled", "happy",
+    "host", "remotePath", "windows",
+}
+
+
+def _warn_unknown_keys(raw: dict, allowed: set[str], path: str) -> None:
+    for key in sorted(set(raw) - allowed):
+        field_path = f"{path}.{key}" if path else key
+        print(f"Warning: unknown config key: {field_path}", file=sys.stderr)
+
+
+def _parse_layout(raw: dict) -> LayoutConfig:
+    layout_raw = raw.get("layout", {})
+    _warn_unknown_keys(layout_raw, _ALLOWED_LAYOUT_KEYS, "layout")
+    _require_type(layout_raw, "columns", int, "layout.columns")
+    _require_type(layout_raw, "rows", int, "layout.rows")
+    return LayoutConfig(
+        columns=max(1, layout_raw.get("columns", 2)),
+        rows=max(1, layout_raw.get("rows", 1)),
+    )
+
+
 def load_config(path: str) -> MultideckConfig:
     config_path = Path(path)
     if not config_path.exists():
@@ -134,26 +201,36 @@ def load_config(path: str) -> MultideckConfig:
     try:
         raw = json.loads(text)
     except json.JSONDecodeError as e:
-        raise ValueError(f"Config is not valid JSON: {e}") from e
+        raise ConfigError(f"Config is not valid JSON: {e}") from e
 
     if "projects" not in raw or not isinstance(raw["projects"], list):
-        raise ValueError("Config must have a 'projects' array")
+        raise ConfigError("Config must have a 'projects' array")
 
-    layout_raw = raw.get("layout", {})
-    layout = LayoutConfig(
-        columns=max(1, layout_raw.get("columns", 2)),
-        rows=max(1, layout_raw.get("rows", 1)),
-    )
+    _require_type(raw, "version", int, "version")
+    version = raw.get("version", 0)
+    if version < SCHEMA_VERSION:
+        print(
+            f"Warning: config schema v{version} < v{SCHEMA_VERSION}; run: multideck config migrate",
+            file=sys.stderr,
+        )
+    _warn_unknown_keys(raw, _ALLOWED_TOP_KEYS, "")
+
+    layout = _parse_layout(raw)
+
+    settings_raw = raw.get("settings") or {}
+    _warn_unknown_keys(settings_raw, _ALLOWED_SETTINGS_KEYS, "settings")
+    _warn_unknown_keys(settings_raw.get("ssh") or {}, _ALLOWED_SSH_KEYS, "settings.ssh")
+
+    for i, p in enumerate(raw["projects"]):
+        _warn_unknown_keys(p, _ALLOWED_PROJECT_KEYS, f"projects[{i}]")
 
     projects = [_parse_project(p) for p in raw["projects"]]
-    if _backfill_colors(projects):
-        for i, p in enumerate(projects):
-            raw["projects"][i].setdefault("color", p.color)
-        config_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    _backfill_colors(projects)
 
     return MultideckConfig(
         projects=projects,
         base_dir=raw.get("baseDir"),
         layout=layout,
-        settings=_parse_settings(raw.get("settings")),
+        settings=_parse_settings(settings_raw),
+        version=version,
     )
