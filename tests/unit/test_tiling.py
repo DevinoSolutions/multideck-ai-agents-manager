@@ -1,0 +1,151 @@
+"""Behavior pins for the two duplicated tiling code paths (R13 residual) plus
+direct unit tests for the shared multideck.tiling.place_windows helper that
+replaces them.
+
+The TestTileTitlesPin/TestRunMultideckTilingPin classes below are written
+BEFORE the dedup (E9.md Step 1) and must keep passing UNCHANGED after it
+(Steps 3-4): they assert observable behavior (which handles move to which
+slot rects, which lines echo) -- not which lookup method is used -- so the
+same assertions hold pre-conversion (find_window / inline retry) and post
+(snapshot_windows / multideck.tiling.place_windows). That is the whole
+point: a behavior pin that survives the refactor is the drift tripwire.
+"""
+from __future__ import annotations
+
+import time
+
+import pytest
+
+from multideck import cli
+from multideck.config import load_config
+from multideck.grid import MonitorRect, Rect
+from multideck.launch import RunOpts, run_multideck
+
+
+class _FakeTilePlat:
+    """Self-contained Platform double for tiling tests -- does not reuse
+    conftest's FakePlatform so these tests don't hard-depend on E2's landing
+    order (E9.md S5). ``windows`` is a single {title: handle} dict (the
+    common case), or a list of dicts consumed one-per-snapshot_windows() call
+    to simulate a window that only appears after N retries. find_window and
+    snapshot_windows always agree on the same underlying dict.
+    """
+
+    def __init__(self, windows=None, monitors=None):
+        self._sequence = windows if isinstance(windows, list) else [windows or {}]
+        self._snap_calls = 0
+        self._monitors = monitors if monitors is not None else [
+            MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
+        ]
+        self.moved: list[tuple] = []
+
+    def set_dpi_aware(self) -> None:
+        pass
+
+    def list_monitors(self):
+        return self._monitors
+
+    def _latest(self) -> dict:
+        idx = min(self._snap_calls, len(self._sequence) - 1)
+        return self._sequence[idx]
+
+    def snapshot_windows(self) -> dict:
+        snap = self._latest()
+        self._snap_calls += 1
+        return snap
+
+    def find_window(self, title, mode="exact"):
+        snap = self._latest()
+        if mode == "exact":
+            return snap.get(title)
+        low = title.lower()
+        for t, h in snap.items():
+            if low in t.lower():
+                return h
+        return None
+
+    def move_window(self, handle, rect) -> None:
+        self.moved.append((handle, rect))
+
+
+@pytest.fixture
+def fake_sleep(monkeypatch):
+    """Patches the real time.sleep function object. cli._tile_titles does a
+    LOCAL `import time` (pre-conversion), so there is no module-level
+    `multideck.cli.time` attribute to monkeypatch; `import time` anywhere
+    always binds the same sys.modules['time'] object, so patching it here
+    reliably intercepts every caller (cli.py pre-conversion, tiling.py/
+    launch.py post-conversion) regardless of import style. Records each
+    sleep's duration so retry/deadline tests can assert on call count."""
+    calls: list[float] = []
+
+    def _sleep(seconds):
+        calls.append(seconds)
+
+    monkeypatch.setattr(time, "sleep", _sleep)
+    return calls
+
+
+class TestTileTitlesPin:
+    """Pins cli._tile_titles's CURRENT observable behavior. Must pass before
+    AND after the Step 3/4 conversion (E9.md Step 1 verify)."""
+
+    def test_moves_known_windows_to_slots(self, monkeypatch, fake_sleep, capsys):
+        fp = _FakeTilePlat(windows={"A": 1, "B": 2})
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+
+        cli._tile_titles(["A", "B"])
+
+        assert (1, Rect(x=0, y=0, w=960, h=1080)) in fp.moved
+        assert (2, Rect(x=960, y=0, w=960, h=1080)) in fp.moved
+        out = capsys.readouterr().out
+        assert "A" in out and "B" in out
+
+    def test_reports_missing(self, monkeypatch, fake_sleep, capsys):
+        fp = _FakeTilePlat(windows={"A": 1})
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+
+        cli._tile_titles(["A", "B"])
+
+        assert len(fp.moved) == 1
+        out = capsys.readouterr().out
+        assert "not found" in out
+
+    def test_no_monitors_returns(self, monkeypatch, capsys):
+        fp = _FakeTilePlat(windows={}, monitors=[])
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+
+        result = cli._tile_titles(["A"])
+
+        assert result is None
+        assert fp.moved == []
+        out = capsys.readouterr().out
+        assert "No monitors detected" in out
+
+
+class TestRunMultideckTilingPin:
+    """E2's fake_platform/tmp_config fixtures are present (RULING S3-5-3:
+    mandatory here, not skipped). Drives the full run_multideck orchestrator
+    and pins that a newly-launched window lands in slot 0's rect. Must keep
+    passing unchanged through Steps 3-4."""
+
+    def test_tiles_new_windows(self, fake_platform, tmp_config, tmp_path, fake_sleep):
+        HANDLE = 99
+
+        def _launch_terminal(opts):
+            fake_platform.launched_terminals.append(opts)
+            fake_platform._windows[opts.title] = HANDLE  # simulate the window appearing
+
+        fake_platform.launch_terminal = _launch_terminal
+
+        config_path = tmp_config({
+            "layout": {"columns": 2, "rows": 1},
+            "settings": {"tools": {"claude": "claude --continue"}, "defaultTool": "claude"},
+            "projects": [{"path": str(tmp_path), "tool": "claude", "title": "proj", "color": "#336699"}],
+        })
+        cfg = load_config(config_path)
+
+        rc = run_multideck(cfg, RunOpts())
+
+        assert rc == 0
+        assert (HANDLE, Rect(x=0, y=0, w=960, h=1080)) in fake_platform.moved
