@@ -4,6 +4,10 @@ import time
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
+
+from multideck.grid import MonitorRect
+from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts
 
 
 @pytest.fixture
@@ -47,3 +51,56 @@ def fake_codex_sessions(tmp_path):
         return sess_root
     _create.__wrapped_tmp = tmp_path
     return _create
+
+
+class FakePlatform(Platform):
+    """Test double for Platform -- records calls instead of touching real
+    windows/monitors/psmux. Reused by E5 to unit-test the decomposed
+    run_multideck pieces (see tests/unit/test_platform_contract.py)."""
+
+    def __init__(self, monitors=None, windows=None):
+        self._monitors = monitors if monitors is not None else [
+            MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
+        ]
+        self._windows = windows if windows is not None else {}
+        self.dpi_aware_calls = 0
+        self.launched_terminals: list[TerminalLaunchOpts] = []
+        self.launched_vscode: list[VSCodeLaunchOpts] = []
+        self.launched_psmux: list[PsmuxWindowOpts] = []
+        self.moved: list[tuple] = []
+
+    def set_dpi_aware(self) -> None:
+        self.dpi_aware_calls += 1
+
+    def list_monitors(self):
+        return self._monitors
+
+    def find_window(self, title: str, mode: str = "exact"):
+        return self._windows.get(title)
+
+    def move_window(self, handle, rect) -> None:
+        self.moved.append((handle, rect))
+
+    def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
+        self.launched_terminals.append(opts)
+
+    def launch_vscode(self, opts: VSCodeLaunchOpts) -> None:
+        self.launched_vscode.append(opts)
+
+    def snapshot_windows(self):
+        return self._windows
+
+    def launch_psmux_session(self, windows) -> None:
+        self.launched_psmux.extend(windows)
+
+
+@pytest.fixture
+def runner():
+    return CliRunner()
+
+
+@pytest.fixture
+def fake_platform(monkeypatch):
+    fp = FakePlatform()
+    monkeypatch.setattr("multideck.launch.get_platform", lambda: fp)
+    return fp
