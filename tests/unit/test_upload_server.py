@@ -4,7 +4,6 @@ import threading
 import time
 from http.client import HTTPConnection
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
