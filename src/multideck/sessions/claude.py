@@ -8,6 +8,14 @@ def encode_claude_project_path(project_dir: str) -> str:
     return re.sub(r"[^a-zA-Z0-9._-]", "-", project_dir)
 
 
+def build_claude_resume(base_cmd: str, session_id: str | None) -> str:
+    stripped = re.sub(r"--continue\s*", "", base_cmd)
+    stripped = re.sub(r"--resume\s+\S+", "", stripped).strip()
+    if session_id:
+        return f"{stripped} --resume {session_id}"
+    return stripped
+
+
 def get_claude_session_ids(
     project_dir: str,
     count: int,
