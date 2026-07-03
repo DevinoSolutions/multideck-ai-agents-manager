@@ -1,0 +1,637 @@
+"""The interactive config editor (`_config_menu`, radon F/48 -- the single
+worst-graded function in the codebase, relocated unchanged per E6.md S2.5:
+"do not smuggle a rewrite into a move") and the `multideck config` command
+group with all 14 subcommands (13 original + E7's `migrate`).
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import click
+
+from multideck.cli.app import main
+from multideck.cli.config_io import _load_raw_config, _save_raw_config
+from multideck.cli.ui import _banner, _confirm_change, _divider, _grid_preview, _menu_item, _open_in_editor, _prompt_or_back
+from multideck.config import _random_tab_color, migrate_config_file
+from multideck.paths import find_config
+from multideck.style import S
+
+
+def _config_menu(config_file: Path) -> None:
+    """Interactive config editor accessed from the main menu."""
+    while True:
+        click.clear()
+        _banner()
+        data = _load_raw_config(config_file)
+        layout = data.get("layout", {})
+        settings = data.get("settings", {})
+        projects = data.get("projects", [])
+        tools = settings.get("tools", {})
+        cols, rows = layout.get("columns", 2), layout.get("rows", 1)
+        dtool = settings.get("defaultTool", "claude")
+        total_slots = cols * rows
+
+        click.echo()
+        click.echo(f"  {S('Settings', bold=True)}")
+        _divider()
+        click.echo()
+        click.echo(f"  {S('Each screen is tiled like this:', dim=True)}")
+        click.echo()
+        for line in _grid_preview(cols, rows, indent="      "):
+            click.echo(line)
+        click.echo()
+        _menu_item("1", f"Window grid      {S(f'{cols} cols x {rows} rows', fg='green')}"
+                   f"  {S(f'= {total_slots} windows per screen', dim=True)}")
+        _menu_item("2", f"Default AI tool   {S(dtool, fg='green')}"
+                   f"  {S('-- launched in each project', dim=True)}")
+        base = data.get("baseDir")
+        if base:
+            short = base if len(base) <= 35 else "..." + base[-32:]
+            _menu_item("3", f"Projects folder   {S(short, fg='green')}")
+        else:
+            _menu_item("3", f"Projects folder   {S('(not set -- using absolute paths)', dim=True)}")
+        _menu_item("4", f"Tool commands     {S(', '.join(tools.keys()) or '(none)', dim=True)}"
+                   f"  {S('-- what runs in the terminal', dim=True)}")
+        happy_on = settings.get("happy", False)
+        happy_label = S("ON", fg="green", bold=True) if happy_on else S("off", dim=True)
+        _menu_item("5", f"Happy mobile      {happy_label}"
+                   f"  {S('-- monitor sessions from phone/web', dim=True)}")
+        psmux_on = settings.get("psmux", False)
+        psmux_label = S("ON", fg="green", bold=True) if psmux_on else S("off", dim=True)
+        _menu_item("6", f"psmux sessions    {psmux_label}"
+                   f"  {S('-- attach from SSH / phone', dim=True)}")
+        upload_on = settings.get("uploadServer", False)
+        upload_port = settings.get("uploadPort", 8033)
+        upload_label = S(f"ON :{upload_port}", fg="green", bold=True) if upload_on else S("off", dim=True)
+        _menu_item("7", f"Upload server     {upload_label}"
+                   f"  {S('-- send images from phone to Claude', dim=True)}")
+        click.echo()
+        click.echo(f"  {S('Projects', bold=True)}")
+        _divider()
+        click.echo()
+        _menu_item("8", f"Add a project     {S('-- register a new folder', dim=True)}")
+        _menu_item("9", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
+        click.echo()
+        _menu_item("0", "Open config file in editor", key_fg="green")
+        _menu_item("b", "Back to main menu", key_fg="yellow")
+        click.echo()
+
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
+
+        if choice == "1":
+            click.echo()
+            click.echo(f"  {S('How many windows per screen?', bold=True)}")
+            click.echo(f"  {S('Columns = side by side, Rows = stacked.', dim=True)}")
+            click.echo()
+            val = _prompt_or_back("Columns (side by side)", default=str(cols))
+            if val is None:
+                continue
+            try:
+                new_cols = max(1, int(val))
+            except ValueError:
+                continue
+            val = _prompt_or_back("Rows (stacked)", default=str(rows))
+            if val is None:
+                continue
+            try:
+                new_rows = max(1, int(val))
+            except ValueError:
+                continue
+            click.echo()
+            click.echo(f"  {S('Your screens will look like:', bold=True)}")
+            click.echo()
+            for line in _grid_preview(new_cols, new_rows, indent="      "):
+                click.echo(line)
+            data.setdefault("layout", {})
+            data["layout"]["columns"] = new_cols
+            data["layout"]["rows"] = new_rows
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Window grid set to {S(f'{new_cols} x {new_rows}', fg='green')}"
+                            f" ({new_cols * new_rows} windows per screen).")
+
+        elif choice == "2":
+            click.echo()
+            click.echo(f"  {S('Which AI tool should open in each project by default?', bold=True)}")
+            click.echo(f"  {S('Individual projects can override this.', dim=True)}")
+            click.echo()
+            available = list(tools.keys()) or ["claude", "codex"]
+            for i, t in enumerate(available, 1):
+                marker = S(" <-- current", dim=True) if t == dtool else ""
+                _menu_item(str(i), f"{t}{marker}")
+            click.echo()
+            val = _prompt_or_back("Pick a number or type a name", default=dtool, show_default=False)
+            if val is None:
+                continue
+            try:
+                idx = int(val) - 1
+                if 0 <= idx < len(available):
+                    val = available[idx]
+            except ValueError:
+                pass
+            data.setdefault("settings", {})
+            data["settings"]["defaultTool"] = val
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Default tool set to {S(val, fg='green')}.")
+
+        elif choice == "3":
+            click.echo()
+            click.echo(f"  {S('Where are your projects?', bold=True)}")
+            click.echo(f"  {S('Project paths in your config are relative to this folder.', dim=True)}")
+            click.echo(f"  {S('Example: if base is C:/projects and a project path is', dim=True)}")
+            click.echo(f"  {S('api/backend, it opens C:/projects/api/backend.', dim=True)}")
+            click.echo()
+            val = _prompt_or_back("Projects folder", default=data.get("baseDir", ""))
+            if val is None or not val:
+                continue
+            normalized = val.replace("\\", "/")
+            data["baseDir"] = normalized
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Projects folder set to {S(normalized, fg='green')}.")
+
+        elif choice == "4":
+            _tools_menu(config_file, data)
+
+        elif choice == "5":
+            data.setdefault("settings", {})
+            new_val = not data["settings"].get("happy", False)
+            data["settings"]["happy"] = new_val
+            _save_raw_config(config_file, data)
+            if new_val:
+                _confirm_change(f"Happy mobile {S('enabled', fg='green')}. "
+                                f"Sessions will be accessible from your phone via the Happy app.")
+            else:
+                _confirm_change(f"Happy mobile {S('disabled', dim=True)}. "
+                                f"Sessions launch directly without Happy.")
+
+        elif choice == "6":
+            data.setdefault("settings", {})
+            new_val = not data["settings"].get("psmux", False)
+            data["settings"]["psmux"] = new_val
+            _save_raw_config(config_file, data)
+            if new_val:
+                _confirm_change(f"psmux sessions {S('enabled', fg='green')}. "
+                                f"Each project runs in a named psmux session you can attach to via SSH.")
+            else:
+                _confirm_change(f"psmux sessions {S('disabled', dim=True)}. "
+                                f"Projects launch in regular Windows Terminal tabs.")
+
+        elif choice == "7":
+            data.setdefault("settings", {})
+            currently_on = data["settings"].get("uploadServer", False)
+            if currently_on:
+                data["settings"]["uploadServer"] = False
+                _save_raw_config(config_file, data)
+                _confirm_change(f"Upload server {S('disabled', dim=True)}.")
+            else:
+                click.echo()
+                cur_port = data["settings"].get("uploadPort", 8033)
+                val = _prompt_or_back(f"Port {S(f'(Enter for {cur_port})', dim=True)}",
+                                      default=str(cur_port), show_default=False)
+                if val is None:
+                    continue
+                try:
+                    port = int(val)
+                except ValueError:
+                    continue
+                data["settings"]["uploadServer"] = True
+                data["settings"]["uploadPort"] = port
+                _save_raw_config(config_file, data)
+                _confirm_change(f"Upload server {S('enabled', fg='green')} on port {S(str(port), fg='cyan')}. "
+                                f"Starts automatically with multideck.")
+
+        elif choice == "8":
+            cwd = str(Path.cwd()).replace("\\", "/")
+            click.echo()
+            click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
+            click.echo(f"  {S('Path can be absolute or relative to your projects folder.', dim=True)}")
+            click.echo(f"  {S('Press Enter to use the current folder.', dim=True)}")
+            click.echo()
+            path = _prompt_or_back("Folder path", default=cwd)
+            if path is None or not path:
+                continue
+            entry: dict = {"path": path.replace("\\", "/")}
+            click.echo()
+            click.echo(f"  {S('Optional settings (Enter to skip, b to cancel):', dim=True)}")
+            click.echo()
+            group = _prompt_or_back(f"Group {S('-- for launching subsets, e.g. INTERNAL', dim=True)}",
+                                    default="", show_default=False)
+            if group is None:
+                continue
+            if group:
+                entry["group"] = group
+            tool = _prompt_or_back(f"Tool  {S('-- override default, e.g. codex, vscode', dim=True)}",
+                                   default="", show_default=False)
+            if tool is None:
+                continue
+            if tool:
+                entry["tool"] = tool
+            color = _prompt_or_back(f"Color {S('-- terminal tab color, Enter for random', dim=True)}",
+                                    default="", show_default=False)
+            if color is None:
+                continue
+            if not color:
+                used = {p.get("color") for p in data.get("projects", []) if p.get("color")}
+                color = _random_tab_color(used)
+            entry["color"] = color
+            data.setdefault("projects", []).append(entry)
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Added project {S(path, fg='green')}.")
+
+        elif choice == "9":
+            _remove_project_menu(config_file, data)
+
+        elif choice == "0":
+            _open_in_editor(config_file)
+            return
+
+        elif choice == "b":
+            return
+
+
+def _tools_menu(config_file: Path, data: dict) -> None:
+    tools = data.get("settings", {}).get("tools", {})
+    while True:
+        click.clear()
+        _banner()
+        click.echo(f"  {S('Tool Commands', bold=True)}")
+        click.echo(f"  {S('Each tool name maps to the shell command that runs inside', dim=True)}")
+        tools_hint = 'the terminal. e.g. "claude" runs "claude --continue".'
+        click.echo(f"  {S(tools_hint, dim=True)}")
+        _divider()
+        click.echo()
+        for name, cmd in tools.items():
+            click.echo(f"    {S(name, fg='cyan'):<20} -> {S(cmd, dim=True)}")
+        if not tools:
+            click.echo(f"    {S('(no tools configured)', dim=True)}")
+        click.echo()
+        _menu_item("a", "Add or edit a tool")
+        _menu_item("r", "Remove a tool")
+        _menu_item("b", "Back", key_fg="yellow")
+        click.echo()
+
+        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="b", show_default=False, prompt_suffix=" ").strip().lower()
+
+        if choice == "a":
+            click.echo()
+            click.echo(f"  {S('Name is a short label (e.g. aider, shell).', dim=True)}")
+            click.echo(f"  {S('Command is what runs in the terminal (e.g. aider --model sonnet).', dim=True)}")
+            click.echo()
+            name = _prompt_or_back("Tool name")
+            if not name:
+                continue
+            existing = tools.get(name, "")
+            cmd = _prompt_or_back("Shell command to run", default=existing)
+            if cmd is None:
+                continue
+            data.setdefault("settings", {}).setdefault("tools", {})
+            data["settings"]["tools"][name] = cmd
+            tools = data["settings"]["tools"]
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Tool {S(name, fg='green')} set to {S(cmd, dim=True)}.")
+
+        elif choice == "r":
+            if not tools:
+                click.echo(f"  {S('No tools to remove.', dim=True)}")
+                continue
+            click.echo()
+            tool_names = list(tools.keys())
+            for i, name in enumerate(tool_names, 1):
+                _menu_item(str(i), name)
+            click.echo()
+            val = _prompt_or_back("Remove which?")
+            if val is None:
+                continue
+            try:
+                idx = int(val) - 1
+                if 0 <= idx < len(tool_names):
+                    removed_name = tool_names[idx]
+                    del tools[removed_name]
+                    _save_raw_config(config_file, data)
+                    _confirm_change(f"Removed tool {S(removed_name, fg='green')}.")
+            except (ValueError, IndexError):
+                click.echo(f"  {S('x', fg='red')} Invalid choice.")
+
+        elif choice == "b":
+            return
+
+
+def _remove_project_menu(config_file: Path, data: dict) -> None:
+    projects = data.get("projects", [])
+    if not projects:
+        click.echo(f"  {S('No projects to remove.', dim=True)}")
+        return
+
+    click.clear()
+    _banner()
+    for i, p in enumerate(projects, 1):
+        leaf = Path(p.get("path", "?")).name
+        extra = ""
+        if p.get("group"):
+            extra = f"  {S(p['group'], dim=True)}"
+        if not p.get("enabled", True):
+            extra += f"  {S('disabled', fg='red')}"
+        click.echo(f"   {S(str(i).rjust(2), dim=True)}  {leaf:<30}{extra}")
+
+    click.echo()
+    val = _prompt_or_back("Remove which?")
+    if val is None:
+        return
+    try:
+        idx = int(val) - 1
+        if 0 <= idx < len(projects):
+            removed = projects.pop(idx)
+            _save_raw_config(config_file, data)
+            _confirm_change(f"Removed project {S(Path(removed.get('path', '?')).name, fg='green')}.")
+        else:
+            click.echo(f"  {S('x', fg='red')} Invalid number.")
+    except ValueError:
+        click.echo(f"  {S('x', fg='red')} Invalid choice.")
+
+
+@main.group()
+@click.pass_context
+def config(ctx: click.Context) -> None:
+    """View and modify your multideck configuration."""
+    pass
+
+
+@config.command("show")
+@click.pass_context
+def config_show(ctx: click.Context) -> None:
+    """Display current configuration."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+
+    _banner()
+    click.echo(f"  {S('Config:', bold=True)} {S(str(config_file), dim=True)}")
+    click.echo()
+
+    click.echo(f"  {S('Base dir:', bold=True)}     {data.get('baseDir', S('(not set)', dim=True))}")
+
+    layout = data.get("layout", {})
+    cols, rows = layout.get("columns", 2), layout.get("rows", 1)
+    click.echo(f"  {S('Layout:', bold=True)}       {cols} x {rows}")
+
+    settings = data.get("settings", {})
+    click.echo(f"  {S('Default tool:', bold=True)} {settings.get('defaultTool', 'claude')}")
+    click.echo()
+
+    tools = settings.get("tools", {})
+    if tools:
+        click.echo(f"  {S('Tools:', bold=True)}")
+        for name, cmd in tools.items():
+            click.echo(f"    {S(name, fg='cyan'):<20} {S(cmd, dim=True)}")
+        click.echo()
+
+    projects = data.get("projects", [])
+    click.echo(f"  {S('Projects:', bold=True)} {len(projects)}")
+    for p in projects:
+        path = p.get("path", "?")
+        tool = p.get("tool", "")
+        group = p.get("group", "")
+        enabled = p.get("enabled", True)
+
+        leaf = Path(path).name
+        parts = []
+        if tool:
+            parts.append(S(tool, fg="cyan"))
+        if group:
+            parts.append(S(group, dim=True))
+        if not enabled:
+            parts.append(S("disabled", fg="red"))
+        extra = f"  {' | '.join(parts)}" if parts else ""
+        click.echo(f"    {leaf:<30}{extra}")
+
+    click.echo()
+
+
+@config.command("migrate")
+@click.pass_context
+def config_migrate(ctx: click.Context) -> None:
+    """Migrate the config file to the current schema version, persisting any backfilled colors."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    try:
+        changed = migrate_config_file(str(config_file))
+    except (ValueError, FileNotFoundError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if changed:
+        click.echo(f"  Migrated {S(str(config_file), dim=True)}")
+    else:
+        click.echo("  Already up to date; nothing to migrate.")
+
+
+@config.command("layout")
+@click.argument("columns", type=int)
+@click.argument("rows", type=int)
+@click.pass_context
+def config_layout(ctx: click.Context, columns: int, rows: int) -> None:
+    """Set grid layout. Usage: multideck config layout 3 2"""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("layout", {})
+    data["layout"]["columns"] = max(1, columns)
+    data["layout"]["rows"] = max(1, rows)
+    _save_raw_config(config_file, data)
+    click.echo(f"  Layout set to {columns} x {rows}")
+
+
+@config.command("base-dir")
+@click.argument("path", type=click.Path(exists=True, file_okay=False))
+@click.pass_context
+def config_base_dir(ctx: click.Context, path: str) -> None:
+    """Set the base directory for project paths."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    resolved = str(Path(path).resolve()).replace("\\", "/")
+    data["baseDir"] = resolved
+    _save_raw_config(config_file, data)
+    click.echo(f"  Base dir set to {resolved}")
+
+
+@config.command("default-tool")
+@click.argument("tool")
+@click.pass_context
+def config_default_tool(ctx: click.Context, tool: str) -> None:
+    """Set the default tool for new projects."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("settings", {})
+    data["settings"]["defaultTool"] = tool
+    _save_raw_config(config_file, data)
+    click.echo(f"  Default tool set to {S(tool, fg='cyan')}")
+
+
+@config.command("tool")
+@click.argument("name")
+@click.argument("command")
+@click.pass_context
+def config_tool(ctx: click.Context, name: str, command: str) -> None:
+    """Add or update a tool command. Usage: multideck config tool aider 'aider --model sonnet'"""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("settings", {}).setdefault("tools", {})
+    data["settings"]["tools"][name] = command
+    _save_raw_config(config_file, data)
+    click.echo(f"  Tool {S(name, fg='cyan')} = {S(command, dim=True)}")
+
+
+@config.command("remove-tool")
+@click.argument("name")
+@click.pass_context
+def config_remove_tool(ctx: click.Context, name: str) -> None:
+    """Remove a tool."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    tools = data.get("settings", {}).get("tools", {})
+    if name not in tools:
+        click.echo(f"  Tool '{name}' not found.", err=True)
+        sys.exit(1)
+    del tools[name]
+    _save_raw_config(config_file, data)
+    click.echo(f"  Removed tool {S(name, fg='cyan')}")
+
+
+@config.command("add")
+@click.argument("path")
+@click.option("--group", "-g", default=None, help="Group name")
+@click.option("--tool", "-t", default=None, help="Tool (claude, codex, vscode, ...)")
+@click.option("--color", "-c", default=None, help="Tab color (#rrggbb)")
+@click.option("--title", default=None, help="Custom window title")
+@click.option("--host", default=None, help="SSH host for remote projects")
+@click.option("--windows", "-w", default=None, type=int, help="Number of windows")
+@click.pass_context
+def config_add(
+    ctx: click.Context,
+    path: str,
+    group: str | None,
+    tool: str | None,
+    color: str | None,
+    title: str | None,
+    host: str | None,
+    windows: int | None,
+) -> None:
+    """Add a project. Usage: multideck config add ./myapp -g INTERNAL -t claude"""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    data.setdefault("projects", [])
+
+    entry: dict = {"path": path.replace("\\", "/")}
+    if group:
+        entry["group"] = group
+    if tool:
+        entry["tool"] = tool
+    if color:
+        entry["color"] = color
+    if title:
+        entry["title"] = title
+    if host:
+        entry["host"] = host
+    if windows:
+        entry["windows"] = windows
+
+    data["projects"].append(entry)
+    _save_raw_config(config_file, data)
+    click.echo(f"  Added {S(path, fg='cyan')}")
+
+
+@config.command("remove")
+@click.argument("path")
+@click.pass_context
+def config_remove(ctx: click.Context, path: str) -> None:
+    """Remove a project by path (or leaf name)."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    projects = data.get("projects", [])
+    normalized = path.replace("\\", "/")
+
+    before = len(projects)
+    data["projects"] = [
+        p for p in projects
+        if p.get("path", "") != normalized and Path(p.get("path", "")).name != path
+    ]
+
+    removed = before - len(data["projects"])
+    if removed == 0:
+        click.echo(f"  No project matching '{path}' found.", err=True)
+        sys.exit(1)
+
+    _save_raw_config(config_file, data)
+    click.echo(f"  Removed {removed} project(s) matching {S(path, fg='cyan')}")
+
+
+@config.command("enable")
+@click.argument("path")
+@click.pass_context
+def config_enable(ctx: click.Context, path: str) -> None:
+    """Enable a disabled project."""
+    _set_project_field(ctx, path, "enabled", True)
+    click.echo(f"  Enabled {S(path, fg='cyan')}")
+
+
+@config.command("disable")
+@click.argument("path")
+@click.pass_context
+def config_disable(ctx: click.Context, path: str) -> None:
+    """Disable a project without removing it."""
+    _set_project_field(ctx, path, "enabled", False)
+    click.echo(f"  Disabled {S(path, fg='cyan')}")
+
+
+@config.command("set")
+@click.argument("path")
+@click.argument("field")
+@click.argument("value")
+@click.pass_context
+def config_set(ctx: click.Context, path: str, field: str, value: str) -> None:
+    """Set a field on a project. Usage: multideck config set myapp group INTERNAL"""
+    parsed: str | int | bool = value
+    if value.lower() in ("true", "false"):
+        parsed = value.lower() == "true"
+    else:
+        try:
+            parsed = int(value)
+        except ValueError:
+            pass
+    _set_project_field(ctx, path, field, parsed)
+    click.echo(f"  Set {S(field, bold=True)} = {S(str(value), fg='cyan')} on {path}")
+
+
+@config.command("open")
+@click.pass_context
+def config_open(ctx: click.Context) -> None:
+    """Open config file in your default editor."""
+    config_file = find_config(ctx.obj.get("config_path"))
+    if not config_file.exists():
+        click.echo(f"No config at {config_file}. Run multideck first.", err=True)
+        sys.exit(1)
+    _open_in_editor(config_file)
+    click.echo(f"  Opened {S(str(config_file), dim=True)}")
+
+
+@config.command("path")
+@click.pass_context
+def config_path_cmd(ctx: click.Context) -> None:
+    """Print the config file path."""
+    click.echo(str(find_config(ctx.obj.get("config_path"))))
+
+
+def _set_project_field(ctx: click.Context, path: str, field: str, value: object) -> None:
+    config_file = find_config(ctx.obj.get("config_path"))
+    data = _load_raw_config(config_file)
+    normalized = path.replace("\\", "/")
+
+    found = False
+    for p in data.get("projects", []):
+        if p.get("path", "") == normalized or Path(p.get("path", "")).name == path:
+            p[field] = value
+            found = True
+            break
+
+    if not found:
+        click.echo(f"  No project matching '{path}' found.", err=True)
+        sys.exit(1)
+
+    _save_raw_config(config_file, data)
