@@ -7,7 +7,6 @@ import json
 import os
 import sys
 import threading
-import time
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -172,7 +171,6 @@ def project_from_title(title: str) -> str | None:
 
 
 def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
-    boundary = "----MultideckUpload"
     body = (
         f"------MultideckUpload\r\n"
         f'Content-Disposition: form-data; name="project"\r\n'
@@ -194,7 +192,7 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
     req = Request(
         f"{server_url}/upload?project={quote(project)}",
         data=body,
-        headers={"Content-Type": f"multipart/form-data; boundary=----MultideckUpload"},
+        headers={"Content-Type": "multipart/form-data; boundary=----MultideckUpload"},
         method="POST",
     )
     try:

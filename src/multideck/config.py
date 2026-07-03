@@ -106,8 +106,8 @@ def _random_tab_color(used: set[str]) -> str:
     for _ in range(200):
         h = random.random()
         s = random.uniform(0.55, 0.95)
-        l = random.uniform(0.40, 0.65)
-        r, g, b = colorsys.hls_to_rgb(h, l, s)
+        light = random.uniform(0.40, 0.65)
+        r, g, b = colorsys.hls_to_rgb(h, light, s)
         color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
         if color not in used:
             return color
