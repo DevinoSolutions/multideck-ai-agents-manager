@@ -129,5 +129,5 @@ def test_up_json(runner, tmp_config, monkeypatch):
     result = runner.invoke(main, ["--config", cfgpath, "up", "--json"])
 
     assert result.exit_code == 0
-    data = json.loads(result.output)
+    data = json.loads(result.stdout)
     assert {"platform", "up", "down", "projects"}.issubset(data.keys())

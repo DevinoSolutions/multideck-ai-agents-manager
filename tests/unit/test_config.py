@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
+
 import pytest
-from multideck.config import load_config, MultideckConfig, ProjectConfig
+from multideck.config import ConfigError, load_config, MultideckConfig, ProjectConfig
 
 
 class TestLoadConfig:
@@ -134,18 +136,22 @@ class TestLoadConfig:
         cfg = load_config(path)
         assert cfg.settings.psmux is True
 
-    def test_load_config_backfills_colors_and_rewrites_file(self, tmp_config):
-        # F-D6-003/007 CHARACTERIZATION: load_config has a surprising side
-        # effect -- it writes the backfilled color back to disk at load time.
+    def test_load_config_backfills_colors_without_writing_file(self, tmp_config):
+        # F-D6-003/007: load_config backfills a missing color IN MEMORY so
+        # callers always see cfg.projects[*].color populated, but load must
+        # never write to disk as a side effect (R10) -- persistence is
+        # `multideck config migrate`'s job now.
         path = tmp_config({"projects": [{"path": "api"}]})
-        load_config(path)
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
-        assert "color" in data["projects"][0]
+        before = Path(path).read_bytes()
+        cfg = load_config(path)
+        after = Path(path).read_bytes()
+        assert cfg.projects[0].color is not None
+        assert before == after
 
-    def test_load_config_drops_unknown_settings_key(self, tmp_config):
-        # F-D6-004 CHARACTERIZATION: unknown settings keys are silently
-        # dropped rather than rejected.
+    def test_load_config_drops_unknown_settings_key(self, capsys, tmp_config):
+        # F-D6-004: unknown settings keys are still dropped from the parsed
+        # Settings object (there's nowhere to put them), but now surface a
+        # stderr warning (R10) instead of vanishing silently.
         path = tmp_config({
             "settings": {"bogusKey": 1, "defaultTool": "codex"},
             "projects": [{"path": "api"}],
@@ -153,16 +159,31 @@ class TestLoadConfig:
         cfg = load_config(path)
         assert not hasattr(cfg.settings, "bogusKey")
         assert cfg.settings.default_tool == "codex"
+        assert "bogusKey" in capsys.readouterr().err
 
     def test_load_config_wrong_typed_columns_raises(self, tmp_config):
-        # F-D6-005 CHARACTERIZATION: raw TypeError today; should be a clean
-        # ValueError -- update this pin when fixed.
+        # F-D6-005: wrong-typed layout.columns now raises a clean ConfigError
+        # (was a raw TypeError out of max(1, "2")).
         path = tmp_config({
             "layout": {"columns": "2"},
             "projects": [{"path": "api"}],
         })
-        with pytest.raises(TypeError):
+        with pytest.raises(ConfigError, match="layout.columns must be an integer"):
             load_config(path)
+
+    def test_missing_version_defaults_zero_and_warns(self, capsys, tmp_config):
+        # R10: a config file with no top-level "version" loads as legacy v0
+        # and nudges the user toward `multideck config migrate`.
+        path = tmp_config({"projects": [{"path": "api"}]})
+        cfg = load_config(path)
+        assert cfg.version == 0
+        assert "migrate" in capsys.readouterr().err
+
+    def test_version_at_current_schema_warns_nothing(self, capsys, tmp_config):
+        path = tmp_config({"version": 1, "projects": [{"path": "api"}]})
+        cfg = load_config(path)
+        assert cfg.version == 1
+        assert capsys.readouterr().err == ""
 
 
 class TestPathResolution:
