@@ -367,3 +367,75 @@ class TestHookStructsAndConstants:
     def test_hookproc_type(self):
         from multideck.hotkey import HOOKPROC
         assert HOOKPROC is not None
+
+
+class TestHookProc:
+    """_hook_decide (pure decision logic) and _make_hook_proc (the
+    exception-safe wrap around it) -- extracted so the callback that runs on
+    every keystroke system-wide is unit-testable without a live hook."""
+
+    @staticmethod
+    def _kb(vk_code):
+        from multideck.hotkey import KBDLLHOOKSTRUCT
+        return KBDLLHOOKSTRUCT(vkCode=vk_code, scanCode=0, flags=0, time=0, dwExtraInfo=None)
+
+    def test_decide_eats_altv_in_md_window(self, monkeypatch):
+        import ctypes
+        from multideck import hotkey
+        from multideck.hotkey import _hook_decide, VK_V, WM_KEYDOWN, HC_ACTION
+
+        kb = self._kb(VK_V)
+        lparam = ctypes.cast(ctypes.pointer(kb), ctypes.c_void_p).value
+
+        monkeypatch.setattr(hotkey, "get_active_window_title", lambda: "md:marka")
+        monkeypatch.setattr(hotkey, "clipboard_has_image", lambda: True)
+
+        started = []
+
+        class _FakeThread:
+            def __init__(self, target=None, args=(), daemon=None):
+                self.target, self.args = target, args
+
+            def start(self):
+                started.append((self.target, self.args))
+
+        monkeypatch.setattr(hotkey.threading, "Thread", _FakeThread)
+
+        state = {"alt_held": True}
+        result = _hook_decide(state, "http://x:8034", HC_ACTION, WM_KEYDOWN, lparam)
+
+        assert result == 1
+        assert started  # a thread was started
+        assert started[0][1] == ("http://x:8034", "marka")
+
+    def test_wrap_calls_callnext_on_exception(self, monkeypatch):
+        # The hook callback runs in a ctypes WINFUNCTYPE callback: an
+        # uncaught exception can't cross the C boundary, so CPython prints
+        # the traceback and returns the restype default -- silently breaking
+        # the rest of the hook chain for that event. The wrap must always
+        # call CallNextHookEx itself instead of relying on that fallback.
+        from multideck import hotkey
+
+        def _boom(*a, **k):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(hotkey, "_hook_decide", _boom)
+
+        calls = []
+
+        def _fake_call_next(*args):
+            calls.append(args)
+            return 999
+
+        monkeypatch.setattr(hotkey.user32, "CallNextHookEx", _fake_call_next)
+
+        hook_proc = hotkey._make_hook_proc({"alt_held": False}, "url")
+        result = hook_proc(0, 0, 0)
+
+        assert calls  # CallNextHookEx was still called
+        assert result == 999  # and its return value is what's passed through
+
+    def test_run_hotkey_signature_has_no_session_names(self):
+        import inspect
+        from multideck.hotkey import run_hotkey
+        assert set(inspect.signature(run_hotkey).parameters) == {"server_url"}
