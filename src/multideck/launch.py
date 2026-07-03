@@ -10,12 +10,13 @@ from dataclasses import dataclass
 import click
 
 from multideck.config import MultideckConfig
-from multideck.grid import compute_grid, Rect
+from multideck.grid import compute_grid
 from multideck.log import get_logger
 from multideck.platform import PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import build_resume_command
 from multideck.sessions.claude import get_claude_session_ids
 from multideck.sessions.codex import get_codex_session_ids
+from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name
 
 
@@ -294,51 +295,18 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
         click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
         return 0
 
-    def _lookup(snap: dict[str, int], key: str, mode: str) -> int | None:
-        if mode == "exact":
-            return snap.get(key)
-        key_lower = key.lower()
-        for title, hwnd in snap.items():
-            if key_lower in title.lower():
-                return hwnd
-        return None
+    placements = [
+        Placement(name=target.name, key=target.key, mode=target.mode, slot=slots[i % len(slots)])
+        for i, target in enumerate(to_place)
+    ]
 
-    pending: dict[int, _Target] = {}
-    placed = 0
-    snap = plat.snapshot_windows()
-    for slot_idx, target in enumerate(to_place):
-        handle = _lookup(snap, target.key, target.mode)
-        if handle is not None:
-            pos = slots[slot_idx % len(slots)]
-            screen_num = pos.monitor_index + 1
-            plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
-            click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
-            placed += 1
-        elif target.is_new or opts.retile_all:
-            pending[slot_idx] = target
+    def _placed(p: Placement) -> None:
+        click.echo(f"    {S('+', fg='green')} {p.name} {S('->', dim=True)} screen {p.slot.monitor_index + 1}")
 
-    if pending:
-        deadline = max(20 if t.mode == "contains" else 6 for t in pending.values())
-        for _ in range(deadline):
-            if not pending:
-                break
-            time.sleep(1)
-            snap = plat.snapshot_windows()
-            resolved = []
-            for slot_idx, target in pending.items():
-                handle = _lookup(snap, target.key, target.mode)
-                if handle is not None:
-                    pos = slots[slot_idx % len(slots)]
-                    screen_num = pos.monitor_index + 1
-                    plat.move_window(handle, Rect(x=pos.x, y=pos.y, w=pos.w, h=pos.h))
-                    click.echo(f"    {S('+', fg='green')} {target.name} {S('->', dim=True)} screen {screen_num}")
-                    placed += 1
-                    resolved.append(slot_idx)
-            for idx in resolved:
-                del pending[idx]
+    def _missing(p: Placement) -> None:
+        click.echo(f"    {S('x', fg='red')} {p.name} {S('not found', dim=True)}")
 
-    for slot_idx, target in pending.items():
-        click.echo(f"    {S('x', fg='red')} {target.name} {S('not found', dim=True)}")
+    place_windows(plat, placements, on_placed=_placed, on_missing=_missing)
 
     click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
     return 0
