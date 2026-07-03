@@ -13,7 +13,7 @@ import click
 from multideck.cli.app import main
 from multideck.cli.spawns import _maybe_start_upload_server, _running_upload_port, _tailnet_host
 from multideck.cli.ui import _banner, _divider, _force_utf8_console, _print_qr
-from multideck.style import S
+from multideck.style import style
 
 
 @main.command("termius")
@@ -37,7 +37,7 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             pass
         if not host:
-            host = click.prompt(f"  {S('SSH host/IP', fg='cyan')}", default="localhost")
+            host = click.prompt(f"  {style('SSH host/IP', fg='cyan')}", default="localhost")
 
     if not user:
         user = getpass.getuser()
@@ -67,14 +67,14 @@ Host multideck
             updated = existing.rstrip() + "\n\n" + block + "\n" if existing else block + "\n"
 
         ssh_config.write_text(updated, encoding="utf-8")
-        click.echo(f"  {S('+', fg='green', bold=True)} Wrote {S('multideck', fg='cyan', bold=True)} host to {S(str(ssh_config), dim=True)}")
+        click.echo(f"  {style('+', fg='green', bold=True)} Wrote {style('multideck', fg='cyan', bold=True)} host to {style(str(ssh_config), dim=True)}")
         click.echo()
-        click.echo(f"  {S('SSH in:', bold=True)} {S('ssh multideck', fg='cyan')} {S('— shows session picker.', dim=True)}")
-        click.echo(f"  {S('Pick a project, F1 to go back to the list.', dim=True)}")
+        click.echo(f"  {style('SSH in:', bold=True)} {style('ssh multideck', fg='cyan')} {style('— shows session picker.', dim=True)}")
+        click.echo(f"  {style('Pick a project, F1 to go back to the list.', dim=True)}")
     else:
         click.echo(block)
         click.echo()
-        click.echo(f"  {S('Add --install to write to ~/.ssh/config', dim=True)}")
+        click.echo(f"  {style('Add --install to write to ~/.ssh/config', dim=True)}")
 
 
 @main.command("serve")
@@ -108,21 +108,21 @@ def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> 
     ip = _tailscale_ip()
 
     _banner()
-    click.echo(f"  {S('Upload server', bold=True)}  {S('for mobile image transfer', dim=True)}")
+    click.echo(f"  {style('Upload server', bold=True)}  {style('for mobile image transfer', dim=True)}")
     _divider()
     click.echo()
     if ip:
-        click.echo(f"  {S('Open on phone:', bold=True)}  {S(f'http://{ip}:{port}', fg='cyan', bold=True)}")
-    click.echo(f"  {S('Local:', dim=True)}         {S(f'http://localhost:{port}', fg='cyan')}")
+        click.echo(f"  {style('Open on phone:', bold=True)}  {style(f'http://{ip}:{port}', fg='cyan', bold=True)}")
+    click.echo(f"  {style('Local:', dim=True)}         {style(f'http://localhost:{port}', fg='cyan')}")
     click.echo()
-    click.echo(f"  {S('Pick a project, upload a file, path gets pasted into Claude.', dim=True)}")
-    click.echo(f"  {S('Ctrl+C to stop.', dim=True)}")
+    click.echo(f"  {style('Pick a project, upload a file, path gets pasted into Claude.', dim=True)}")
+    click.echo(f"  {style('Ctrl+C to stop.', dim=True)}")
     click.echo()
 
     try:
         run_server(port=port, config_path=config_path, host=host)
     except KeyboardInterrupt:
-        click.echo(f"\n  {S('Server stopped.', dim=True)}")
+        click.echo(f"\n  {style('Server stopped.', dim=True)}")
 
 
 @main.command("mobile")
@@ -146,14 +146,14 @@ def mobile_cmd(ctx: click.Context, port: int | None, host: str | None) -> None:
     url = f"http://{host}:{port}/"
 
     _banner()
-    click.echo(f"  {S('Mobile uploader', bold=True)}  {S('- install as a home-screen app', dim=True)}")
+    click.echo(f"  {style('Mobile uploader', bold=True)}  {style('- install as a home-screen app', dim=True)}")
     _divider()
     click.echo()
-    click.echo(f"  {S('Open on phone:', bold=True)}  {S(url, fg='cyan', bold=True)}")
+    click.echo(f"  {style('Open on phone:', bold=True)}  {style(url, fg='cyan', bold=True)}")
     click.echo()
     _print_qr(url)
     click.echo()
-    click.echo(f"  {S('Install:', bold=True)}  {S('iOS', fg='cyan')} Share {S('>', dim=True)} Add to Home Screen"
-               f"     {S('Android', fg='cyan')} menu {S('>', dim=True)} Add to Home screen")
-    click.echo(f"  {S('Then it opens straight to the uploader - pick a project, send an image.', dim=True)}")
+    click.echo(f"  {style('Install:', bold=True)}  {style('iOS', fg='cyan')} Share {style('>', dim=True)} Add to Home Screen"
+               f"     {style('Android', fg='cyan')} menu {style('>', dim=True)} Add to Home screen")
+    click.echo(f"  {style('Then it opens straight to the uploader - pick a project, send an image.', dim=True)}")
     click.echo()

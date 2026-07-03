@@ -1,12 +1,10 @@
 """Shared click.style shortcut, hoisted out of cli.py and launch.py where it
-was independently defined twice (LS-A-003, duplication). `S` is kept as a
-transitional alias for the existing call sites across the codebase; `style`
-is the preferred name for new code. The repo-wide S -> style rename at call
-sites is a separate, larger cleanup (E10), not done here.
+was independently defined twice (LS-A-003, duplication). Call sites use
+`style` directly; the repo-wide S -> style rename (E10) retired the earlier
+transitional `S` alias.
 """
 from __future__ import annotations
 
 import click
 
 style = click.style
-S = style

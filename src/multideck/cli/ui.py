@@ -13,7 +13,7 @@ from pathlib import Path
 import click
 
 from multideck import __version__
-from multideck.style import S
+from multideck.style import style
 
 LOGO_LINES = [
     r"           _ _   _    _        _   ",
@@ -26,17 +26,17 @@ LOGO_LINES = [
 def _banner() -> None:
     click.echo()
     for line in LOGO_LINES:
-        click.echo(f"  {S(line, fg='cyan')}")
-    click.echo(f"  {S(f'v{__version__}', dim=True)}  {S('auto-tile your AI workspace', dim=True)}")
+        click.echo(f"  {style(line, fg='cyan')}")
+    click.echo(f"  {style(f'v{__version__}', dim=True)}  {style('auto-tile your AI workspace', dim=True)}")
     click.echo()
 
 
 def _divider() -> None:
-    click.echo(f"  {S('-' * 40, dim=True)}")
+    click.echo(f"  {style('-' * 40, dim=True)}")
 
 
 def _menu_item(key: str, label: str, key_fg: str = "cyan", extra: str = "") -> None:
-    click.echo(f"   {S(key, fg=key_fg, bold=True)}   {label}{extra}")
+    click.echo(f"   {style(key, fg=key_fg, bold=True)}   {label}{extra}")
 
 
 def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
@@ -44,7 +44,7 @@ def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
     lines: list[str] = []
     border = "+" + (f"{'-' * cell_w}+") * cols
     for r in range(rows):
-        lines.append(f"{indent}{S(border, dim=True)}")
+        lines.append(f"{indent}{style(border, dim=True)}")
         cells = ""
         for c in range(cols):
             n = r * cols + c + 1
@@ -52,10 +52,10 @@ def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
             pad = cell_w - len(label)
             left = pad // 2
             right = pad - left
-            cells += S("|", dim=True) + " " * left + S(label, fg="cyan") + " " * right
-        cells += S("|", dim=True)
+            cells += style("|", dim=True) + " " * left + style(label, fg="cyan") + " " * right
+        cells += style("|", dim=True)
         lines.append(f"{indent}{cells}")
-    lines.append(f"{indent}{S(border, dim=True)}")
+    lines.append(f"{indent}{style(border, dim=True)}")
     return lines
 
 
@@ -71,14 +71,14 @@ def _open_in_editor(path: Path) -> None:
 
 
 def _confirm_change(message: str) -> None:
-    click.echo(f"\n  {S('+', fg='green', bold=True)} {message}")
-    click.echo(f"  {S('Press Enter to continue...', dim=True)}", nl=False)
+    click.echo(f"\n  {style('+', fg='green', bold=True)} {message}")
+    click.echo(f"  {style('Press Enter to continue...', dim=True)}", nl=False)
     click.getchar()
     click.echo()
 
 
 def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
-    hint = S("  (b to go back)", dim=True)
+    hint = style("  (b to go back)", dim=True)
     value = click.prompt(f"  {label}{hint}", default=default, **kwargs).strip()
     if value.lower() == "b":
         return None
@@ -106,8 +106,8 @@ def _print_qr(url: str) -> None:
     try:
         import qrcode
     except ImportError:
-        click.echo(f"  {S('Tip:', dim=True)} {S('pip install qrcode', bold=True)} "
-                   f"{S('to print a scannable QR code here.', dim=True)}")
+        click.echo(f"  {style('Tip:', dim=True)} {style('pip install qrcode', bold=True)} "
+                   f"{style('to print a scannable QR code here.', dim=True)}")
         return
     qr = qrcode.QRCode(border=2)
     qr.add_data(url)
@@ -132,11 +132,11 @@ def _print_names(names: list[str], indent: str = "       ", width: int = 66) -> 
     line = indent
     for nm in names:
         if line.strip() and len(line) + len(nm) + 2 > width:
-            click.echo(S(line, dim=True))
+            click.echo(style(line, dim=True))
             line = indent
         line += nm + "  "
     if line.strip():
-        click.echo(S(line, dim=True))
+        click.echo(style(line, dim=True))
 
 
 def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> list[str]:
@@ -145,9 +145,9 @@ def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> 
     up_order, up_buckets = _grouped(up)
 
     click.echo()
-    click.echo(f"  {S('Sessions on', bold=True)} {S(hostname, fg='cyan')}    "
-               f"{S(str(len(up)), fg='green', bold=True)} up  {S('/', dim=True)}  "
-               f"{S(str(len(down)), fg='yellow', bold=True)} down")
+    click.echo(f"  {style('Sessions on', bold=True)} {style(hostname, fg='cyan')}    "
+               f"{style(str(len(up)), fg='green', bold=True)} up  {style('/', dim=True)}  "
+               f"{style(str(len(down)), fg='yellow', bold=True)} down")
     _divider()
 
     pickable: list[str] = []
@@ -156,16 +156,16 @@ def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> 
         up_n = len(up_buckets.get(g, []))
         total = up_n + len(names)
         if g == "(no group)":
-            click.echo(f"     {S(g, dim=True)}  {S(f'{up_n}/{total}', dim=True)}")
+            click.echo(f"     {style(g, dim=True)}  {style(f'{up_n}/{total}', dim=True)}")
         else:
             pickable.append(g)
-            num = S(str(len(pickable)), fg="cyan", bold=True)
-            click.echo(f"  {num}  {S(g, bold=True)}  {S(f'{up_n}/{total} up', dim=True)}")
+            num = style(str(len(pickable)), fg="cyan", bold=True)
+            click.echo(f"  {num}  {style(g, bold=True)}  {style(f'{up_n}/{total} up', dim=True)}")
         _print_names(names)
 
     for g in up_order:
         if g not in dn_buckets:
             cnt = len(up_buckets[g])
-            click.echo(f"     {S(g, dim=True)}  {S(f'{cnt}/{cnt} ready', fg='green')}")
+            click.echo(f"     {style(g, dim=True)}  {style(f'{cnt}/{cnt} ready', fg='green')}")
     _divider()
     return pickable

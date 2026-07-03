@@ -23,7 +23,7 @@ from multideck.cli.ui import _banner, _divider, _grouped, _print_names, _print_s
 from multideck.config import MultideckConfig
 from multideck.log import heartbeat_fresh
 from multideck.paths import find_config
-from multideck.style import S
+from multideck.style import style
 
 
 def _health_check(port: int) -> bool:
@@ -80,37 +80,37 @@ def _render_status(config_file: Path) -> bool:
     up, down, _ = psmux_status(cfg)
 
     _banner()
-    click.echo(f"  {S('Status', bold=True)}   "
-               f"{S(str(len(up)), fg='green', bold=True)} running  {S('/', dim=True)}  "
-               f"{S(str(len(down)), fg='yellow', bold=True)} stopped")
+    click.echo(f"  {style('Status', bold=True)}   "
+               f"{style(str(len(up)), fg='green', bold=True)} running  {style('/', dim=True)}  "
+               f"{style(str(len(down)), fg='yellow', bold=True)} stopped")
     _divider()
     if up:
         order, buckets = _grouped(up)
         for g in order:
-            click.echo(f"  {S(g, fg='green', bold=True)}  {S(f'({len(buckets[g])})', dim=True)}")
+            click.echo(f"  {style(g, fg='green', bold=True)}  {style(f'({len(buckets[g])})', dim=True)}")
             _print_names(buckets[g])
     else:
-        click.echo(f"  {S('No sessions running.', dim=True)}  "
-                   f"{S('Bring some up from the menu or `multideck up`.', dim=True)}")
+        click.echo(f"  {style('No sessions running.', dim=True)}  "
+                   f"{style('Bring some up from the menu or `multideck up`.', dim=True)}")
     if down:
         preview = ", ".join(d["name"] for d in down[:6]) + ("..." if len(down) > 6 else "")
-        click.echo(f"\n  {S(str(len(down)), fg='yellow', bold=True)} not running  {S('(' + preview + ')', dim=True)}")
+        click.echo(f"\n  {style(str(len(down)), fg='yellow', bold=True)} not running  {style('(' + preview + ')', dim=True)}")
     _divider()
 
     status = _gather_status(cfg)
     upload_labels = {
-        "on": S(f"ON  port {cfg.settings.upload_port}", fg="green", bold=True),
-        "dead": S(f"DEAD  port {cfg.settings.upload_port} (not responding)", fg="red", bold=True),
-        "off": S("off", dim=True),
+        "on": style(f"ON  port {cfg.settings.upload_port}", fg="green", bold=True),
+        "dead": style(f"DEAD  port {cfg.settings.upload_port} (not responding)", fg="red", bold=True),
+        "off": style("off", dim=True),
     }
-    click.echo(f"  {S('Upload server', bold=True)}   {upload_labels[status['upload_server']]}")
+    click.echo(f"  {style('Upload server', bold=True)}   {upload_labels[status['upload_server']]}")
 
     listener_labels = {
-        "on": S("ON", fg="green", bold=True),
-        "stale": S("STALE  (heartbeat expired)", fg="red", bold=True),
-        "off": S("off  (starts with `multideck attach`)", dim=True),
+        "on": style("ON", fg="green", bold=True),
+        "stale": style("STALE  (heartbeat expired)", fg="red", bold=True),
+        "off": style("off  (starts with `multideck attach`)", dim=True),
     }
-    click.echo(f"  {S('Alt+V listener', bold=True)}   {listener_labels[status['listener']]}")
+    click.echo(f"  {style('Alt+V listener', bold=True)}   {listener_labels[status['listener']]}")
 
     return _is_degraded(status)
 
@@ -163,31 +163,31 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
 
     if targets:
         kill_psmux(targets)
-        click.echo(f"  {S('+', fg='green')} Stopped {S(str(len(targets)), fg='green', bold=True)}"
-                   f" session(s): {S(', '.join(targets), dim=True)}")
+        click.echo(f"  {style('+', fg='green')} Stopped {style(str(len(targets)), fg='green', bold=True)}"
+                   f" session(s): {style(', '.join(targets), dim=True)}")
     else:
-        click.echo(f"  {S('-', dim=True)} No matching running sessions.")
+        click.echo(f"  {style('-', dim=True)} No matching running sessions.")
 
     if do_all or stop_srv:
         from multideck.upload_server import stop_server  # heavy subsystem: in-body per policy
         if stop_server(cfg.settings.upload_port):
-            click.echo(f"  {S('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}.")
+            click.echo(f"  {style('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}.")
         else:
-            click.echo(f"  {S('-', dim=True)} Upload server not running, or could not be stopped (see logs).")
+            click.echo(f"  {style('-', dim=True)} Upload server not running, or could not be stopped (see logs).")
 
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
     if do_all and get_platform().supports_hotkey():
         from multideck.hotkey import stop_listener  # ImportError off-Windows (hotkey.py guards); must stay lazy
         if stop_listener():
-            click.echo(f"  {S('+', fg='green')} Stopped the Alt+V listener.")
+            click.echo(f"  {style('+', fg='green')} Stopped the Alt+V listener.")
         else:
-            click.echo(f"  {S('-', dim=True)} Alt+V listener was not running.")
+            click.echo(f"  {style('-', dim=True)} Alt+V listener was not running.")
 
 
 def _menu_status(config_file: Path) -> None:
     _render_status(config_file)
     click.echo()
-    click.pause(info=f"  {S('press any key to return', dim=True)}")
+    click.pause(info=f"  {style('press any key to return', dim=True)}")
 
 
 def _menu_up(config_file: Path) -> None:
@@ -196,21 +196,21 @@ def _menu_up(config_file: Path) -> None:
     cfg = _load_config_or_exit(config_file)
     up, down, projects = psmux_status(cfg)
     _banner()
-    click.echo(f"  {S('Bring up sessions in background', bold=True)}  {S('(no windows)', dim=True)}")
+    click.echo(f"  {style('Bring up sessions in background', bold=True)}  {style('(no windows)', dim=True)}")
     _divider()
     if not projects:
-        click.echo(f"  {S('!', fg='yellow')} No psmux-eligible projects in config.")
+        click.echo(f"  {style('!', fg='yellow')} No psmux-eligible projects in config.")
     elif not down:
-        click.echo(f"  {S('+', fg='green')} All {len(up)} session(s) already running.")
+        click.echo(f"  {style('+', fg='green')} All {len(up)} session(s) already running.")
     else:
         dn_order, dn_buckets = _grouped(down)
         pickable = _print_session_overview("this machine", up, down)
-        opts = [f"{S('a', fg='cyan', bold=True)}=all {len(down)}"]
+        opts = [f"{style('a', fg='cyan', bold=True)}=all {len(down)}"]
         if pickable:
-            opts.append(f"{S('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
-        opts.append(f"{S('n', fg='cyan', bold=True)}=cancel")
-        click.echo(f"  {S('Bring up', bold=True)}   " + "   ".join(opts))
-        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="a",
+            opts.append(f"{style('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
+        opts.append(f"{style('n', fg='cyan', bold=True)}=cancel")
+        click.echo(f"  {style('Bring up', bold=True)}   " + "   ".join(opts))
+        choice = click.prompt(f"  {style('>', fg='cyan', bold=True)}", default="a",
                               show_default=False, prompt_suffix=" ").strip().lower()
         if choice in ("n", "no", "cancel", "q"):
             return
@@ -221,16 +221,16 @@ def _menu_up(config_file: Path) -> None:
         else:
             sel = next((g for g in pickable if g.lower() == choice), None)
             if not sel:
-                click.echo(f"  {S('?', fg='yellow')} cancelled.")
+                click.echo(f"  {style('?', fg='yellow')} cancelled.")
                 return
             only = dn_buckets[sel]
         created = bring_up_psmux(cfg, only=only)
-        click.echo(f"  {S('+', fg='green')} Brought up {S(str(len(created)), fg='green', bold=True)} "
-                   f"session(s) headlessly {S('(switch with the session switcher)', dim=True)}.")
+        click.echo(f"  {style('+', fg='green')} Brought up {style(str(len(created)), fg='green', bold=True)} "
+                   f"session(s) headlessly {style('(switch with the session switcher)', dim=True)}.")
         if cfg.settings.upload_server:
             _maybe_start_upload_server(cfg.settings.upload_port, str(config_file))
     click.echo()
-    click.pause(info=f"  {S('press any key to return', dim=True)}")
+    click.pause(info=f"  {style('press any key to return', dim=True)}")
 
 
 def _menu_down(config_file: Path) -> None:
@@ -239,26 +239,26 @@ def _menu_down(config_file: Path) -> None:
     cfg = _load_config_or_exit(config_file)
     up, _, _ = psmux_status(cfg)
     _banner()
-    click.echo(f"  {S('Shut down sessions', bold=True)}")
+    click.echo(f"  {style('Shut down sessions', bold=True)}")
     _divider()
     if not up:
-        click.echo(f"  {S('-', dim=True)} Nothing is running.")
+        click.echo(f"  {style('-', dim=True)} Nothing is running.")
     else:
         order, buckets = _grouped(up)
         for g in order:
-            click.echo(f"  {S(g, fg='green', bold=True)}  {S(f'({len(buckets[g])})', dim=True)}")
+            click.echo(f"  {style(g, fg='green', bold=True)}  {style(f'({len(buckets[g])})', dim=True)}")
             _print_names(buckets[g])
         pickable = [g for g in order if g != "(no group)"]
         srv_on = _probe_port(cfg.settings.upload_port)
         click.echo()
-        opts = [f"{S('a', fg='cyan', bold=True)}=all {len(up)}"]
+        opts = [f"{style('a', fg='cyan', bold=True)}=all {len(up)}"]
         if pickable:
-            opts.append(f"{S('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
+            opts.append(f"{style('1-' + str(len(pickable)), fg='cyan', bold=True)}=one group")
         if srv_on:
-            opts.append(f"{S('x', fg='cyan', bold=True)}=all + server")
-        opts.append(f"{S('n', fg='cyan', bold=True)}=cancel")
-        click.echo(f"  {S('Shut down', bold=True)}   " + "   ".join(opts))
-        choice = click.prompt(f"  {S('>', fg='cyan', bold=True)}", default="n",
+            opts.append(f"{style('x', fg='cyan', bold=True)}=all + server")
+        opts.append(f"{style('n', fg='cyan', bold=True)}=cancel")
+        click.echo(f"  {style('Shut down', bold=True)}   " + "   ".join(opts))
+        choice = click.prompt(f"  {style('>', fg='cyan', bold=True)}", default="n",
                               show_default=False, prompt_suffix=" ").strip().lower()
         also_server = False
         if choice in ("n", "no", "cancel", "q", ""):
@@ -273,14 +273,14 @@ def _menu_down(config_file: Path) -> None:
         else:
             sel = next((g for g in pickable if g.lower() == choice), None)
             if not sel:
-                click.echo(f"  {S('?', fg='yellow')} cancelled.")
+                click.echo(f"  {style('?', fg='yellow')} cancelled.")
                 return
             targets = buckets[sel]
         kill_psmux(targets)
-        click.echo(f"  {S('+', fg='green')} Stopped {S(str(len(targets)), fg='green', bold=True)} session(s).")
+        click.echo(f"  {style('+', fg='green')} Stopped {style(str(len(targets)), fg='green', bold=True)} session(s).")
         if also_server:
             from multideck.upload_server import stop_server  # heavy subsystem: in-body per policy
             stop_server(cfg.settings.upload_port)
-            click.echo(f"  {S('+', fg='green')} Stopped upload server.")
+            click.echo(f"  {style('+', fg='green')} Stopped upload server.")
     click.echo()
-    click.pause(info=f"  {S('press any key to return', dim=True)}")
+    click.pause(info=f"  {style('press any key to return', dim=True)}")
