@@ -19,3 +19,11 @@ Thumbs.db
 desktop.ini
 .vscode/
 *.log
+
+# Test / type / lint caches and local virtualenvs
+.venv/
+.coverage
+coverage.xml
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
