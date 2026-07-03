@@ -15,6 +15,7 @@ from multideck.grid import TileSlot, compute_grid
 from multideck.log import get_logger
 from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import AGENT_TOOLS, build_resume_command
+from multideck.style import S
 from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name
 
@@ -75,8 +76,6 @@ def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None
 
 
 HAPPY_AGENTS = {t for t, c in AGENT_TOOLS.items() if c.happy}   # derived; name kept for tests
-
-S = click.style
 
 
 def _get_tailscale_ip() -> str | None:
