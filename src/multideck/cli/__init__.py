@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -9,7 +8,6 @@ import click
 
 from multideck import __version__
 from multideck.config import MultideckConfig, _random_tab_color, load_config
-from multideck.init_config import write_config
 from multideck.log import heartbeat_fresh
 from multideck.paths import _config_path, find_config
 from multideck.style import S
@@ -28,6 +26,15 @@ from multideck.cli.ui import (
     _prompt_or_back,
 )
 from multideck.cli.config_io import _load_config_or_exit, _load_raw_config, _save_raw_config
+from multideck.cli.spawns import (
+    _maybe_start_hotkey,
+    _maybe_start_upload_server,
+    _pid_alive,
+    _probe_port,
+    _running_upload_port,
+    _tailnet_host,
+)
+from multideck.cli.app import main
 
 
 def _config_menu(config_file: Path) -> None:
@@ -493,128 +500,6 @@ def _run_discovery(config_file: Path) -> bool:
 # CLI entry point
 # ---------------------------------------------------------------------------
 
-@click.group(invoke_without_command=True)
-@click.option("--go", is_flag=True, help="Skip interactive menu, launch + tile")
-@click.option("--retile-all", is_flag=True, help="Re-tile every matching window")
-@click.option("--dry-run", is_flag=True, hidden=True)
-@click.option("-g", "--group", default=None, help="Launch only projects in this group")
-@click.option("--init", "do_init", is_flag=True, help="Re-scan and regenerate config")
-@click.option("--base-dir", default=None, type=click.Path(), help="Folder to scan with --init")
-@click.option("--config", "config_path", default=None, type=click.Path(), help="Path to config file")
-@click.option("--force", is_flag=True, help="With --init, overwrite existing config")
-@click.option("--edit", "do_edit", is_flag=True, help="Open config in your default editor")
-@click.option("--attach-to", "attach_host", default=None, help="Attach to remote psmux sessions (host or user@host)")
-@click.option("--attach-port", default=8033, hidden=True, help="(deprecated) port is now read from the host config")
-@click.option("--no-mux", "attach_no_mux", is_flag=True, help="With --attach-to: one plain SSH window per project (no psmux/tmux)")
-@click.version_option(__version__)
-@click.pass_context
-def main(
-    ctx: click.Context,
-    go: bool,
-    retile_all: bool,
-    dry_run: bool,
-    group: str | None,
-    do_init: bool,
-    base_dir: str | None,
-    config_path: str | None,
-    force: bool,
-    do_edit: bool,
-    attach_host: str | None,
-    attach_port: int,
-    attach_no_mux: bool,
-) -> None:
-    """Open every project in its own terminal and auto-tile across all monitors."""
-    ctx.ensure_object(dict)
-    ctx.obj["config_path"] = config_path
-
-    if ctx.invoked_subcommand is not None:
-        return
-
-    if attach_host:
-        _attach_flow(attach_host, no_mux=attach_no_mux, group=group)
-        return
-
-    config_file = find_config(config_path)
-
-    if do_edit:
-        if not config_file.exists():
-            click.echo(f"No config at {config_file}. Run multideck first to generate one.")
-            sys.exit(1)
-        _open_in_editor(config_file)
-        return
-
-    if do_init:
-        if base_dir:
-            root = Path(base_dir).resolve()
-            if not root.is_dir():
-                click.echo(f"Folder not found: {base_dir}", err=True)
-                sys.exit(1)
-            success = write_config(str(root), str(config_file), force=force)
-            if success:
-                click.echo(f"Wrote config to {config_file}")
-            else:
-                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
-                sys.exit(1)
-        else:
-            if config_file.exists() and not force:
-                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
-                sys.exit(1)
-            _run_discovery(config_file)
-        return
-
-    if not config_file.exists():
-        if config_path:
-            click.echo(f"No config found at: {config_file}", err=True)
-            sys.exit(1)
-        if sys.stdin.isatty() and not go:
-            wrote = _run_discovery(config_file)
-            if not wrote:
-                sys.exit(1)
-        elif not config_file.exists():
-            click.echo("No config found. Run: multideck --init", err=True)
-            sys.exit(1)
-
-    cfg = _load_config_or_exit(config_file)
-
-    has_directive = go or retile_all or dry_run or group
-    if not has_directive and sys.stdin.isatty():
-        while True:
-            groups = sorted({p.group for p in cfg.projects if p.group})
-            menu = _show_menu(list(groups), config_file)
-            action = menu["action"]
-            if action == "quit":
-                return
-            if action == "attach":
-                _attach_flow(None, no_mux=False)
-                return
-            if action == "sessions":
-                _run_sessions_picker(config_file)
-                continue
-            if action == "status":
-                _menu_status(config_file)
-                continue
-            if action == "up":
-                _menu_up(config_file)
-                continue
-            if action == "down":
-                _menu_down(config_file)
-                continue
-            if menu.get("reload"):
-                cfg = _load_config_or_exit(config_file)
-            retile_all = menu["retile_all"]
-            group = menu.get("group")
-            break
-
-    from multideck.launch import run_multideck, RunOpts
-    rc = run_multideck(cfg, RunOpts(
-        retile_all=retile_all,
-        dry_run=dry_run,
-        group=group,
-        config_path=str(config_file),
-    ))
-    if rc:
-        sys.exit(rc)
-
 
 def _default_attach_host() -> str | None:
     """Best-guess SSH target from the local config's project ``host`` fields."""
@@ -857,61 +742,6 @@ def _attach_nomux(target: str, status: dict) -> None:
     _tile_titles(titles)
     click.echo(f"\n  {S('Done.', fg='green', bold=True)} "
                f"{S('(no-mux mode: Alt+V image paste is not available)', dim=True)}")
-
-
-def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
-    """Start the upload server detached, unless something is already on the port."""
-    import socket
-
-    probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    probe.settimeout(0.3)
-    try:
-        probe.connect(("127.0.0.1", port))
-        return  # already listening
-    except OSError:
-        pass
-    finally:
-        probe.close()
-
-    args = [sys.executable, "-m", "multideck"]
-    if config_path:
-        args += ["--config", config_path]
-    args += ["serve", "-p", str(port)]
-    # Must outlive the SSH bring-up command that spawns it -- see spawn_detached.
-    from multideck.launch import spawn_detached
-    spawn_detached(args)
-
-
-def _maybe_start_hotkey(server_url: str) -> int | None:
-    """Start the Alt+V listener hidden in the background, unless one is running.
-
-    The listener's progress now shows in the md: windows, so it needs no terminal
-    of its own -- attach launches it detached and returns, instead of blocking a
-    terminal on a message loop. Returns the listener pid (existing or freshly
-    started), or None if it couldn't be confirmed.
-    """
-    from multideck.platform import get_platform
-    if not get_platform().supports_hotkey():
-        return None
-    import time
-
-    from multideck.hotkey import listener_pid
-
-    existing = listener_pid()
-    if existing:
-        return existing
-
-    args = [sys.executable, "-m", "multideck", "hotkey", "-s", server_url]
-    from multideck.launch import spawn_detached
-    spawn_detached(args)
-    # The child writes its pid only after the keyboard hook installs; give it a
-    # short window to come up so we can report (and so a hook failure surfaces).
-    for _ in range(20):
-        time.sleep(0.1)
-        pid = listener_pid()
-        if pid:
-            return pid
-    return None
 
 
 @main.command("up")
@@ -1662,72 +1492,6 @@ def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> 
         click.echo(f"\n  {S('Server stopped.', dim=True)}")
 
 
-def _tailnet_host() -> str:
-    """Best host for the phone URL: Tailscale MagicDNS name, then its IP, then
-    the LAN IP. MagicDNS gives the prettiest, most stable URL."""
-    import socket
-    import subprocess
-
-    try:
-        r = subprocess.run(["tailscale", "status", "--json"],
-                           capture_output=True, text=True, timeout=5)
-        if r.returncode == 0 and r.stdout.strip():
-            dns = (json.loads(r.stdout).get("Self") or {}).get("DNSName", "")
-            if dns:
-                return dns.rstrip(".")
-    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
-        pass
-    try:
-        r = subprocess.run(["tailscale", "ip", "-4"],
-                           capture_output=True, text=True, timeout=5)
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip().splitlines()[0]
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    try:
-        return socket.gethostbyname(socket.gethostname())
-    except OSError:
-        return "localhost"
-
-
-def _pid_alive(pid: int | None) -> bool:
-    """Portable best-effort liveness check for a pid."""
-    if not pid:
-        return False
-    if sys.platform == "win32":
-        import ctypes
-        k = ctypes.windll.kernel32
-        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        code = ctypes.c_ulong()
-        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
-        k.CloseHandle(h)
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
-def _running_upload_port() -> int | None:
-    """Port of a *live* locally-running upload server, from its pid file. Skips
-    stale pid files (a port whose recorded process is gone)."""
-    import re
-    from multideck.upload_server import server_pid
-    d = Path.home() / ".multideck"
-    if not d.exists():
-        return None
-    ports = []
-    for f in d.glob("upload_server-*.pid"):
-        m = re.match(r"upload_server-(\d+)\.pid", f.name)
-        if m:
-            ports.append(int(m.group(1)))
-    alive = [p for p in ports if _pid_alive(server_pid(p))]
-    return min(alive) if alive else None
-
-
 @main.command("mobile")
 @click.option("--port", "-p", default=None, type=int,
               help="Upload server port (default: running server, else 8033).")
@@ -1963,18 +1727,6 @@ def sessions_cmd(ctx: click.Context, name: str | None) -> None:
 # ---------------------------------------------------------------------------
 # multideck status / down  (inspect and shut down running sessions/services)
 # ---------------------------------------------------------------------------
-
-def _probe_port(port: int) -> bool:
-    import socket
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.settimeout(0.3)
-    try:
-        s.connect(("127.0.0.1", port))
-        return True
-    except OSError:
-        return False
-    finally:
-        s.close()
 
 
 def _health_check(port: int) -> bool:
