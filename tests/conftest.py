@@ -6,8 +6,20 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+from multideck import log
 from multideck.grid import MonitorRect
 from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts
+
+
+@pytest.fixture(autouse=True)
+def _isolate_multideck_logs(tmp_path, monkeypatch):
+    """Every test's log/heartbeat writes land under tmp_path, never the real
+    ~/.multideck -- autouse so no test can forget it."""
+    monkeypatch.setattr(log, "LOG_DIR", tmp_path / "logs")
+    monkeypatch.setattr(log, "HEARTBEAT_DIR", tmp_path / "hb")
+    log.reset_logging()
+    yield
+    log.reset_logging()
 
 
 @pytest.fixture
