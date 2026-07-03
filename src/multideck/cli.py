@@ -178,7 +178,7 @@ def _config_menu(config_file: Path) -> None:
         _menu_item("8", f"Add a project     {S('-- register a new folder', dim=True)}")
         _menu_item("9", f"Remove a project  {S(f'({len(projects)} configured)', dim=True)}")
         click.echo()
-        _menu_item("0", f"Open config file in editor", key_fg="green")
+        _menu_item("0", "Open config file in editor", key_fg="green")
         _menu_item("b", "Back to main menu", key_fg="yellow")
         click.echo()
 
@@ -310,7 +310,7 @@ def _config_menu(config_file: Path) -> None:
             click.echo()
             click.echo(f"  {S('Add a project folder for multideck to open.', bold=True)}")
             click.echo(f"  {S('Path can be absolute or relative to your projects folder.', dim=True)}")
-            click.echo(f"  {S(f'Press Enter to use the current folder.', dim=True)}")
+            click.echo(f"  {S('Press Enter to use the current folder.', dim=True)}")
             click.echo()
             path = _prompt_or_back("Folder path", default=cwd)
             if path is None or not path:
@@ -536,10 +536,10 @@ def _run_discovery(config_file: Path) -> bool:
 
     _banner()
     click.echo(f"  {S('Welcome!', fg='green', bold=True)} multideck opens a terminal for each of your")
-    click.echo(f"  projects, launches your AI agent inside it, and tiles")
-    click.echo(f"  all windows neatly across your screens.")
+    click.echo("  projects, launches your AI agent inside it, and tiles")
+    click.echo("  all windows neatly across your screens.")
     click.echo()
-    click.echo(f"  Scanning your recent sessions to find your projects...")
+    click.echo("  Scanning your recent sessions to find your projects...")
     click.echo()
 
     projects, days = discover_projects()
@@ -574,7 +574,7 @@ def _run_discovery(config_file: Path) -> bool:
     click.echo(f"\n  {S('+', fg='green', bold=True)} Saved to {S(str(config_file), fg='cyan')}")
     click.echo()
     click.echo(f"  Run {S('multideck', bold=True)} again to launch all your projects")
-    click.echo(f"  and tile them across your screens.")
+    click.echo("  and tile them across your screens.")
     click.echo()
     click.echo(f"  To tweak the config: {S('multideck config show', fg='cyan')}")
     click.echo()
@@ -664,7 +664,7 @@ def main(
             if not wrote:
                 sys.exit(1)
         elif not config_file.exists():
-            click.echo(f"No config found. Run: multideck --init", err=True)
+            click.echo("No config found. Run: multideck --init", err=True)
             sys.exit(1)
 
     try:
@@ -1695,7 +1695,6 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
     Switch windows with Ctrl+B then number/name.
     """
     import getpass
-    import shutil
     import subprocess
 
     if not host:

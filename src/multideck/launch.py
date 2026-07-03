@@ -6,15 +6,14 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 import click
 
-from multideck.config import MultideckConfig, ProjectConfig
+from multideck.config import MultideckConfig
 from multideck.grid import compute_grid, Rect
-from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
+from multideck.platform import PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import build_resume_command
-from multideck.sessions.claude import encode_claude_project_path, get_claude_session_ids
+from multideck.sessions.claude import get_claude_session_ids
 from multideck.sessions.codex import get_codex_session_ids
 from multideck.titles import generate_titles, get_leaf_name
 

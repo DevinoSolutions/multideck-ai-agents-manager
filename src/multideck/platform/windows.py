@@ -6,7 +6,6 @@ import subprocess
 from ctypes import POINTER, WINFUNCTYPE, byref, create_unicode_buffer, windll
 from typing import Any
 
-import shutil
 
 from multideck.grid import MonitorRect, Rect
 from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, find_psmux
