@@ -170,6 +170,55 @@ class TestUploadServerIntegration:
         assert saved.exists()
         assert saved.read_bytes() == b"FAKEPNG"
 
+    def _wait_log(self, caplog, substr: str, timeout: float = 3.0) -> bool:
+        # The outcome INFO logs in the do_POST `finally` block, which runs on
+        # the server thread after the HTTP response is already on the wire --
+        # same race as the status-line flash (see TestInSessionFeedback), so
+        # poll rather than assert immediately.
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if substr in caplog.text:
+                return True
+            time.sleep(0.02)
+        return False
+
+    def test_upload_logs_outcome_without_filename(self, caplog):
+        # F-hygiene: the outcome log must carry the project + byte-count +
+        # injected flag, but never the original filename (personal data).
+        boundary = "----WebKitFormBoundary"
+        body = (
+            f"------WebKitFormBoundary\r\n"
+            f'Content-Disposition: form-data; name="project"\r\n'
+            f"\r\n"
+            f"marka\r\n"
+            f"------WebKitFormBoundary\r\n"
+            f'Content-Disposition: form-data; name="inject"\r\n'
+            f"\r\n"
+            f"0\r\n"
+            f"------WebKitFormBoundary\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="my_diagnosis.png"\r\n'
+            f"Content-Type: image/png\r\n"
+            f"\r\n"
+            f"FAKEPNG\r\n"
+            f"------WebKitFormBoundary--\r\n"
+        ).encode()
+
+        with caplog.at_level("INFO", logger="multideck.upload"):
+            conn = self._conn()
+            conn.request("POST", "/upload", body=body, headers={
+                "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundary",
+                "Content-Length": str(len(body)),
+            })
+            resp = conn.getresponse()
+            data = json.loads(resp.read())
+            assert data["ok"] is True
+
+            assert self._wait_log(caplog, "upload project=marka")
+        assert "bytes=7" in caplog.text     # len(b"FAKEPNG")
+        assert "injected=False" in caplog.text
+        assert "my_diagnosis.png" not in caplog.text
+        assert "my_diagnosis" not in caplog.text
+
     def test_upload_missing_project(self):
         boundary = "----Boundary"
         body = (
@@ -248,6 +297,48 @@ class TestUploadServerIntegration:
         conn.request("GET", "/nonexistent")
         resp = conn.getresponse()
         assert resp.status == 404
+
+
+class TestHealth:
+    """GET /health proves the handler thread is serving -- a session COUNT,
+    never names (hygiene) -- without spawning any psmux subprocess."""
+
+    @pytest.fixture(autouse=True)
+    def _server(self, tmp_path, monkeypatch):
+        import multideck.upload_server as mod
+        monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
+        monkeypatch.setattr(mod, "find_psmux", lambda: None)
+
+        UploadHandler.config_path = None
+        UploadHandler.cached_sessions = [
+            {"name": "marka", "path": "INTERNAL/marka"},
+            {"name": "upup", "path": "INTERNAL/upup"},
+        ]
+        UploadHandler.sessions_ts = time.time() + 9999
+        UploadHandler.port = 8080
+        UploadHandler.pid = 4321
+        UploadHandler.started_at = time.time() - 5
+
+        from http.server import HTTPServer
+        self.server = HTTPServer(("127.0.0.1", 0), UploadHandler)
+        self.port = self.server.server_address[1]
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        yield
+        self.server.shutdown()
+
+    def test_health_reports_ok_and_shape(self):
+        conn = HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", "/health")
+        resp = conn.getresponse()
+        assert resp.status == 200
+        data = json.loads(resp.read())
+        assert data["ok"] is True
+        assert data["service"] == "multideck-upload"
+        assert data["port"] == 8080
+        assert data["pid"] == 4321
+        assert data["sessions"] == 2  # a count, never session names
+        assert data["uptime_s"] >= 0
 
 
 class TestInSessionFeedback:
@@ -344,3 +435,42 @@ class TestInSessionFeedback:
         self._post("/upload?project=marka")
         self._wait_flash("image uploaded")
         assert mod._inflight.get("marka", 0) == 0
+
+
+class TestStopServer:
+    """Truthful stop_server: True only when the kill actually succeeded; the
+    pid file survives a failed kill so `status`/a retry can still find it."""
+
+    def test_no_pid_file_returns_false(self, tmp_path, monkeypatch):
+        # Pin: this invariant is unchanged by the taskkill-rc behavior below.
+        import multideck.upload_server as mod
+        monkeypatch.setattr(mod, "_pid_path", lambda port: tmp_path / "nonexistent.pid")
+        assert mod.stop_server(9999) is False
+
+    def test_keeps_pid_file_when_taskkill_fails(self, tmp_path, monkeypatch):
+        import multideck.upload_server as mod
+        pid_file = tmp_path / "upload_server-9999.pid"
+        pid_file.write_text("4321")
+        monkeypatch.setattr(mod, "_pid_path", lambda port: pid_file)
+        monkeypatch.setattr(mod.sys, "platform", "win32")
+
+        class _Result:
+            returncode = 1
+        monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _Result())
+
+        assert mod.stop_server(9999) is False
+        assert pid_file.exists()
+
+    def test_removes_pid_file_when_taskkill_succeeds(self, tmp_path, monkeypatch):
+        import multideck.upload_server as mod
+        pid_file = tmp_path / "upload_server-9999.pid"
+        pid_file.write_text("4321")
+        monkeypatch.setattr(mod, "_pid_path", lambda port: pid_file)
+        monkeypatch.setattr(mod.sys, "platform", "win32")
+
+        class _Result:
+            returncode = 0
+        monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _Result())
+
+        assert mod.stop_server(9999) is True
+        assert not pid_file.exists()

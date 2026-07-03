@@ -13,6 +13,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from multideck.log import get_logger
 from multideck.platform import find_psmux
 
 
@@ -32,16 +33,23 @@ def server_pid(port: int) -> int | None:
 
 
 def stop_server(port: int) -> bool:
-    """Stop the upload server running on the given port. Returns True if stopped."""
+    """Stop the upload server running on the given port. Returns True only if
+    the kill actually succeeded. On failure the pid file is kept (not
+    unlinked) so `status` or a retry can still find the process."""
+    log = get_logger("upload")
     pid = server_pid(port)
     if not pid:
         return False
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            if result.returncode != 0:
+                log.warning("taskkill pid %d failed rc=%d", pid, result.returncode)
+                return False
         else:
             os.kill(pid, 15)
     except OSError:
+        log.warning("failed to stop upload server pid %d", pid)
         return False
     try:
         _pid_path(port).unlink()
@@ -115,8 +123,8 @@ def _flash(psmux: str | None, project: str, message: str, duration_ms: int,
     cmd += ["display-message", "-d", str(duration_ms), message]
     try:
         subprocess.run(cmd, capture_output=True, timeout=3)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    except (OSError, subprocess.SubprocessError) as e:
+        get_logger("upload").warning("status-line flash failed for project=%s: %s", project, e)
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -477,7 +485,7 @@ self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
   const u = new URL(e.request.url);
   if (e.request.method !== 'GET' || u.pathname === '/upload' || u.pathname === '/api/sessions'
-      || u.pathname === '/install.mobileconfig') return;
+      || u.pathname === '/install.mobileconfig' || u.pathname === '/health') return;
   e.respondWith(
     fetch(e.request).then(r => {
       const copy = r.clone();
@@ -625,6 +633,9 @@ class UploadHandler(BaseHTTPRequestHandler):
     config_path: str | None = None
     cached_sessions: list[dict] = []
     sessions_ts: float = 0
+    port: int | None = None
+    pid: int | None = None
+    started_at: float = 0.0
 
     def _sessions(self) -> list[dict]:
         now = time.time()
@@ -678,6 +689,17 @@ class UploadHandler(BaseHTTPRequestHandler):
                 self._send_bytes(body, "text/html; charset=utf-8")
             else:
                 self.send_error(404)
+        elif path == "/health":
+            uptime = time.time() - UploadHandler.started_at if UploadHandler.started_at else 0.0
+            body = json.dumps({
+                "ok": True,
+                "service": "multideck-upload",
+                "port": UploadHandler.port,
+                "pid": UploadHandler.pid,
+                "uptime_s": uptime,
+                "sessions": len(UploadHandler.cached_sessions),
+            }).encode()
+            self._send_bytes(body, "application/json")
         elif path in _PWA_ROUTES:
             content_type, factory = _PWA_ROUTES[path]
             self._send_bytes(factory(), content_type, cache=True)
@@ -685,6 +707,7 @@ class UploadHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        log = get_logger("upload")
         parsed = urlparse(self.path)
         if parsed.path != "/upload":
             self.send_error(404)
@@ -710,6 +733,9 @@ class UploadHandler(BaseHTTPRequestHandler):
 
         ok = False
         project = flagged
+        injected = False
+        byte_count = 0
+        suffix = ""
         try:
             fields, files = _parse_multipart(self)
             project = fields.get("project", "") or flagged
@@ -723,6 +749,8 @@ class UploadHandler(BaseHTTPRequestHandler):
                 return
 
             filename, data = files["file"]
+            byte_count = len(data)
+            suffix = Path(filename).suffix
             basename = Path(filename).name.replace(" ", "_")
             basename = re.sub(r"[^\w.\-]", "_", basename)
             if not basename or basename.startswith("."):
@@ -736,7 +764,6 @@ class UploadHandler(BaseHTTPRequestHandler):
                 return
             dest.write_bytes(data)
 
-            injected = False
             if inject and psmux:
                 result = subprocess.run(
                     [psmux, "-L", project, "send-keys", "-t", project,
@@ -744,6 +771,8 @@ class UploadHandler(BaseHTTPRequestHandler):
                     capture_output=True,
                 )
                 injected = result.returncode == 0
+            elif inject:
+                log.warning("upload project=%s requested inject but psmux is unavailable", project)
 
             ok = True
             self._json_response({
@@ -752,6 +781,10 @@ class UploadHandler(BaseHTTPRequestHandler):
                 "injected": injected,
             })
         finally:
+            # INFO outcome line -- project + byte-count + injected + suffix only,
+            # NEVER the original filename (personal data; F-hygiene).
+            log.info("upload project=%s ok=%s bytes=%d injected=%s suffix=%s",
+                      project, ok, byte_count, injected, suffix)
             # Confirm in the same md: status line -- for both the listener (paired
             # with the early "uploading" flash) and mobile uploads.
             remaining = _inflight_dec(flagged) if flagged else 0
@@ -776,12 +809,25 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def log_message(self, fmt, *args):
-        pass
+        # Off at the default INFO level -- no noise, no INFO-logging of the
+        # ?project= query string -- but available via DEBUG for triage.
+        get_logger("upload").debug(fmt, *args)
 
 
 def run_server(port: int = 8080, config_path: str | None = None) -> None:
+    log = get_logger("upload")
     UploadHandler.config_path = config_path
-    server = ThreadingHTTPServer(("0.0.0.0", port), UploadHandler)
+    try:
+        server = ThreadingHTTPServer(("0.0.0.0", port), UploadHandler)
+    except OSError as e:
+        log.error("failed to bind 0.0.0.0:%d: %s", port, e)
+        raise
+
+    UploadHandler.port = port
+    UploadHandler.pid = os.getpid()
+    UploadHandler.started_at = time.time()
+    log.info("listening on 0.0.0.0:%d pid %d", port, UploadHandler.pid)
+
     pid_file = _pid_path(port)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
     pid_file.write_text(str(os.getpid()))
@@ -792,3 +838,4 @@ def run_server(port: int = 8080, config_path: str | None = None) -> None:
             pid_file.unlink()
         except OSError:
             pass
+        log.info("stopped")
