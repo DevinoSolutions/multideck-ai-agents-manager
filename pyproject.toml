@@ -25,6 +25,7 @@ testpaths = ["tests"]
 markers = [
     "platform: platform integration tests (require virtual displays)",
     "e2e: end-to-end tests (full pipeline)",
+    "needs_ssh: e2e tests that require a live SSH server (skipped locally by the ssh_available fixture)",
 ]
 
 [tool.ruff]
