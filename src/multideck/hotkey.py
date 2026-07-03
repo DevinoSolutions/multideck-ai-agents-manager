@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -322,41 +323,59 @@ def _heartbeat_loop(stop_event: threading.Event) -> None:
         stop_event.wait(HEARTBEAT_INTERVAL)
 
 
-def run_hotkey(server_url: str, session_names: set[str] | None = None) -> None:
-    log = get_logger("hotkey")
-    alt_held = False
-
-    def hook_proc(nCode, wParam, lParam):
-        nonlocal alt_held
-
-        if nCode != HC_ACTION:
-            return user32.CallNextHookEx(None, nCode, wParam, lParam)
-
-        kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
-
-        if kb.vkCode in _ALT_KEYS:
-            alt_held = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
-            return user32.CallNextHookEx(None, nCode, wParam, lParam)
-
-        if kb.vkCode == VK_V and alt_held and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
-            title = get_active_window_title()
-            project = project_from_title(title)
-
-            if project is None:
-                return user32.CallNextHookEx(None, nCode, wParam, lParam)
-
-            if session_names and project not in session_names:
-                return user32.CallNextHookEx(None, nCode, wParam, lParam)
-
-            if not clipboard_has_image():
-                return user32.CallNextHookEx(None, nCode, wParam, lParam)
-
-            threading.Thread(target=_do_upload, args=(server_url, project), daemon=True).start()
-            return 1
-
+def _hook_decide(state: dict[str, bool], server_url: str, nCode: int, wParam: int, lParam: int) -> int:
+    """Pure decision logic for one keyboard-hook callback. Extracted out of
+    the hook callback itself so it's reachable from a unit test without a
+    live hook + message loop; `state` carries `alt_held` across calls the
+    way the old closure's `nonlocal` did."""
+    if nCode != HC_ACTION:
         return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
-    hook_fn = HOOKPROC(hook_proc)
+    kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
+
+    if kb.vkCode in _ALT_KEYS:
+        state["alt_held"] = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
+        return user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+    if kb.vkCode == VK_V and state["alt_held"] and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+        title = get_active_window_title()
+        project = project_from_title(title)
+
+        if project is None:
+            return user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+        if not clipboard_has_image():
+            return user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+        threading.Thread(target=_do_upload, args=(server_url, project), daemon=True).start()
+        return 1
+
+    return user32.CallNextHookEx(None, nCode, wParam, lParam)
+
+
+def _make_hook_proc(state: dict[str, bool], server_url: str) -> Callable[[int, int, int], int]:
+    """Wrap `_hook_decide` so an uncaught exception can never break the hook
+    chain. A ctypes WINFUNCTYPE callback can't propagate a Python exception
+    across the C boundary -- CPython prints the traceback and returns the
+    restype default instead, which skips CallNextHookEx for that event and
+    sends the traceback to a hidden daemon's invisible stderr. This wrap
+    logs the exception and still always calls CallNextHookEx."""
+    log = get_logger("hotkey")
+
+    def hook_proc(nCode: int, wParam: int, lParam: int) -> int:
+        try:
+            return _hook_decide(state, server_url, nCode, wParam, lParam)
+        except Exception:
+            log.exception("Alt+V hook callback error")
+            return user32.CallNextHookEx(None, nCode, wParam, lParam)  # chain never broken
+
+    return hook_proc
+
+
+def run_hotkey(server_url: str) -> None:
+    log = get_logger("hotkey")
+    state = {"alt_held": False}
+    hook_fn = HOOKPROC(_make_hook_proc(state, server_url))
 
     hook = user32.SetWindowsHookExW(WH_KEYBOARD_LL, hook_fn, None, 0)
     if not hook:
