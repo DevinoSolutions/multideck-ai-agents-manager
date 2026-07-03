@@ -9,6 +9,7 @@ from click.testing import CliRunner
 from multideck import log
 from multideck.grid import MonitorRect
 from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts
+from multideck.titles import get_leaf_name
 
 
 @pytest.fixture(autouse=True)
@@ -70,16 +71,25 @@ class FakePlatform(Platform):
     windows/monitors/psmux. Reused by E5 to unit-test the decomposed
     run_multideck pieces (see tests/unit/test_platform_contract.py)."""
 
-    def __init__(self, monitors=None, windows=None):
+    def __init__(self, monitors=None, windows=None, supports_psmux: bool = False):
         self._monitors = monitors if monitors is not None else [
             MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
         ]
         self._windows = windows if windows is not None else {}
+        self._supports_psmux = supports_psmux
+        self._next_handle = 1
         self.dpi_aware_calls = 0
         self.launched_terminals: list[TerminalLaunchOpts] = []
         self.launched_vscode: list[VSCodeLaunchOpts] = []
         self.launched_psmux: list[PsmuxWindowOpts] = []
+        self.attached_psmux: list[tuple] = []
         self.moved: list[tuple] = []
+
+    def _register_window(self, title: str) -> None:
+        """Simulate the launched window becoming visible, so a launch->tile
+        flow within one test resolves the handle without a real sleep."""
+        self._windows[title] = self._next_handle
+        self._next_handle += 1
 
     def set_dpi_aware(self) -> None:
         self.dpi_aware_calls += 1
@@ -95,15 +105,23 @@ class FakePlatform(Platform):
 
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
         self.launched_terminals.append(opts)
+        self._register_window(opts.title)
 
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None:
         self.launched_vscode.append(opts)
+        self._register_window(get_leaf_name(opts.dir))
 
     def snapshot_windows(self):
         return self._windows
 
     def launch_psmux_session(self, windows) -> None:
         self.launched_psmux.extend(windows)
+
+    def attach_psmux(self, session_name, title, color=None, config_path=None) -> None:
+        self.attached_psmux.append((session_name, title, color, config_path))
+
+    def supports_psmux(self) -> bool:
+        return self._supports_psmux
 
 
 @pytest.fixture
