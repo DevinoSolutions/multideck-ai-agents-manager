@@ -1245,6 +1245,25 @@ def config_show(ctx: click.Context) -> None:
     click.echo()
 
 
+@config.command("migrate")
+@click.pass_context
+def config_migrate(ctx: click.Context) -> None:
+    """Migrate the config file to the current schema version, persisting any backfilled colors."""
+    from multideck.config import migrate_config_file
+
+    config_file = _find_config(ctx.obj.get("config_path"))
+    try:
+        changed = migrate_config_file(str(config_file))
+    except (ValueError, FileNotFoundError) as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if changed:
+        click.echo(f"  Migrated {S(str(config_file), dim=True)}")
+    else:
+        click.echo("  Already up to date; nothing to migrate.")
+
+
 @config.command("layout")
 @click.argument("columns", type=int)
 @click.argument("rows", type=int)

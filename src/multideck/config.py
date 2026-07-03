@@ -4,6 +4,7 @@ import colorsys
 import json
 import random
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -265,3 +266,53 @@ def load_config(path: str) -> MultideckConfig:
         settings=_parse_settings(settings_raw),
         version=version,
     )
+
+
+def _migrate_0_to_1(raw: dict) -> dict:
+    raw = dict(raw)
+    raw["version"] = 1
+    return raw
+
+
+_MIGRATIONS: dict[int, Callable[[dict], dict]] = {0: _migrate_0_to_1}
+
+
+def migrate_raw(raw: dict) -> dict:
+    """Apply pending schema migrations to a raw config dict, returning the
+    migrated dict. Pure -- does not touch disk; migrate_config_file does."""
+    version = raw.get("version", 0)
+    while version < SCHEMA_VERSION:
+        raw = _MIGRATIONS[version](raw)
+        version = raw["version"]
+    return raw
+
+
+def migrate_config_file(path: str) -> bool:
+    """Read, migrate to SCHEMA_VERSION, and persist backfilled project
+    colors, writing the canonical JSON shape back to `path`. Returns True if
+    the file changed, False if it was already current. This is the one place
+    in config.py that writes to disk -- load_config stays pure (R10)."""
+    config_path = Path(path)
+    if not config_path.exists():
+        raise FileNotFoundError(f"Config file not found: {path}")
+
+    text = config_path.read_text(encoding="utf-8")
+    try:
+        raw = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"Config is not valid JSON: {e}") from e
+
+    original_version = raw.get("version", 0)
+    raw = migrate_raw(raw)
+    version_changed = raw.get("version", 0) != original_version
+
+    projects = [_parse_project(p) for p in raw.get("projects", [])]
+    colors_changed = _backfill_colors(projects)
+    for i, p in enumerate(projects):
+        raw["projects"][i]["color"] = p.color
+
+    if not version_changed and not colors_changed:
+        return False
+
+    config_path.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+    return True
