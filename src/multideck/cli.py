@@ -8,8 +8,9 @@ from pathlib import Path
 import click
 
 from multideck import __version__
-from multideck.config import _random_tab_color, load_config
+from multideck.config import MultideckConfig, _random_tab_color, load_config
 from multideck.init_config import write_config
+from multideck.log import heartbeat_fresh
 
 S = click.style
 
@@ -2146,7 +2147,56 @@ def _probe_port(port: int) -> bool:
         s.close()
 
 
-def _render_status(config_file: Path) -> None:
+def _health_check(port: int) -> bool:
+    """HTTP GET /health -- proves the upload server is actually SERVING, not
+    just that something is bound to the port or that a pid is alive."""
+    from urllib.error import URLError
+    from urllib.request import urlopen
+
+    try:
+        with urlopen(f"http://127.0.0.1:{port}/health", timeout=0.5) as resp:
+            data = json.loads(resp.read())
+            return bool(data.get("ok"))
+    except (URLError, OSError, json.JSONDecodeError):
+        return False
+
+
+def _upload_state(port: int) -> str:
+    """"on" (serving) / "dead" (port open or pid alive but not serving --
+    the "reports ON while dead" bug, now surfaced) / "off"."""
+    if _health_check(port):
+        return "on"
+    from multideck.upload_server import server_pid
+    if _probe_port(port) or _pid_alive(server_pid(port)):
+        return "dead"
+    return "off"
+
+
+def _listener_state() -> str:
+    """"on" (heartbeat fresh) / "stale" (pid alive, heartbeat expired) / "off"."""
+    if sys.platform != "win32":
+        return "off"
+    from multideck.hotkey import listener_pid
+    pid = listener_pid()
+    if not pid:
+        return "off"
+    return "on" if heartbeat_fresh("hotkey") else "stale"
+
+
+def _gather_status(cfg: MultideckConfig) -> dict[str, str]:
+    return {
+        "upload_server": _upload_state(cfg.settings.upload_port),
+        "listener": _listener_state(),
+    }
+
+
+def _is_degraded(status: dict[str, str]) -> bool:
+    return status["upload_server"] == "dead" or status["listener"] == "stale"
+
+
+def _render_status(config_file: Path) -> bool:
+    """Prints the status report; returns True if any daemon is degraded
+    (dead/stale). Never exits -- shared with the menu's _menu_status."""
     from multideck.launch import psmux_status
 
     cfg = load_config(str(config_file))
@@ -2169,29 +2219,46 @@ def _render_status(config_file: Path) -> None:
         preview = ", ".join(d["name"] for d in down[:6]) + ("..." if len(down) > 6 else "")
         click.echo(f"\n  {S(str(len(down)), fg='yellow', bold=True)} not running  {S('(' + preview + ')', dim=True)}")
     _divider()
-    on = _probe_port(cfg.settings.upload_port)
-    server = (S(f"ON  port {cfg.settings.upload_port}", fg="green", bold=True)
-              if on else S("off", dim=True))
-    click.echo(f"  {S('Upload server', bold=True)}   {server}")
 
-    pid = None
-    if sys.platform == "win32":
-        from multideck.hotkey import listener_pid
-        pid = listener_pid()
-    listener = (S(f"ON  pid {pid}", fg="green", bold=True) if pid
-                else S("off  (starts with `multideck attach`)", dim=True))
-    click.echo(f"  {S('Alt+V listener', bold=True)}   {listener}")
+    status = _gather_status(cfg)
+    upload_labels = {
+        "on": S(f"ON  port {cfg.settings.upload_port}", fg="green", bold=True),
+        "dead": S(f"DEAD  port {cfg.settings.upload_port} (not responding)", fg="red", bold=True),
+        "off": S("off", dim=True),
+    }
+    click.echo(f"  {S('Upload server', bold=True)}   {upload_labels[status['upload_server']]}")
+
+    listener_labels = {
+        "on": S("ON", fg="green", bold=True),
+        "stale": S("STALE  (heartbeat expired)", fg="red", bold=True),
+        "off": S("off  (starts with `multideck attach`)", dim=True),
+    }
+    click.echo(f"  {S('Alt+V listener', bold=True)}   {listener_labels[status['listener']]}")
+
+    return _is_degraded(status)
 
 
 @main.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Print daemon status as JSON")
 @click.pass_context
-def status_cmd(ctx: click.Context) -> None:
+def status_cmd(ctx: click.Context, as_json: bool) -> None:
     """Show which psmux sessions and services are currently running."""
     config_file = _find_config(ctx.obj.get("config_path"))
     if not config_file.exists():
-        click.echo("No config found. Run multideck first.", err=True)
+        if as_json:
+            click.echo(json.dumps({"error": "No config found."}))
+        else:
+            click.echo("No config found. Run multideck first.", err=True)
         sys.exit(1)
-    _render_status(config_file)
+
+    if as_json:
+        cfg = load_config(str(config_file))
+        status = _gather_status(cfg)
+        click.echo(json.dumps(status))
+        sys.exit(3 if _is_degraded(status) else 0)
+
+    if _render_status(config_file):
+        sys.exit(3)
 
 
 @main.command("down")
@@ -2233,7 +2300,7 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
         if stop_server(cfg.settings.upload_port):
             click.echo(f"  {S('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}.")
         else:
-            click.echo(f"  {S('-', dim=True)} Upload server was not running.")
+            click.echo(f"  {S('-', dim=True)} Upload server not running, or could not be stopped (see logs).")
 
     if do_all and sys.platform == "win32":
         from multideck.hotkey import stop_listener
