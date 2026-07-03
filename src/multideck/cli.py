@@ -361,7 +361,8 @@ def _tools_menu(config_file: Path, data: dict) -> None:
         _banner()
         click.echo(f"  {S('Tool Commands', bold=True)}")
         click.echo(f"  {S('Each tool name maps to the shell command that runs inside', dim=True)}")
-        click.echo(f"  {S('the terminal. e.g. \"claude\" runs \"claude --continue\".', dim=True)}")
+        tools_hint = 'the terminal. e.g. "claude" runs "claude --continue".'
+        click.echo(f"  {S(tools_hint, dim=True)}")
         _divider()
         click.echo()
         for name, cmd in tools.items():
