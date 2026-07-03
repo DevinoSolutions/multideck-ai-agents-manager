@@ -5,6 +5,15 @@ multideck.config.json
 # Any extra named configs you keep around
 *.local.json
 
+# Python build artifacts
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+
 # Windows / editor cruft
 Thumbs.db
 desktop.ini

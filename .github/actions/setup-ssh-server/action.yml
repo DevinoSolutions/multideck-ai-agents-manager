@@ -1,0 +1,55 @@
+name: Setup SSH Server
+description: Start a local SSH server for e2e testing
+
+runs:
+  using: composite
+  steps:
+    - name: Linux - Setup OpenSSH
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get install -yq openssh-server
+        ssh-keygen -t ed25519 -f ~/.ssh/id_test -N ""
+        cat ~/.ssh/id_test.pub >> ~/.ssh/authorized_keys
+        chmod 600 ~/.ssh/authorized_keys
+        sudo sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config
+        sudo service ssh start
+        echo "MULTIDECK_TEST_SSH_PORT=2222" >> "$GITHUB_ENV"
+        echo "MULTIDECK_TEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_test -p 2222 localhost whoami
+
+    - name: macOS - Setup OpenSSH
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        ssh-keygen -t ed25519 -f ~/.ssh/id_test -N ""
+        cat ~/.ssh/id_test.pub >> ~/.ssh/authorized_keys
+        chmod 600 ~/.ssh/authorized_keys
+        sudo systemsetup -setremotelogin on
+        sudo sed -i '' 's/^#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config 2>/dev/null || true
+        sudo sed -i '' 's/^PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config 2>/dev/null || true
+        sudo launchctl stop com.openssh.sshd 2>/dev/null || true
+        sudo launchctl start com.openssh.sshd 2>/dev/null || true
+        sleep 2
+        echo "MULTIDECK_TEST_SSH_PORT=22" >> "$GITHUB_ENV"
+        echo "MULTIDECK_TEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
+        ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.ssh/id_test localhost whoami || echo "SSH smoke-check failed (non-fatal in CI)"
+
+    - name: Windows - Setup OpenSSH
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+        Start-Service sshd
+        Set-Service -Name sshd -StartupType Automatic
+        $sshDir = "$env:USERPROFILE\.ssh"
+        if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
+        ssh-keygen -t ed25519 -f "$sshDir\id_test" -N '""'
+        $pub = Get-Content "$sshDir\id_test.pub"
+        $adminKeyFile = "$env:ProgramData\ssh\administrators_authorized_keys"
+        Add-Content -Path $adminKeyFile -Value $pub
+        icacls $adminKeyFile /inheritance:r /grant "SYSTEM:(R)" /grant "BUILTIN\Administrators:(R)"
+        Restart-Service sshd
+        echo "MULTIDECK_TEST_SSH_PORT=22" >> $env:GITHUB_ENV
+        echo "MULTIDECK_TEST_SSH_KEY=$sshDir\id_test" >> $env:GITHUB_ENV

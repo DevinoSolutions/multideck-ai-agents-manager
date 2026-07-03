@@ -1,252 +1,315 @@
-# multideck-ai-agent
+<h1 align="center">multideck</h1>
 
-**Open every project in its own terminal — running Claude Code, Codex, or any CLI agent — and auto-tile them into a grid across all your monitors. One config file. DPI-correct on mixed-scale setups.**
+<p align="center">
+  <strong>Open every project in its own terminal, launch your AI agent, and auto-tile all windows across your screens.</strong><br />
+  One command. Every tool. Every monitor.
+</p>
 
-![platform](https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-0078D6?logo=windows)
-![shell](https://img.shields.io/badge/PowerShell-5.1%2B-5391FE?logo=powershell&logoColor=white)
-![license](https://img.shields.io/badge/license-MIT-green)
+<p align="center">
+  <a href="https://pypi.org/project/multideck"><img src="https://img.shields.io/pypi/v/multideck?color=3776AB&label=pypi" alt="PyPI version" /></a>
+  <a href="https://pypi.org/project/multideck"><img src="https://img.shields.io/pypi/dm/multideck?color=blue" alt="PyPI downloads" /></a>
+  <a href="https://github.com/DevinoSolutions/multideck-ai-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0" /></a>
+  <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" /></a>
+  <img src="https://img.shields.io/badge/dependencies-click-success" alt="Minimal Dependencies" />
+</p>
 
-```
-        Monitor 1  (4K @ 250%)         Monitor 2  (4K @ 250%)        Monitor 3 (1080p @ 175%)
-     ┌────────────┬────────────┐    ┌────────────┬────────────┐    ┌─────────┬─────────┐
-     │   api      │   web      │    │   infra    │   docs     │    │  ops    │   …     │
-     │  [claude]  │  [claude]  │    │  [codex]   │  [code]    │    │ [claude]│         │
-     └────────────┴────────────┘    └────────────┴────────────┘    └─────────┴─────────┘
-                       columns × rows per screen · true physical pixels on every monitor
-```
-
-You run one command. Each project opens in its own titled, color-tabbed terminal, already `cd`'d into the right folder with your agent running — then every window snaps into a clean grid spanning all your screens.
+<p align="center">
+  <img src="https://img.shields.io/badge/Windows-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Windows" />
+  <img src="https://img.shields.io/badge/macOS-000000?style=flat-square&logo=apple&logoColor=white" alt="macOS" />
+  <img src="https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black" alt="Linux" />
+</p>
 
 ---
 
-## Why
-
-If you juggle a fleet of repos with terminal AI agents (Claude Code, Codex, aider, …), you waste minutes every morning opening terminals, `cd`-ing around, starting the agent, and dragging windows into place. `multideck` makes that a single double-click — and unlike manual snapping or most tilers, it gets the geometry **right on monitors that run different display scales** (the usual reason auto-tiling drifts or leaves gaps).
-
-## Features
-
-- 🗂 **One window per project**, titled and color-tabbed, opened directly in its folder.
-- 🤖 **Any CLI agent** — Claude Code and Codex out of the box; add your own in one line.
-- 🪟 **VS Code support** — projects can open in VS Code instead of a terminal.
-- 🧮 **Configurable grid** — `columns × rows` per screen, spanning every monitor.
-- 📐 **DPI-correct** — per-monitor-aware, so a 175% laptop screen next to 250% 4K monitors tiles perfectly (see [How DPI works](#how-the-dpi-handling-works)).
-- ✨ **Zero-typing setup** — point `-Init` at a folder and it scans your git repos and writes the config for you, with groups and colors filled in.
-- 🏷 **Groups** — tag projects and launch just one set: `multideck -Group lead-gen`.
-- 🧭 **Interactive menu** — run with no arguments for a friendly menu; no flags to memorize.
-- ♻️ **Idempotent** — re-running only opens what's missing; `-RetileAll` re-snaps everything.
-- 👀 **`-DryRun`** — preview the whole plan before anything launches.
-- 🔒 **Your config stays local** — `multideck.config.json` is git-ignored; only the example ships.
-
-## Requirements
-
-- **Windows 10 (1703+) or 11**
-- **[Windows Terminal](https://aka.ms/terminal)** (`wt`) — for terminal-based tools
-- **Windows PowerShell 5.1** (built in) or PowerShell 7+
-- Whatever you launch: the **[Claude Code](https://www.anthropic.com/claude-code)** CLI, **Codex**, **[VS Code](https://code.visualstudio.com/)** (`code` on PATH), etc.
-- For **remote projects**: the **OpenSSH client** (`ssh` on PATH — built into Windows 10/11, enable via *Settings → System → Optional features*), key-based auth set up for the host, and for remote VS Code the **[Remote-SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh)**.
-
-## Install
-
-```powershell
-git clone https://github.com/DevinoSolutions/multideck-ai-agent.git
-cd multideck-ai-agent
+```
+      Monitor 1  (4K @ 250%)         Monitor 2  (4K @ 250%)        Monitor 3 (1080p @ 175%)
+   +------------+------------+    +------------+------------+    +---------+---------+
+   |   api      |   web      |    |   infra    |   docs     |    |  ops    |   ...   |
+   |  [claude]  |  [claude]  |    |  [codex]   |  [vscode]  |    | [claude]|         |
+   +------------+------------+    +------------+------------+    +---------+---------+
+                     columns x rows per screen -- true physical pixels on every monitor
 ```
 
-**Option A — run from anywhere (recommended):** double-click **`install.bat`** (or run `.\scripts\install.ps1`). It adds the folder to your user PATH and drops **Desktop + Start-Menu shortcuts**, so you can type `multideck` in any terminal or double-click an icon. Reversible any time with `uninstall.bat`. *(Open a new terminal afterwards so PATH refreshes.)*
+## Quick Start
 
-**Option B — run in place:** skip the installer and just call `.\multideck.bat` from the repo folder.
-
-> The examples below use `multideck`; if you didn't install, use `.\multideck.bat` instead.
-
-## First run — build your config
-
-**Let it scan for you** (no JSON by hand):
-
-```powershell
-multideck -Init -BaseDir C:\code     # scans C:\code for git repos, writes multideck.config.json
-multideck -DryRun                    # preview, then:
+```bash
+pip install multideck
 multideck
 ```
 
-`-Init` walks the folder, finds git repositories (a few levels deep), and writes a config with **groups derived from the top folder** (`internal/api` → group `internal`), auto-assigned tab colors, and unique titles. Just run with no `-BaseDir` and it'll ask which folder to scan — in fact, the very first time you run `multideck` with no config, it offers to do this for you.
+On first run, multideck scans your Claude, Codex, and VS Code history, finds your recent projects, and generates a config. Run it again to launch everything.
 
-**Or edit by hand:** copy `multideck.config.example.json` to `multideck.config.json` and tweak it.
+## Supported Tools
 
-## Everyday use
+<table>
+  <tr>
+    <th>Tool</th>
+    <th>Type</th>
+    <th>Launch command</th>
+    <th>Session resume</th>
+    <th>Multi-window</th>
+  </tr>
+  <tr>
+    <td><strong>Claude Code</strong></td>
+    <td>CLI agent</td>
+    <td><code>claude --continue</code></td>
+    <td align="center">Yes</td>
+    <td align="center">Yes</td>
+  </tr>
+  <tr>
+    <td><strong>Codex CLI</strong></td>
+    <td>CLI agent</td>
+    <td><code>codex</code></td>
+    <td align="center">Yes</td>
+    <td align="center">Yes</td>
+  </tr>
+  <tr>
+    <td><strong>Cursor Agent</strong></td>
+    <td>CLI agent</td>
+    <td><code>cursor-agent</code></td>
+    <td align="center">--</td>
+    <td align="center">--</td>
+  </tr>
+  <tr>
+    <td><strong>Antigravity (agy)</strong></td>
+    <td>CLI agent</td>
+    <td><code>agy</code></td>
+    <td align="center">--</td>
+    <td align="center">--</td>
+  </tr>
+  <tr>
+    <td><strong>VS Code</strong></td>
+    <td>IDE</td>
+    <td><code>code</code></td>
+    <td align="center">--</td>
+    <td align="center">--</td>
+  </tr>
+  <tr>
+    <td><strong>Cursor IDE</strong></td>
+    <td>IDE</td>
+    <td><code>cursor</code></td>
+    <td align="center">--</td>
+    <td align="center">--</td>
+  </tr>
+  <tr>
+    <td><strong>Custom</strong></td>
+    <td>Any</td>
+    <td><em>your command</em></td>
+    <td align="center">--</td>
+    <td align="center">--</td>
+  </tr>
+</table>
 
-Run **`multideck`** with no arguments for the menu:
+Add any tool by mapping a name to a shell command in `settings.tools`. CLI agents open in a terminal; IDE tools open via their native CLI (`code`, `cursor`).
+
+### Happy (mobile/web access)
+
+Enable [Happy](https://github.com/slopus/happy) to monitor and control all your AI sessions from your phone or browser with end-to-end encryption:
+
+```json
+"settings": { "happy": true }
+```
+
+Requires `npm install -g happy`. Supported agents: Claude, Codex. Per-project override with `"happy": true/false`.
+
+### psmux (persistent sessions for SSH access)
+
+Enable [psmux](https://github.com/psmux/psmux) (native Windows terminal multiplexer) so each project runs in a named session you can attach to from anywhere — SSH from your phone, another PC, or a second terminal:
+
+```json
+"settings": { "psmux": true }
+```
+
+Requires psmux installed (`choco install psmux` or download from GitHub). When enabled, multideck creates a detached psmux session per project and opens Windows Terminal attached to it. From any SSH client: `psmux attach -t project-name`.
+
+## Usage
+
+Run `multideck` with no arguments for the interactive menu:
 
 ```
-  multideck
-  =========
-   1) Launch missing + tile new windows   (default)
-   2) Re-tile ALL open windows
-   3) Launch a group   (internal, infra, lead-gen)
-   4) Dry run (preview, change nothing)
-   5) Re-generate config from a folder scan
-   Q) Quit
+           _ _   _    _        _
+ _ __ _  _| | |_(_)__| |___ __| |__
+| '  \ || | |  _| / _` / -_) _| / /
+|_|_|_\_,_|_|\__|_\__,_\___\__|_\_\
+  v1.0.0  auto-tile your AI workspace
+
+  ----------------------------------------
+
+   1   Launch & tile new windows  (default)
+   2   Re-tile all open windows
+   3   Launch a group  AUTOMATIONS | INTERNAL | LEAD-GEN
+   e   Edit config
+   q   Quit
 ```
 
 Or skip the menu with flags:
 
 | Command | What it does |
 | --- | --- |
-| `multideck` | Interactive menu (press **Enter** for the default: launch + tile new). |
-| `multideck -Go` | Launch any projects that aren't open, then tile the **new** windows — no menu. |
-| `multideck -RetileAll` | Re-tile **every** matching window — already-open ones too. (`multideck-retile.bat`) |
-| `multideck -Group <name>` | Launch only the projects in that group. |
-| `multideck -DryRun` | Print the launch + tiling plan and exit. Touches nothing. |
-| `multideck -Init -BaseDir <folder>` | Generate `multideck.config.json` by scanning a folder. |
-| `multideck -Config <path>` | Use a different config file. |
-
-Flags combine, e.g. `multideck -Group infra -DryRun` or `multideck -Init -BaseDir C:\code -DryRun`.
+| `multideck` | Interactive menu. |
+| `multideck --go` | Launch + tile new windows, no menu. |
+| `multideck --retile-all` | Re-tile every matching window. |
+| `multideck -g <name>` | Launch only projects in a group. |
+| `multideck --init` | Re-scan sessions and regenerate config. |
+| `multideck --init --base-dir <folder>` | Generate config from a folder of git repos. |
+| `multideck --edit` | Open config in your default editor. |
+| `multideck docs` | Print full config reference (Markdown). |
+| `multideck sessions` | List active psmux sessions, pick one to attach. |
+| `multideck sessions <name>` | Attach directly to a psmux session by name. |
 
 ## Configuration
 
-Everything lives in `multideck.config.json` (generate it with `-Init`, or copy `multideck.config.example.json`):
+Config is stored at a platform-standard location:
 
-```jsonc
+- **Windows:** `%APPDATA%\multideck\config.json`
+- **macOS:** `~/Library/Application Support/multideck/config.json`
+- **Linux:** `~/.config/multideck/config.json`
+
+Or place `multideck.config.json` in your working directory.
+
+```json
 {
-  "baseDir": "C:/Users/you/code",            // root that relative project paths join onto
-
-  "layout": { "columns": 2, "rows": 1 },     // tiles per screen
-
+  "baseDir": "C:/Users/you/projects",
+  "layout": { "columns": 2, "rows": 1 },
   "settings": {
-    "defaultTool": "claude",                  // tool used when a project omits "tool"
-    "settleSeconds": 3,                       // wait for new windows before moving them
-    "launchDelayMs": 400,                     // pause between launches
-    "tools": {                                // command run inside Windows Terminal, per tool
+    "defaultTool": "claude",
+    "settleSeconds": 3,
+    "launchDelayMs": 400,
+    "happy": false,
+    "tools": {
       "claude": "claude --continue",
-      "codex":  "codex --yolo"
+      "codex": "codex",
+      "cursor-agent": "cursor-agent",
+      "agy": "agy",
+      "aider": "aider --model sonnet"
     }
   },
-
   "projects": [
-    { "path": "internal/api",  "group": "internal", "color": "#3b82f6" },
-    { "path": "internal/web",  "group": "internal", "color": "#22c55e" },
-    { "path": "infra/tf",      "group": "infra",    "color": "#f59e0b", "tool": "codex" },
-    { "path": "docs",          "group": "internal", "color": "#a855f7", "tool": "code"  },
-    { "path": "labs/spike",    "group": "labs",     "color": "#ef4444", "enabled": false },
-    { "path": "C:/work/ops",   "title": "ops" }
+    { "path": "INTERNAL/api",  "group": "INTERNAL", "color": "#3b82f6" },
+    { "path": "INTERNAL/web",  "group": "INTERNAL", "color": "#22c55e" },
+    { "path": "LEAD-GEN/outreach", "group": "LEAD-GEN", "tool": "codex" },
+    { "path": "docs", "tool": "vscode" },
+    { "path": "frontend", "tool": "cursor" }
   ]
 }
 ```
 
-> Paths accept **forward slashes** (`internal/api`) — no `\\` escaping needed. `%ENV%` vars and `~` work too.
+### Project fields
 
-### Fields
-
-| Key | Where | Default | Meaning |
-| --- | --- | --- | --- |
-| `baseDir` | top level | repo root | Root that **relative** project `path`s join onto. |
-| `layout.columns` / `layout.rows` | top level | `2` / `1` | Tiles per screen. `2×1` = halves; `2×2` = quadrants; `3×1` = thirds; `1×1` = maximized. |
-| `settings.defaultTool` | settings | `claude` | Tool for projects that don't set their own `tool`. |
-| `settings.settleSeconds` | settings | `3` | Seconds to wait after launching before tiling (only when something launched). |
-| `settings.launchDelayMs` | settings | `400` | Delay between launches so windows register in order. |
-| `settings.tools` | settings | claude, codex | Map of tool name → command run inside Windows Terminal. |
-| `settings.ssh.shell` | settings | `bash -lc` | Login shell that wraps remote agent commands so the remote `PATH` is sourced. Set `""` to run unwrapped, or e.g. `sh -lc` / `zsh -lc`. |
-| `path` | project | — *(required)* | Absolute, or relative to `baseDir`. Forward slashes OK. |
-| `group` | project | none | Tag for `-Group` subset launches. |
-| `tool` | project | `defaultTool` | Which tool to launch. Use `"code"` to open in VS Code instead of a terminal. |
-| `color` | project | none | Windows Terminal tab color (`#rrggbb`). |
-| `title` | project | folder name | Window title, and the key used to find the window for tiling — keep these unique. **`code` windows are matched by their folder name instead** (VS Code titles its window after the opened folder), so for `tool:"code"` a `title` is display-only. |
-| `enabled` | project | `true` | Set `false` to skip a project without deleting it. |
-| `host` | project | none | SSH target (`user@ip`, `user@host`, or an ssh-config alias). When set, the project runs **remotely** — the agent starts over `ssh`, or VS Code opens via Remote-SSH. |
-| `remotePath` | project | `path` | Remote working directory, only needed when it differs from `path`. For `tool:"code"`, use an absolute remote path. |
-
-## Layout examples
-
-```jsonc
-"layout": { "columns": 2, "rows": 1 }   // two columns per screen  (the default)
-"layout": { "columns": 3, "rows": 1 }   // three columns per screen
-"layout": { "columns": 2, "rows": 2 }   // four quadrants per screen
-"layout": { "columns": 1, "rows": 1 }   // one maximized window per screen
-```
-
-Windows fill slots in list order, left-to-right then top-to-bottom, cycling across screens. List more projects than slots and later windows stack on the same slot — just like opening more than fit.
-
-## Groups
-
-Tag related projects and launch them as a set:
-
-```jsonc
-{ "path": "lead-gen/upwork",   "group": "lead-gen" },
-{ "path": "lead-gen/wellfound","group": "lead-gen" }
-```
-
-```powershell
-multideck -Group lead-gen     # opens + tiles just that group
-```
-
-`-Init` fills `group` in for you from the top folder of each repo, so a `lead-gen/…` layout is grouped automatically. Menu option **3** lists your groups to pick from.
-
-## Adding your own agent / tool
-
-Anything that runs in a terminal works — add a line to `settings.tools`, then reference it per project:
-
-```jsonc
-"settings": {
-  "tools": {
-    "claude": "claude --continue",
-    "codex":  "codex --yolo",
-    "aider":  "aider --model sonnet",
-    "shell":  "powershell"
-  }
-},
-"projects": [
-  { "path": "ml-service", "tool": "aider" },
-  { "path": "scratch",    "tool": "shell" }
-]
-```
-
-The command runs via `cmd /k <command>` inside a fresh Windows Terminal tab opened in the project folder. The special tool name `code` is handled separately — it launches VS Code in its own window and matches that window by the **opened folder's name** (what VS Code puts in its title bar), so any `title` you set is display-only and doesn't affect tiling.
-
-## Remote projects over SSH
-
-Any project can run on a remote machine instead of locally — just add a `host`. The same host works for Claude Code, Codex, or VS Code; pick per project with `tool`:
-
-```jsonc
-"projects": [
-  { "host": "deploy@10.0.0.5", "path": "/srv/api", "tool": "claude" },          // claude over ssh
-  { "host": "deploy@10.0.0.5", "path": "/srv/web", "tool": "codex"  },          // codex over ssh
-  { "host": "ubuntu@vm-2", "path": "api", "remotePath": "/home/ubuntu/work/api", "tool": "code" } // VS Code Remote-SSH
-]
-```
-
-- **`host`** is whatever you'd type after `ssh` — `user@ip`, `user@hostname`, or a `~/.ssh/config` alias. Auth uses your existing SSH keys / agent (multideck never handles passwords; a password prompt simply appears in the terminal).
-- **CLI agents** open a Windows Terminal running `ssh -t <host> "bash -lc 'cd <dir> && <tool command>'"`. The login-shell wrap (`settings.ssh.shell`, default `bash -lc`) ensures tools installed via nvm/asdf/Homebrew are found; set it to `""` to disable, or to `sh -lc` / `zsh -lc` for other shells. If SSH drops or the agent exits, the window stays open at a local prompt so the tile isn't lost.
-- **VS Code** opens already connected via Remote-SSH: `code --remote ssh-remote+<host> <remoteDir>`. Requires the [Remote-SSH extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-ssh). Use an **absolute** `remotePath` for `code`.
-- **`remotePath`** overrides the remote directory when it differs from `path`; otherwise `path` is used as the remote directory.
-- Remote terminal windows tile exactly like local ones (by title); remote `code` windows tile by their folder name, same as local VS Code. Remote `code` connects asynchronously — including a one-time remote-server install on the very first connect to a host — so multideck polls a few extra seconds for a freshly opened `code` window (up to ~20 s) before tiling it. You don't normally need to raise `settleSeconds` for `code`.
-
-Remote and local projects mix freely in one config, and `-Group remote` launches just your remote set.
-
-## How the DPI handling works
-
-Naïve window tilers read monitor sizes and call `MoveWindow` from a **DPI-unaware** process. Windows then hands back a *virtualized* 96-DPI coordinate space, so a 4K monitor at 250% reports as `1536×864` and a 1080p screen at 175% reports as `1097×617`. The half-screen math is computed in that fake space, and on any monitor whose scale differs from the primary the rectangle gets mis-scaled — windows land too small, with gaps.
-
-`multideck` flips the launcher to **Per-Monitor-DPI-Aware (V2)** *before* it reads any screen, so `Screen.AllScreens` and `MoveWindow` work in **true physical pixels per monitor**:
-
-| Monitor | DPI-unaware (wrong) | Per-Monitor V2 (multideck) |
+| Field | Default | Description |
 | --- | --- | --- |
-| 4K @ 250% | `1536 × 864` | `3840 × 2160` |
-| 1080p @ 175% | `1097 × 617` | `1920 × 1080` |
+| `path` | *(required)* | Absolute, or relative to `baseDir`. |
+| `group` | none | Tag for group launches (`-g`). |
+| `tool` | `defaultTool` | `claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool. |
+| `color` | random | Terminal tab color (`#rrggbb`). |
+| `title` | folder name | Window title for matching. |
+| `enabled` | `true` | Set `false` to skip without deleting. |
+| `happy` | inherit | Override global Happy setting for this project. |
+| `host` | none | SSH target for remote projects. |
+| `remotePath` | `path` | Remote directory when different from `path`. |
+| `windows` | none | `int` or `["name1", "name2"]` for multi-window sessions. |
 
-The grid is then computed in real pixels and is correct on every screen regardless of its scale.
+### Multi-window sessions
 
-## Troubleshooting
+Open the same project in multiple windows, each resuming a different conversation:
 
-- **`No config found`** — run `multideck -Init -BaseDir <folder>`, or copy `multideck.config.example.json` to `multideck.config.json`.
-- **`multideck` not recognized after install** — open a **new** terminal so the updated PATH loads.
-- **`Not found: <name>` when tiling** — the window title didn't match. Titles must be unique (`-Init` auto-disambiguates duplicates); if a terminal tool overrides its own title after launch, set a `title` and raise `settleSeconds`. (`code` windows are matched by folder name, not `title`, so this applies to terminal tools.)
-- **A project is skipped** — its folder doesn't exist under `baseDir` (the path is printed), or `enabled` is `false`.
-- **`wt` not recognized** — install [Windows Terminal](https://aka.ms/terminal).
-- **Remote window opens then closes / agent "not found"** — the remote tool isn't on the non-login `PATH`. Keep the default `settings.ssh.shell` of `bash -lc` (login-shell wrap), or set it to your remote shell. The window stays at a local prompt so you can read the error.
-- **`ssh` not recognized** — enable the Windows OpenSSH client (*Settings → System → Optional features → Add → OpenSSH Client*).
-- **Remote VS Code doesn't connect** — install the Remote-SSH extension and confirm `ssh <host>` works from a normal terminal first; use an absolute `remotePath`.
-- **Nothing tiles on re-run** — by design, a plain run only positions windows it just opened. Use `-RetileAll` (or `multideck-retile.bat`) to re-snap windows that were already open.
-- **Scripts blocked** — the `.bat` files already pass `-ExecutionPolicy Bypass`; run those rather than the `.ps1` directly.
+```json
+{ "path": "api", "windows": 3 }
+```
+
+This opens 3 windows (`api`, `api-2`, `api-3`), each resuming the Nth most recent Claude/Codex session.
+
+### Remote projects
+
+```json
+{ "host": "deploy@server", "path": "/srv/api", "tool": "claude" }
+```
+
+CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
+
+### Custom tools
+
+```json
+"tools": {
+  "claude": "claude --continue",
+  "codex": "codex",
+  "cursor-agent": "cursor-agent",
+  "agy": "agy",
+  "aider": "aider --model sonnet",
+  "shell": "bash"
+}
+```
+
+## Testing
+
+<table>
+  <thead>
+    <tr>
+      <th>Job</th>
+      <th align="center" width="180">Live status</th>
+      <th>Platforms</th>
+      <th>What it verifies</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Unit</strong></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td>Windows / macOS / Linux<br/>Python 3.10 -- 3.13</td>
+      <td>Config parsing, grid computation, title generation, session resume, discovery, grouping (12 matrix jobs)</td>
+    </tr>
+    <tr>
+      <td><strong>Platform</strong></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td>Windows / macOS / Linux</td>
+      <td>Real monitor detection (ctypes/Swift/xrandr), real window find+move, real terminal launch, DPI scaling</td>
+    </tr>
+    <tr>
+      <td><strong>E2E</strong></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td>Windows / macOS / Linux</td>
+      <td>Full CLI dry-run, config loading, group filtering, SSH project handling, vscode/cursor tool alias, multi-window</td>
+    </tr>
+    <tr>
+      <td><strong>Packaging</strong></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
+      <td>Linux</td>
+      <td>Build wheel, install from wheel, <code>multideck --help</code> and <code>--version</code> smoke test</td>
+    </tr>
+  </tbody>
+</table>
+
+### Run it yourself
+
+```bash
+pip install -e ".[dev]"
+pytest                    # all tests
+pytest tests/unit/ -v     # unit tests only
+pytest tests/e2e/ -v      # end-to-end tests
+pytest tests/platform/ -v # platform-specific tests (needs display)
+```
+
+## Cross-platform support
+
+| Feature | Windows | macOS | Linux |
+| --- | --- | --- | --- |
+| Monitor detection | ctypes Win32 | Swift/AppKit | xrandr |
+| Window management | EnumWindows/MoveWindow | AppleScript | xdotool/wmctrl |
+| Terminal | Windows Terminal | kitty/iTerm/Terminal.app | kitty/alacritty/gnome-terminal |
+| DPI awareness | Per-Monitor V2 | Native Retina | xrandr DPI |
+
+## Install from source
+
+```bash
+git clone https://github.com/DevinoSolutions/multideck-ai-agent.git
+cd multideck-ai-agent
+pip install -e .
+```
+
+## Contributing
+
+Contributions are welcome. Please open an issue first to discuss what you'd like to change.
 
 ## License
 
-MIT © [Devino Solutions](https://devino.ca)
+[AGPL-3.0](LICENSE) -- Copyright (c) 2026 [DevinoSolutions](https://github.com/DevinoSolutions)

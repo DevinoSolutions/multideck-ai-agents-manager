@@ -1,0 +1,28 @@
+name: Setup Virtual Displays
+description: Create multi-monitor virtual display environments for CI
+
+runs:
+  using: composite
+  steps:
+    - name: Linux - Start Xvfb with virtual monitors
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -q
+        sudo apt-get install -yq xvfb xdotool wmctrl x11-xserver-utils
+        Xvfb :99 -screen 0 5760x2160x24 &
+        sleep 2
+        export DISPLAY=:99
+        xrandr --setmonitor VIRTUAL-1 1920/508x1080/286+0+0 none || true
+        xrandr --setmonitor VIRTUAL-2 1920/340x1080/190+1920+0 none || true
+        echo "DISPLAY=:99" >> "$GITHUB_ENV"
+
+    - name: macOS - No virtual display needed
+      if: runner.os == 'macOS'
+      shell: bash
+      run: echo "macOS CI runners have a virtual display by default"
+
+    - name: Windows - No virtual display needed
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: Write-Host "Windows CI runners have a virtual display by default"

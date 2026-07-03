@@ -1,0 +1,21 @@
+name: Install Terminal Emulators
+description: Install terminal emulators for platform and e2e tests
+
+runs:
+  using: composite
+  steps:
+    - name: Linux - Install terminals
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get install -yq xterm xfonts-base xfonts-75dpi xfonts-100dpi
+
+    - name: macOS - Terminal.app is built-in
+      if: runner.os == 'macOS'
+      shell: bash
+      run: echo "Terminal.app available by default"
+
+    - name: Windows - Windows Terminal is pre-installed
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: Write-Host "Windows Terminal available by default on GitHub runners"
