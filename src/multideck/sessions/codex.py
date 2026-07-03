@@ -5,6 +5,14 @@ import sys
 from pathlib import Path
 
 
+def build_codex_resume(base_cmd: str, session_id: str | None) -> str:
+    parts = base_cmd.split(None, 1)
+    binary = parts[0]
+    if session_id:
+        return f"{binary} resume {session_id}"
+    return base_cmd
+
+
 def get_codex_session_ids(
     project_dir: str,
     count: int,
