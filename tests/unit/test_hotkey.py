@@ -186,7 +186,15 @@ class TestListenerLifecycle:
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
         monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: True)
         calls = []
-        monkeypatch.setattr(subprocess, "run", lambda *a, **k: calls.append(a[0]))
+
+        class _Result:
+            returncode = 0
+
+        def _rec(*a, **k):
+            calls.append(a[0])
+            return _Result()
+
+        monkeypatch.setattr(subprocess, "run", _rec)
         assert hotkey.stop_listener() is True
         assert calls and calls[0][0] == "taskkill" and "4321" in calls[0]
         assert not p.exists()
@@ -195,6 +203,23 @@ class TestListenerLifecycle:
         from multideck import hotkey
         monkeypatch.setattr(hotkey, "_PID_PATH", tmp_path / "hotkey.pid")
         assert hotkey.stop_listener() is False
+
+    def test_stop_keeps_pid_file_when_taskkill_fails(self, tmp_path, monkeypatch):
+        # F-IC-006 (honest half): a failed kill returns False and leaves the
+        # pid file in place so `status`/a retry can still find the process.
+        import subprocess
+        from multideck import hotkey
+        p = tmp_path / "hotkey.pid"
+        p.write_text("4321")
+        monkeypatch.setattr(hotkey, "_PID_PATH", p)
+        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: True)
+
+        class _Result:
+            returncode = 1
+
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: _Result())
+        assert hotkey.stop_listener() is False
+        assert p.exists()
 
     def test_write_then_clear_pid(self, tmp_path, monkeypatch):
         import os
@@ -205,6 +230,81 @@ class TestListenerLifecycle:
         assert p.read_text().strip() == str(os.getpid())
         hotkey._clear_pid()
         assert not p.exists()
+
+
+class TestDoUploadLogging:
+    """_do_upload discards the upload result (F-IC-003/F-D4-001) no longer --
+    it now logs the outcome, and an unexpected error (e.g. the OverflowError
+    _dib_to_bmp can raise) is caught and logged instead of vanishing on the
+    background thread it runs on."""
+
+    def test_logs_info_with_project_and_result(self, monkeypatch, caplog):
+        from multideck import hotkey
+        monkeypatch.setattr(hotkey, "get_clipboard_image", lambda: b"FAKEBMP")
+        monkeypatch.setattr(hotkey, "upload_image", lambda url, project, data: True)
+
+        with caplog.at_level("INFO", logger="multideck.hotkey"):
+            hotkey._do_upload("http://x:8034", "marka")
+
+        assert "project=marka" in caplog.text
+        assert "ok=True" in caplog.text
+
+    def test_logs_ok_false_on_failed_upload(self, monkeypatch, caplog):
+        from multideck import hotkey
+        monkeypatch.setattr(hotkey, "get_clipboard_image", lambda: b"FAKEBMP")
+        monkeypatch.setattr(hotkey, "upload_image", lambda url, project, data: False)
+
+        with caplog.at_level("INFO", logger="multideck.hotkey"):
+            hotkey._do_upload("http://x:8034", "marka")
+
+        assert "ok=False" in caplog.text
+
+    def test_no_image_is_a_silent_noop(self, monkeypatch, caplog):
+        from multideck import hotkey
+        monkeypatch.setattr(hotkey, "get_clipboard_image", lambda: None)
+        called = []
+        monkeypatch.setattr(hotkey, "upload_image", lambda *a: called.append(a))
+
+        with caplog.at_level("INFO", logger="multideck.hotkey"):
+            hotkey._do_upload("http://x:8034", "marka")
+
+        assert called == []
+        assert "project=marka" not in caplog.text
+
+    def test_unexpected_error_is_caught_and_logged_not_raised(self, monkeypatch, caplog):
+        from multideck import hotkey
+
+        def _boom():
+            raise OverflowError("byte must be in range(0, 256)")
+        monkeypatch.setattr(hotkey, "get_clipboard_image", _boom)
+
+        with caplog.at_level("INFO", logger="multideck.hotkey"):
+            hotkey._do_upload("http://x:8034", "marka")  # must not raise
+
+        assert "upload project=marka failed" in caplog.text
+
+
+class TestHeartbeatWiring:
+    """Heartbeat FILE semantics (freshness/staleness) are already covered
+    cross-platform in test_log.py; here we assert only that run_hotkey's
+    heartbeat thread is wired to write_heartbeat("hotkey") -- without
+    spinning a real message loop (GetMessageW needs a real hook)."""
+
+    def test_heartbeat_loop_writes_and_stops_on_event(self, monkeypatch):
+        from multideck import hotkey
+        calls = []
+        monkeypatch.setattr(hotkey, "write_heartbeat", lambda name: calls.append(name))
+        monkeypatch.setattr(hotkey, "HEARTBEAT_INTERVAL", 0.01)  # don't wait a real 10s
+
+        stop_event = threading.Event()
+        t = threading.Thread(target=hotkey._heartbeat_loop, args=(stop_event,), daemon=True)
+        t.start()
+        time.sleep(0.1)
+        stop_event.set()
+        t.join(timeout=2)
+
+        assert not t.is_alive()  # stops promptly once the event is set
+        assert calls.count("hotkey") >= 1
 
 
 class TestMaybeStartHotkey:
