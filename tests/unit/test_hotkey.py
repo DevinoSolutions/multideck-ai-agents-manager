@@ -3,7 +3,6 @@ import sys
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from unittest.mock import patch, MagicMock
 
 import pytest
 
