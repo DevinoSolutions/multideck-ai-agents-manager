@@ -22,6 +22,7 @@ HELP_TARGETS = [
     ["status"],
     ["down"],
     ["config", "show"],
+    ["config", "migrate"],
     ["config", "layout"],
     ["config", "base-dir"],
     ["config", "default-tool"],

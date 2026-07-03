@@ -171,6 +171,16 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match="layout.columns must be an integer"):
             load_config(path)
 
+    def test_load_config_bool_columns_raises(self, tmp_config):
+        # bool is an int subclass in Python -- _require_type must reject it
+        # for an int-only field rather than silently accepting True/False.
+        path = tmp_config({
+            "layout": {"columns": True},
+            "projects": [{"path": "api"}],
+        })
+        with pytest.raises(ConfigError, match="layout.columns must be an integer"):
+            load_config(path)
+
     def test_missing_version_defaults_zero_and_warns(self, capsys, tmp_config):
         # R10: a config file with no top-level "version" loads as legacy v0
         # and nudges the user toward `multideck config migrate`.
