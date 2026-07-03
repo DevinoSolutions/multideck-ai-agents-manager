@@ -60,6 +60,11 @@ def stop_server(port: int) -> bool:
 
 _UPLOAD_DIR = Path.home() / ".multideck" / "uploads"
 
+# Memory-exhaustion guard: reject a declared/actual body past this size
+# instead of reading it all into memory. Not an auth control -- just an
+# operability ceiling on the hot path.
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
 # In-session upload feedback: a paste's progress shows in the SAME md:<project>
 # window it landed in, via the psmux (tmux) status line -- never drawn into the
 # agent pane. tmux 3.3 renders these UTF-8 glyphs intact.
@@ -566,8 +571,11 @@ def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], d
     if boundary.startswith('"') and boundary.endswith('"'):
         boundary = boundary[1:-1]
 
-    length = int(handler.headers.get("Content-Length", 0))
-    body = handler.rfile.read(length)
+    try:
+        length = int(handler.headers.get("Content-Length", 0))
+    except (TypeError, ValueError):
+        length = 0
+    body = handler.rfile.read(min(length, MAX_UPLOAD_BYTES))
 
     boundary_bytes = f"--{boundary}".encode()
     parts = body.split(boundary_bytes)
@@ -737,6 +745,15 @@ class UploadHandler(BaseHTTPRequestHandler):
         byte_count = 0
         suffix = ""
         try:
+            try:
+                declared = int(self.headers.get("Content-Length", 0))
+            except (TypeError, ValueError):
+                self._json_response({"ok": False, "error": "Bad Content-Length"}, 400)
+                return
+            if declared > MAX_UPLOAD_BYTES:
+                self._json_response({"ok": False, "error": "File too large"}, 413)
+                return
+
             fields, files = _parse_multipart(self)
             project = fields.get("project", "") or flagged
             inject = fields.get("inject", "1") == "1"

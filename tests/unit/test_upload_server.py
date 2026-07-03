@@ -80,15 +80,15 @@ class TestParseMultipart:
 
         assert _parse_multipart(FakeHandler()) == ({}, {})
 
-    def test_parse_multipart_non_numeric_content_length_raises(self):
-        # F-D3-002 CHARACTERIZATION: uncaught ValueError from int() today;
-        # fix returns a clean 400 -- update this pin when fixed.
+    def test_bad_content_length_no_crash(self):
+        # F-D3-002: a non-numeric Content-Length used to raise an uncaught
+        # ValueError from int() inside the parser; it's now treated as "no
+        # body" instead of crashing the request-handling thread.
         class FakeHandler:
             headers = {"Content-Type": "multipart/form-data; boundary=X", "Content-Length": "abc"}
             rfile = io.BytesIO(b"")
 
-        with pytest.raises(ValueError):
-            _parse_multipart(FakeHandler())
+        assert _parse_multipart(FakeHandler()) == ({}, {})
 
 
 class TestUploadServerIntegration:
@@ -297,6 +297,48 @@ class TestUploadServerIntegration:
         conn.request("GET", "/nonexistent")
         resp = conn.getresponse()
         assert resp.status == 404
+
+    def test_rejects_oversized_body(self, monkeypatch):
+        # F-D3-002: a body over the cap is rejected before it's fully read
+        # into memory, so a malicious/oversized upload can't exhaust RAM.
+        import multideck.upload_server as mod
+        monkeypatch.setattr(mod, "MAX_UPLOAD_BYTES", 10)
+
+        boundary = "----Boundary"
+        body = (
+            f"------Boundary\r\n"
+            f'Content-Disposition: form-data; name="project"\r\n'
+            f"\r\n"
+            f"marka\r\n"
+            f"------Boundary\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            f"\r\n"
+            f"well past ten bytes of file data\r\n"
+            f"------Boundary--\r\n"
+        ).encode()
+        assert len(body) > 10  # sanity: genuinely exceeds the lowered cap
+
+        conn = self._conn()
+        conn.request("POST", "/upload", body=body, headers={
+            "Content-Type": "multipart/form-data; boundary=----Boundary",
+            "Content-Length": str(len(body)),
+        })
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 413
+
+    def test_rejects_bad_content_length(self):
+        # Sibling of the oversized-body guard: a non-numeric Content-Length
+        # reaching do_POST used to propagate an uncaught ValueError (dropped
+        # connection); it now gets a clean 400 before any body is read.
+        conn = self._conn()
+        conn.request("POST", "/upload", body=b"irrelevant", headers={
+            "Content-Type": "multipart/form-data; boundary=----Boundary",
+            "Content-Length": "abc",
+        })
+        resp = conn.getresponse()
+        resp.read()
+        assert resp.status == 400
 
 
 class TestHealth:
