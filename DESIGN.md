@@ -548,8 +548,11 @@ small, tested change):
 
 Three archetypes cover most future changes.
 
-**(a) Add a deeply-integrated agent tool** (session resume / multi-window,
-like `claude`/`codex`):
+**(a) Add an agent tool.** For a *plain command tool* (no session resume —
+launched as-is, like `cursor-agent`/`agy`), only step 3 applies: one
+`DEFAULT_TOOLS` entry plus the example-file update it forces. For a
+*deeply-integrated* tool (session resume / multi-window, like
+`claude`/`codex`), do all four steps:
 1. Add `sessions/<tool>.py` with the same two-function shape as
    `sessions/claude.py`: `get_<tool>_session_ids(project_dir, count,
    home_override=None) -> list[str | None]` and
