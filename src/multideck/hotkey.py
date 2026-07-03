@@ -186,20 +186,22 @@ def project_from_title(title: str) -> str | None:
 
 
 def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
+    boundary = "----MultideckUpload"
+    delim = f"--{boundary}"
     body = (
-        f"------MultideckUpload\r\n"
+        f"{delim}\r\n"
         f'Content-Disposition: form-data; name="project"\r\n'
         f"\r\n"
         f"{project}\r\n"
-        f"------MultideckUpload\r\n"
+        f"{delim}\r\n"
         f'Content-Disposition: form-data; name="inject"\r\n'
         f"\r\n"
         f"1\r\n"
-        f"------MultideckUpload\r\n"
+        f"{delim}\r\n"
         f'Content-Disposition: form-data; name="file"; filename="clipboard.bmp"\r\n'
         f"Content-Type: image/bmp\r\n"
         f"\r\n"
-    ).encode() + image_data + b"\r\n------MultideckUpload--\r\n"
+    ).encode() + image_data + f"\r\n{delim}--\r\n".encode()
 
     # ?project= lets the server flash "uploading" in the md:<project> status line
     # the moment the request lands -- before it reads the image bytes -- so the
@@ -207,7 +209,7 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
     req = Request(
         f"{server_url}/upload?project={quote(project)}",
         data=body,
-        headers={"Content-Type": "multipart/form-data; boundary=----MultideckUpload"},
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
         method="POST",
     )
     try:
