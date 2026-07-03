@@ -20,10 +20,10 @@ def _no_psmux(monkeypatch):
 
 def _both_off(monkeypatch):
     """Baseline: upload server unreachable/absent, listener not running."""
-    monkeypatch.setattr(cli, "_health_check", lambda port: False)
-    monkeypatch.setattr(cli, "_probe_port", lambda port: False)
+    monkeypatch.setattr("multideck.cli.status._health_check", lambda port: False)
+    monkeypatch.setattr("multideck.cli.status._probe_port", lambda port: False)
     monkeypatch.setattr("multideck.upload_server.server_pid", lambda port: None)
-    monkeypatch.setattr(cli, "_pid_alive", lambda pid: False)
+    monkeypatch.setattr("multideck.cli.status._pid_alive", lambda pid: False)
     monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: None)
 
 
@@ -68,7 +68,7 @@ class TestUploadServerLiveness:
     def test_health_check_true_means_on_exit_0(self, runner, tmp_config, monkeypatch):
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
-        monkeypatch.setattr(cli, "_health_check", lambda port: True)
+        monkeypatch.setattr("multideck.cli.status._health_check", lambda port: True)
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
@@ -80,7 +80,7 @@ class TestUploadServerLiveness:
         # The exact "reports ON while dead" bug (F-IC-005), now surfaced.
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
-        monkeypatch.setattr(cli, "_probe_port", lambda port: True)
+        monkeypatch.setattr("multideck.cli.status._probe_port", lambda port: True)
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
@@ -92,7 +92,7 @@ class TestUploadServerLiveness:
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
         monkeypatch.setattr("multideck.upload_server.server_pid", lambda port: 4321)
-        monkeypatch.setattr(cli, "_pid_alive", lambda pid: pid == 4321)
+        monkeypatch.setattr("multideck.cli.status._pid_alive", lambda pid: pid == 4321)
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
@@ -105,9 +105,9 @@ class TestListenerLiveness:
     def test_heartbeat_not_fresh_with_live_pid_means_stale_exit_3(self, runner, tmp_config, monkeypatch):
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
-        monkeypatch.setattr(cli, "_health_check", lambda port: True)  # upload healthy
+        monkeypatch.setattr("multideck.cli.status._health_check", lambda port: True)  # upload healthy
         monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: 9999)
-        monkeypatch.setattr(cli, "heartbeat_fresh", lambda name: False)
+        monkeypatch.setattr("multideck.cli.status.heartbeat_fresh", lambda name: False)
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
@@ -120,7 +120,7 @@ class TestJson:
     def test_healthy_emits_parseable_status_and_exit_0(self, runner, tmp_config, monkeypatch):
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
-        monkeypatch.setattr(cli, "_health_check", lambda port: True)
+        monkeypatch.setattr("multideck.cli.status._health_check", lambda port: True)
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
@@ -131,7 +131,7 @@ class TestJson:
     def test_degraded_emits_parseable_status_and_exit_3(self, runner, tmp_config, monkeypatch):
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
-        monkeypatch.setattr(cli, "_probe_port", lambda port: True)  # -> dead
+        monkeypatch.setattr("multideck.cli.status._probe_port", lambda port: True)  # -> dead
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
