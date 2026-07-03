@@ -152,6 +152,25 @@ class TestDibToBmp:
         from multideck.hotkey import _dib_to_bmp
         assert _dib_to_bmp(bytearray(b"\x00" * 10)) is None
 
+    def test_huge_header_size_returns_none(self):
+        # F-D4-005: a header_size claiming ~4GB drives px_start past 2**32,
+        # so the offset.to_bytes(4, "little") below crashes with
+        # OverflowError on a clipboard payload we don't control.
+        from multideck.hotkey import _dib_to_bmp
+        header = bytearray(self._header(2, 2, 32, 0))
+        header[0:4] = b"\xff\xff\xff\xff"  # biSize
+        pixels = bytes([0, 0, 0, 0] * 4)
+        assert _dib_to_bmp(bytearray(bytes(header) + pixels)) is None
+
+    def test_huge_clr_used_returns_none(self):
+        # Same OverflowError, reached via clrUsed instead of biSize: bpp<=8
+        # multiplies clr_used straight into the offset with no bound.
+        from multideck.hotkey import _dib_to_bmp
+        header = bytearray(self._header(2, 2, 8, 0))
+        header[32:36] = b"\xff\xff\xff\xff"  # clrUsed
+        pixels = bytes([0] * 16)
+        assert _dib_to_bmp(bytearray(bytes(header) + pixels)) is None
+
 
 class TestListenerLifecycle:
     """Pid-file management for the background Alt+V listener."""
