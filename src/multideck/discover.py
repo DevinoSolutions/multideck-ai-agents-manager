@@ -175,6 +175,13 @@ MIN_PROJECTS = 3
 MAX_STEPS = 160
 
 
+def _merge_candidate(by_path: dict[str, dict], key: str, cand: dict) -> None:
+    """Offer one candidate for `key`, keeping whichever has the max
+    last_active seen so far. Ties go to whichever was offered first (R9)."""
+    if key not in by_path or cand["last_active"] > by_path[key]["last_active"]:
+        by_path[key] = cand
+
+
 def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
     """Find projects from Claude and Codex session history.
 
@@ -206,25 +213,21 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
         if claude_info:
             encoded = encode_claude_project_path(p["path"])
             matched_encoded.add(encoded)
-            if claude_info["last_active"] >= p.get("last_active", 0):
-                by_path[key] = {
-                    "path": p["path"],
-                    "tool": "claude",
-                    "session_count": claude_info["session_count"],
-                    "last_active": claude_info["last_active"],
-                }
-                continue
+            _merge_candidate(by_path, key, {
+                "path": p["path"],
+                "tool": "claude",
+                "session_count": claude_info["session_count"],
+                "last_active": claude_info["last_active"],
+            })
 
-        if key not in by_path or p["last_active"] > by_path[key]["last_active"]:
-            by_path[key] = p
+        _merge_candidate(by_path, key, p)
 
     for p in _discover_claude_standalone(home, matched_encoded):
         if not _is_real_project(p["path"]):
             continue
         p["path"] = os.path.normpath(p["path"])
         key = _norm_key(p["path"])
-        if key not in by_path or p["last_active"] > by_path[key]["last_active"]:
-            by_path[key] = p
+        _merge_candidate(by_path, key, p)
 
     all_projects = sorted(by_path.values(), key=lambda p: p["last_active"], reverse=True)
     if not all_projects:
