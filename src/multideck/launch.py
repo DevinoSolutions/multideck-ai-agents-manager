@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass
+from typing import Callable
 
 import click
 
@@ -204,98 +205,132 @@ def _launch_projects(plat: Platform, config: MultideckConfig, opts: RunOpts,
         is_remote = bool(proj.host)
 
         if tool in ("code", "vscode", "cursor"):
-            key = get_leaf_name(proj.remote_path or proj.path) if is_remote else get_leaf_name(proj.path)
-            name = proj.title or key
-            running = _is_running(key, "contains")
-            if not running and not opts.dry_run:
-                vsc_dir = proj.remote_path or proj.path if is_remote else (_resolve_path(proj.path, base_dir) or proj.path)
-                ide_cmd = "cursor" if tool == "cursor" else "code"
-                plat.launch_vscode(VSCodeLaunchOpts(
-                    dir=vsc_dir,
-                    ssh_host=proj.host if is_remote else None,
-                    command=ide_cmd,
-                ))
-                time.sleep(config.settings.launch_delay_ms / 1000)
-            if not running:
-                new_count += 1
-            targets.append(_Target(name=name, key=key, mode="contains", is_new=not running))
-            _log_project(name, tool, running, proj.host, happy=False)
+            new_count += _dispatch_ide_project(
+                plat, config, opts, proj, tool, is_remote, base_dir, _is_running, targets,
+            )
             continue
 
-        windows_cfg = proj.windows
-        if is_remote or tool in ("code", "vscode", "cursor"):
-            windows_cfg = None
-        titles = generate_titles(proj.title, proj.path, windows_cfg)
-        window_count = len(titles)
-
-        session_ids: list[str | None] = [None] * window_count
-        caps = AGENT_TOOLS.get(tool)
-        if window_count > 1 and caps and caps.multi_window and not is_remote:
-            resolved_dir = _resolve_path(proj.path, base_dir)
-            if resolved_dir:
-                session_ids = _get_session_ids(tool, resolved_dir, window_count)
-
-        base_cmd = tools.get(tool)
-        if not base_cmd:
-            click.echo(f"SKIP: {titles[0]} — unknown tool '{tool}' (add under settings.tools)")
-            continue
-
-        use_happy = proj.happy if proj.happy is not None else config.settings.happy
-
-        for i, win_title in enumerate(titles):
-            if window_count > 1 and session_ids[i] is not None:
-                cmd = build_resume_command(tool, base_cmd, session_ids[i])
-            elif window_count > 1:
-                cmd = build_resume_command(tool, base_cmd, None)
-            else:
-                cmd = base_cmd
-
-            if use_happy:
-                cmd = _wrap_happy(tool, cmd)
-
-            proj_psmux = use_psmux and not is_remote
-            if proj_psmux and not opts.dry_run:
-                resolved_dir = _resolve_path(proj.path, base_dir)
-                if resolved_dir:
-                    wname = _psmux_session_name(win_title)
-                    psmux_windows.append(PsmuxWindowOpts(
-                        window_name=wname,
-                        cwd=resolved_dir,
-                        command=cmd,
-                    ))
-                    _psmux_colors[wname] = proj.color
-            running = _is_running(win_title, "exact")
-            if not running and not opts.dry_run and not proj_psmux:
-                if is_remote:
-                    resolved_dir = proj.remote_path or proj.path
-                    plat.launch_terminal(TerminalLaunchOpts(
-                        title=win_title,
-                        cwd=os.getcwd(),
-                        command=cmd,
-                        color=proj.color,
-                        ssh_host=proj.host,
-                        ssh_remote_dir=resolved_dir,
-                        ssh_shell=config.settings.ssh.shell,
-                    ))
-                else:
-                    resolved_dir = _resolve_path(proj.path, base_dir)
-                    if not resolved_dir:
-                        click.echo(f"SKIP: {proj.path} not found")
-                        continue
-                    plat.launch_terminal(TerminalLaunchOpts(
-                        title=win_title,
-                        cwd=resolved_dir,
-                        command=cmd,
-                        color=proj.color,
-                    ))
-                if not proj_psmux:
-                    time.sleep(config.settings.launch_delay_ms / 1000)
-            if not running:
-                new_count += 1
-            targets.append(_Target(name=win_title, key=win_title, mode="exact", is_new=not running))
-            _log_project(win_title, tool, running, proj.host, happy=use_happy, psmux=proj_psmux)
+        new_count += _dispatch_cli_agent_project(
+            plat, config, opts, proj, tool, is_remote, base_dir, tools, use_psmux,
+            _is_running, targets, psmux_windows, _psmux_colors,
+        )
 
     return _LaunchResult(targets=targets, psmux_windows=psmux_windows, psmux_colors=_psmux_colors)
+
+
+def _dispatch_ide_project(plat: Platform, config: MultideckConfig, opts: RunOpts,
+                          proj: ProjectConfig, tool: str, is_remote: bool, base_dir: str | None,
+                          is_running: Callable[[str, str], bool],
+                          targets: list[_Target]) -> int:
+    """Launch (or skip, if already running) a code/vscode/cursor project's
+    IDE window; append its tiling target to the caller-owned `targets` list.
+    Returns the new_count delta (1 if newly launched, 0 if already running)."""
+    key = get_leaf_name(proj.remote_path or proj.path) if is_remote else get_leaf_name(proj.path)
+    name = proj.title or key
+    running = is_running(key, "contains")
+    if not running and not opts.dry_run:
+        vsc_dir = proj.remote_path or proj.path if is_remote else (_resolve_path(proj.path, base_dir) or proj.path)
+        ide_cmd = "cursor" if tool == "cursor" else "code"
+        plat.launch_vscode(VSCodeLaunchOpts(
+            dir=vsc_dir,
+            ssh_host=proj.host if is_remote else None,
+            command=ide_cmd,
+        ))
+        time.sleep(config.settings.launch_delay_ms / 1000)
+    new_count_delta = 0 if running else 1
+    targets.append(_Target(name=name, key=key, mode="contains", is_new=not running))
+    _log_project(name, tool, running, proj.host, happy=False)
+    return new_count_delta
+
+
+def _dispatch_cli_agent_project(plat: Platform, config: MultideckConfig, opts: RunOpts,
+                                proj: ProjectConfig, tool: str, is_remote: bool, base_dir: str | None,
+                                tools: dict[str, str], use_psmux: bool,
+                                is_running: Callable[[str, str], bool],
+                                targets: list[_Target],
+                                psmux_windows: list[PsmuxWindowOpts],
+                                psmux_colors: dict[str, str | None]) -> int:
+    """Generate this project's window titles, resolve resumable sessions, and
+    launch (or collect into the caller-owned `psmux_windows`) each window;
+    append its tiling target(s) to the caller-owned `targets` list. Returns
+    the new_count delta (windows newly launched or newly collected, summed
+    across every window this project owns)."""
+    new_count = 0
+
+    windows_cfg = proj.windows
+    if is_remote or tool in ("code", "vscode", "cursor"):
+        windows_cfg = None
+    titles = generate_titles(proj.title, proj.path, windows_cfg)
+    window_count = len(titles)
+
+    session_ids: list[str | None] = [None] * window_count
+    caps = AGENT_TOOLS.get(tool)
+    if window_count > 1 and caps and caps.multi_window and not is_remote:
+        resolved_dir = _resolve_path(proj.path, base_dir)
+        if resolved_dir:
+            session_ids = _get_session_ids(tool, resolved_dir, window_count)
+
+    base_cmd = tools.get(tool)
+    if not base_cmd:
+        click.echo(f"SKIP: {titles[0]} — unknown tool '{tool}' (add under settings.tools)")
+        return new_count
+
+    use_happy = proj.happy if proj.happy is not None else config.settings.happy
+
+    for i, win_title in enumerate(titles):
+        if window_count > 1 and session_ids[i] is not None:
+            cmd = build_resume_command(tool, base_cmd, session_ids[i])
+        elif window_count > 1:
+            cmd = build_resume_command(tool, base_cmd, None)
+        else:
+            cmd = base_cmd
+
+        if use_happy:
+            cmd = _wrap_happy(tool, cmd)
+
+        proj_psmux = use_psmux and not is_remote
+        if proj_psmux and not opts.dry_run:
+            resolved_dir = _resolve_path(proj.path, base_dir)
+            if resolved_dir:
+                wname = _psmux_session_name(win_title)
+                psmux_windows.append(PsmuxWindowOpts(
+                    window_name=wname,
+                    cwd=resolved_dir,
+                    command=cmd,
+                ))
+                psmux_colors[wname] = proj.color
+        running = is_running(win_title, "exact")
+        if not running and not opts.dry_run and not proj_psmux:
+            if is_remote:
+                resolved_dir = proj.remote_path or proj.path
+                plat.launch_terminal(TerminalLaunchOpts(
+                    title=win_title,
+                    cwd=os.getcwd(),
+                    command=cmd,
+                    color=proj.color,
+                    ssh_host=proj.host,
+                    ssh_remote_dir=resolved_dir,
+                    ssh_shell=config.settings.ssh.shell,
+                ))
+            else:
+                resolved_dir = _resolve_path(proj.path, base_dir)
+                if not resolved_dir:
+                    click.echo(f"SKIP: {proj.path} not found")
+                    continue
+                plat.launch_terminal(TerminalLaunchOpts(
+                    title=win_title,
+                    cwd=resolved_dir,
+                    command=cmd,
+                    color=proj.color,
+                ))
+            if not proj_psmux:
+                time.sleep(config.settings.launch_delay_ms / 1000)
+        if not running:
+            new_count += 1
+        targets.append(_Target(name=win_title, key=win_title, mode="exact", is_new=not running))
+        _log_project(win_title, tool, running, proj.host, happy=use_happy, psmux=proj_psmux)
+
+    return new_count
 
 
 def _start_psmux_and_upload(plat: Platform, config: MultideckConfig, opts: RunOpts,

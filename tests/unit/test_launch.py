@@ -19,6 +19,8 @@ from multideck.launch import (
     RunOpts,
     _LaunchResult,
     _Target,
+    _dispatch_cli_agent_project,
+    _dispatch_ide_project,
     _launch_projects,
     _prepare_grid,
     _select_projects,
@@ -289,3 +291,106 @@ class TestSelectProjects:
         err = capsys.readouterr().err
         assert "No projects in group" in err
         assert "a" in err
+
+
+class TestDispatchIdeProject:
+    """Direct unit tests for the IDE-branch dispatch helper (R4, C7) split
+    out of _launch_projects along the seam the loop already marked with
+    `continue`. targets is a caller-owned accumulator appended to in place;
+    the new_count delta is returned (ints can't be mutated via a parameter)."""
+
+    def test_launches_and_returns_delta_one(self, tmp_path, fake_sleep):
+        fp = FakePlatform()
+        proj = ProjectConfig(path=str(tmp_path), tool="code")
+        cfg = MultideckConfig(projects=[proj])
+        targets: list[_Target] = []
+
+        delta = _dispatch_ide_project(
+            fp, cfg, RunOpts(), proj, "code", False, None, lambda key, mode: False, targets,
+        )
+
+        assert delta == 1
+        assert len(targets) == 1
+        assert targets[0].mode == "contains"
+        assert targets[0].is_new is True
+        assert len(fp.launched_vscode) == 1
+        assert fp.launched_vscode[0].command == "code"
+
+    def test_running_skips_launch_and_returns_delta_zero(self, tmp_path, fake_sleep):
+        fp = FakePlatform()
+        proj = ProjectConfig(path=str(tmp_path), tool="code")
+        cfg = MultideckConfig(projects=[proj])
+        targets: list[_Target] = []
+
+        delta = _dispatch_ide_project(
+            fp, cfg, RunOpts(), proj, "code", False, None, lambda key, mode: True, targets,
+        )
+
+        assert delta == 0
+        assert len(targets) == 1
+        assert targets[0].is_new is False
+        assert fp.launched_vscode == []
+
+
+class TestDispatchCliAgentProject:
+    """Direct unit tests for the CLI-agent-branch dispatch helper (R4, C7).
+    E4's capability sites (_get_session_ids/_wrap_happy/multi-window gate)
+    live here verbatim. targets/psmux_windows/psmux_colors are caller-owned
+    accumulators appended to in place; new_count is returned."""
+
+    def test_launches_terminal_and_returns_delta(self, tmp_path, fake_sleep):
+        fp = FakePlatform()
+        proj = ProjectConfig(path=str(tmp_path), tool="claude", title="proj")
+        cfg = MultideckConfig(projects=[proj], settings=Settings(tools={"claude": "claude --continue"}))
+        targets: list[_Target] = []
+        psmux_windows: list[PsmuxWindowOpts] = []
+        psmux_colors: dict[str, str | None] = {}
+
+        delta = _dispatch_cli_agent_project(
+            fp, cfg, RunOpts(), proj, "claude", False, None,
+            cfg.settings.tools, False, lambda key, mode: False,
+            targets, psmux_windows, psmux_colors,
+        )
+
+        assert delta == 1
+        assert len(fp.launched_terminals) == 1
+        assert fp.launched_terminals[0].title == "proj"
+        assert targets == [_Target(name="proj", key="proj", mode="exact", is_new=True)]
+        assert psmux_windows == []
+
+    def test_psmux_collects_instead_of_launching(self, tmp_path, fake_sleep):
+        fp = FakePlatform(supports_psmux=True)
+        proj = ProjectConfig(path=str(tmp_path), tool="claude", title="proj")
+        cfg = MultideckConfig(
+            projects=[proj],
+            settings=Settings(tools={"claude": "claude --continue"}, psmux=True),
+        )
+        targets: list[_Target] = []
+        psmux_windows: list[PsmuxWindowOpts] = []
+        psmux_colors: dict[str, str | None] = {}
+
+        delta = _dispatch_cli_agent_project(
+            fp, cfg, RunOpts(), proj, "claude", False, None,
+            cfg.settings.tools, True, lambda key, mode: False,
+            targets, psmux_windows, psmux_colors,
+        )
+
+        assert delta == 1
+        assert fp.launched_terminals == []
+        assert len(psmux_windows) == 1
+        assert psmux_windows[0].window_name == "proj"
+
+    def test_unknown_tool_skips_and_returns_delta_zero(self, tmp_path, fake_sleep, capsys):
+        proj = ProjectConfig(path=str(tmp_path), tool="ghost-tool", title="proj")
+        cfg = MultideckConfig(projects=[proj], settings=Settings(tools={"claude": "claude --continue"}))
+        targets: list[_Target] = []
+
+        delta = _dispatch_cli_agent_project(
+            FakePlatform(), cfg, RunOpts(), proj, "ghost-tool", False, None,
+            cfg.settings.tools, False, lambda key, mode: False,
+            targets, [], {},
+        )
+
+        assert delta == 0
+        assert targets == []
+        assert "unknown tool" in capsys.readouterr().out
