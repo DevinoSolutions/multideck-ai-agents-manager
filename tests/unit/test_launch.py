@@ -14,8 +14,8 @@ import pytest
 from tests.conftest import FakePlatform
 
 from multideck.config import MultideckConfig, ProjectConfig, Settings
-from multideck.grid import Rect
-from multideck.launch import RunOpts, run_multideck
+from multideck.grid import MonitorRect, Rect, compute_grid
+from multideck.launch import RunOpts, _Target, _tile_targets, run_multideck
 
 
 class TestNoMonitors:
@@ -138,3 +138,23 @@ class TestRunMultideckCharacterization:
         assert rc == 0
         assert fp.launched_terminals == []
         assert (555, Rect(x=0, y=0, w=960, h=1080)) in fp.moved
+
+
+class TestTileTargets:
+    """Direct unit test for the extracted tile phase (R4, Step 2)."""
+
+    def test_moves_present_and_reports_missing(self, fake_sleep, capsys):
+        fp = FakePlatform(windows={"present": 42})
+        slots = compute_grid(
+            [MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)], 2, 1
+        )
+        targets = [
+            _Target(name="present", key="present", mode="exact", is_new=True),
+            _Target(name="absent", key="absent", mode="exact", is_new=True),
+        ]
+
+        _tile_targets(fp, RunOpts(), slots, targets)
+
+        assert len(fp.moved) == 1
+        assert fp.moved[0] == (42, Rect(x=0, y=0, w=960, h=1080))
+        assert "not found" in capsys.readouterr().out

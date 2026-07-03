@@ -10,9 +10,9 @@ from dataclasses import dataclass
 import click
 
 from multideck.config import MultideckConfig
-from multideck.grid import compute_grid
+from multideck.grid import TileSlot, compute_grid
 from multideck.log import get_logger
-from multideck.platform import PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
+from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
 from multideck.sessions import AGENT_TOOLS, build_resume_command
 from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name
@@ -274,11 +274,20 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
             click.echo(f"\n  {S('#', fg='magenta')} upload server: {S(url, fg='cyan', bold=True)}"
                         f" {S('(open on phone)', dim=True)}")
 
+    _tile_targets(plat, opts, slots, targets)
+
+    return 0
+
+
+def _tile_targets(plat: Platform, opts: RunOpts, slots: list[TileSlot], targets: list[_Target]) -> None:
+    """Place (or, under dry_run, preview) each target into a slot. Delegates
+    the resolve-and-move-with-retry logic to multideck.tiling.place_windows
+    (R13/E9's shared helper) -- no lookup/retry loop is re-implemented here."""
     to_place = targets if opts.retile_all else [t for t in targets if t.is_new]
 
     if not to_place:
         click.echo(f"\n  {S('+', fg='green')} All windows already positioned.")
-        return 0
+        return
 
     mode_label = S(" retile all", fg="yellow") if opts.retile_all else (S(" dry run", fg="yellow") if opts.dry_run else "")
     click.echo(f"\n  {S('#', fg='cyan')} Tiling {S(str(len(to_place)), fg='cyan', bold=True)} window(s)...{mode_label}")
@@ -291,7 +300,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
             at = S(f"({pos.x},{pos.y})", dim=True)
             click.echo(f"    {S('>', fg='cyan')} {target.name:<28} {S('->', dim=True)} screen {screen_num}  {dims} {at}")
         click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
-        return 0
+        return
 
     placements = [
         Placement(name=target.name, key=target.key, mode=target.mode, slot=slots[i % len(slots)])
@@ -307,7 +316,6 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     place_windows(plat, placements, on_placed=_placed, on_missing=_missing)
 
     click.echo(f"\n  {S('Done!', fg='green', bold=True)}")
-    return 0
 
 
 def _log_project(name: str, tool: str, running: bool, host: str | None,
