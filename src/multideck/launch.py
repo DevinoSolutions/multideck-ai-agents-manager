@@ -251,11 +251,23 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
             targets.append(_Target(name=win_title, key=win_title, mode="exact", is_new=not running))
             _log_project(win_title, tool, running, proj.host, happy=use_happy, psmux=proj_psmux)
 
+    _start_psmux_and_upload(plat, config, opts, psmux_windows, _psmux_colors)
+
+    _tile_targets(plat, opts, slots, targets)
+
+    return 0
+
+
+def _start_psmux_and_upload(plat: Platform, config: MultideckConfig, opts: RunOpts,
+                            psmux_windows: list[PsmuxWindowOpts],
+                            psmux_colors: dict[str, str | None]) -> None:
+    """Create + attach the collected psmux sessions and, when configured,
+    spawn the upload server. No-op when psmux_windows is empty or dry_run."""
     if psmux_windows and not opts.dry_run:
         plat.launch_psmux_session(psmux_windows)
         for pw in psmux_windows:
             plat.attach_psmux(pw.window_name, pw.window_name,
-                              _psmux_colors.get(pw.window_name))
+                              psmux_colors.get(pw.window_name))
         click.echo(f"\n  {S('#', fg='yellow')} psmux: {S(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"
                     f" {S('(synced with mobile)', dim=True)}")
         click.echo(f"  {S('From SSH:', dim=True)} {S('psmux -L <name> attach', fg='cyan')}"
@@ -273,10 +285,6 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
             url = f"http://{ip}:{port}" if ip else f"http://localhost:{port}"
             click.echo(f"\n  {S('#', fg='magenta')} upload server: {S(url, fg='cyan', bold=True)}"
                         f" {S('(open on phone)', dim=True)}")
-
-    _tile_targets(plat, opts, slots, targets)
-
-    return 0
 
 
 def _tile_targets(plat: Platform, opts: RunOpts, slots: list[TileSlot], targets: list[_Target]) -> None:

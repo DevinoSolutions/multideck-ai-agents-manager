@@ -15,7 +15,8 @@ from tests.conftest import FakePlatform
 
 from multideck.config import MultideckConfig, ProjectConfig, Settings
 from multideck.grid import MonitorRect, Rect, compute_grid
-from multideck.launch import RunOpts, _Target, _tile_targets, run_multideck
+from multideck.launch import RunOpts, _Target, _start_psmux_and_upload, _tile_targets, run_multideck
+from multideck.platform import PsmuxWindowOpts
 
 
 class TestNoMonitors:
@@ -158,3 +159,35 @@ class TestTileTargets:
         assert len(fp.moved) == 1
         assert fp.moved[0] == (42, Rect(x=0, y=0, w=960, h=1080))
         assert "not found" in capsys.readouterr().out
+
+
+class TestStartPsmuxAndUpload:
+    """Direct unit tests for the extracted psmux+upload-server phase (R4,
+    Step 3; renamed from the plan's _bring_up_psmux -- launch.py already has
+    a public bring_up_psmux for the attach-path session creator)."""
+
+    def test_attaches_each_window(self):
+        fp = FakePlatform(supports_psmux=True)
+        windows = [
+            PsmuxWindowOpts(window_name="a", cwd="/tmp/a", command="claude"),
+            PsmuxWindowOpts(window_name="b", cwd="/tmp/b", command="claude"),
+        ]
+        colors = {"a": "#111111", "b": None}
+        cfg = MultideckConfig(projects=[])
+
+        _start_psmux_and_upload(fp, cfg, RunOpts(), windows, colors)
+
+        assert fp.launched_psmux == windows
+        assert len(fp.attached_psmux) == 2
+        assert fp.attached_psmux[0] == ("a", "a", "#111111", None)
+        assert fp.attached_psmux[1] == ("b", "b", None, None)
+
+    def test_noop_on_dry_run(self):
+        fp = FakePlatform(supports_psmux=True)
+        windows = [PsmuxWindowOpts(window_name="a", cwd="/tmp/a", command="claude")]
+        cfg = MultideckConfig(projects=[])
+
+        _start_psmux_and_upload(fp, cfg, RunOpts(dry_run=True), windows, {"a": None})
+
+        assert fp.launched_psmux == []
+        assert fp.attached_psmux == []
