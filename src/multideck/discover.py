@@ -5,7 +5,6 @@ import os
 import sys
 from collections import Counter
 from pathlib import Path
-
 from urllib.parse import unquote, urlparse
 
 from multideck.config import _random_tab_color, default_config
@@ -165,9 +164,7 @@ def _is_real_project(path: str) -> bool:
     min_depth = 5 if sys.platform == "win32" else 4
     if len(parts) < min_depth:
         return False
-    if p.name.lower() in GENERIC_DIRS:
-        return False
-    return True
+    return p.name.lower() not in GENERIC_DIRS
 
 
 STEP_DAYS = 3
@@ -292,9 +289,8 @@ def projects_to_config(projects: list[dict]) -> dict:
         if parent and parent not in GENERIC_DIRS and parent != Path(base_dir).name.lower():
             entry["group"] = Path(p["path"]).parent.name
 
-        if parts := rel.split("/"):
-            if parts[-1] in dup_leaves:
-                entry["title"] = rel.replace("/", "-")
+        if (parts := rel.split("/")) and parts[-1] in dup_leaves:
+            entry["title"] = rel.replace("/", "-")
 
         if p["tool"] != "claude":
             entry["tool"] = p["tool"]

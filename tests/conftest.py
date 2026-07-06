@@ -1,14 +1,17 @@
 import json
 import os
-import time
-from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
 from multideck import log
 from multideck.grid import MonitorRect
-from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts
+from multideck.platform import (
+    Platform,
+    PsmuxWindowOpts,
+    TerminalLaunchOpts,
+    VSCodeLaunchOpts,
+)
 from multideck.titles import get_leaf_name
 
 

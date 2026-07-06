@@ -37,7 +37,7 @@ class MacOSPlatform(Platform):
             return []
         result = subprocess.run(
             ["swift", "-e", SWIFT_MONITORS],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, check=False,
         )
         if result.returncode != 0 or not result.stdout.strip():
             return []
@@ -72,7 +72,7 @@ class MacOSPlatform(Platform):
         """
         result = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, check=False,
         )
         for line in result.stdout.strip().split(", "):
             parts = line.split(":")
@@ -99,7 +99,7 @@ class MacOSPlatform(Platform):
             end tell
         end tell
         """
-        subprocess.run(["osascript", "-e", script], timeout=10)
+        subprocess.run(["osascript", "-e", script], timeout=10, check=False)
 
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
         if opts.ssh_host:
@@ -145,6 +145,6 @@ class MacOSPlatform(Platform):
     def _has_app(name: str) -> bool:
         result = subprocess.run(
             ["mdfind", f"kMDItemKind == 'Application' && kMDItemDisplayName == '{name}'"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True, text=True, timeout=5, check=False,
         )
         return bool(result.stdout.strip())

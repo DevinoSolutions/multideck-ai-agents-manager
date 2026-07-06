@@ -52,19 +52,19 @@ def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
 
         if choice == "1":
             return {"action": "run", "retile_all": False, "group": None, "reload": config_changed}
-        elif choice == "2":
+        if choice == "2":
             return {"action": "run", "retile_all": True, "group": None, "reload": config_changed}
-        elif choice == "u":
+        if choice == "u":
             return {"action": "up", "reload": config_changed}
-        elif choice == "s":
+        if choice == "s":
             return {"action": "sessions", "reload": config_changed}
-        elif choice == "a":
+        if choice == "a":
             return {"action": "attach", "reload": config_changed}
-        elif choice == "t":
+        if choice == "t":
             return {"action": "status", "reload": config_changed}
-        elif choice == "d":
+        if choice == "d":
             return {"action": "down", "reload": config_changed}
-        elif choice == "3" and groups:
+        if choice == "3" and groups:
             click.echo()
             for i, g in enumerate(groups, 1):
                 _menu_item(str(i), g)

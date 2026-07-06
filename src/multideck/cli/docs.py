@@ -9,7 +9,6 @@ from multideck import __version__
 from multideck.cli.app import main
 from multideck.config import LayoutConfig, Settings
 
-
 _PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("path", "string", "*(required)*", "Absolute, or relative to `baseDir`."),
     ("group", "string", "none", "Tag for group launches (`-g`)."),

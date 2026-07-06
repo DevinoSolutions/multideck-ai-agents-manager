@@ -4,6 +4,7 @@ import threading
 import time
 from http.client import HTTPConnection
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -11,8 +12,6 @@ from multideck.upload_server import (
     UploadHandler,
     _build_html,
     _parse_multipart,
-    run_server,
-    _UPLOAD_DIR,
 )
 
 
@@ -41,7 +40,7 @@ class TestBuildHtml:
 class TestParseMultipart:
     def _make_handler(self, body: bytes, boundary: str):
         class FakeHandler:
-            headers = {
+            headers: ClassVar[dict[str, str]] = {
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(body)),
             }
@@ -49,19 +48,18 @@ class TestParseMultipart:
         return FakeHandler()
 
     def test_parses_field_and_file(self):
-        boundary = "----TestBoundary"
         body = (
-            f"------TestBoundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------TestBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="test.png"\r\n'
-            f"Content-Type: image/png\r\n"
-            f"\r\n"
-            f"PNGDATA\r\n"
-            f"------TestBoundary--\r\n"
-        ).encode()
+            b"------TestBoundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------TestBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="test.png"\r\n'
+            b"Content-Type: image/png\r\n"
+            b"\r\n"
+            b"PNGDATA\r\n"
+            b"------TestBoundary--\r\n"
+        )
 
         handler = self._make_handler(body, "----TestBoundary")
         fields, files = _parse_multipart(handler)
@@ -74,7 +72,7 @@ class TestParseMultipart:
     def test_parse_multipart_missing_boundary_returns_empty(self):
         # F-D3-006: Content-Type with no boundary= is treated as "no body".
         class FakeHandler:
-            headers = {"Content-Type": "multipart/form-data", "Content-Length": "0"}
+            headers: ClassVar[dict[str, str]] = {"Content-Type": "multipart/form-data", "Content-Length": "0"}
             rfile = io.BytesIO(b"")
 
         assert _parse_multipart(FakeHandler()) == ({}, {})
@@ -84,7 +82,7 @@ class TestParseMultipart:
         # ValueError from int() inside the parser; it's now treated as "no
         # body" instead of crashing the request-handling thread.
         class FakeHandler:
-            headers = {"Content-Type": "multipart/form-data; boundary=X", "Content-Length": "abc"}
+            headers: ClassVar[dict[str, str]] = {"Content-Type": "multipart/form-data; boundary=X", "Content-Length": "abc"}
             rfile = io.BytesIO(b"")
 
         assert _parse_multipart(FakeHandler()) == ({}, {})
@@ -136,27 +134,26 @@ class TestUploadServerIntegration:
         assert data[0]["name"] == "marka"
 
     def test_upload_saves_file(self):
-        boundary = "----WebKitFormBoundary"
         body = (
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="inject"\r\n'
-            f"\r\n"
-            f"0\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="screenshot.png"\r\n'
-            f"Content-Type: image/png\r\n"
-            f"\r\n"
-            f"FAKEPNG\r\n"
-            f"------WebKitFormBoundary--\r\n"
-        ).encode()
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="inject"\r\n'
+            b"\r\n"
+            b"0\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="screenshot.png"\r\n'
+            b"Content-Type: image/png\r\n"
+            b"\r\n"
+            b"FAKEPNG\r\n"
+            b"------WebKitFormBoundary--\r\n"
+        )
 
         conn = self._conn()
         conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": f"multipart/form-data; boundary=----WebKitFormBoundary",
+            "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundary",
             "Content-Length": str(len(body)),
         })
         resp = conn.getresponse()
@@ -184,23 +181,22 @@ class TestUploadServerIntegration:
     def test_upload_logs_outcome_without_filename(self, caplog):
         # F-hygiene: the outcome log must carry the project + byte-count +
         # injected flag, but never the original filename (personal data).
-        boundary = "----WebKitFormBoundary"
         body = (
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="inject"\r\n'
-            f"\r\n"
-            f"0\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="my_diagnosis.png"\r\n'
-            f"Content-Type: image/png\r\n"
-            f"\r\n"
-            f"FAKEPNG\r\n"
-            f"------WebKitFormBoundary--\r\n"
-        ).encode()
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="inject"\r\n'
+            b"\r\n"
+            b"0\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="my_diagnosis.png"\r\n'
+            b"Content-Type: image/png\r\n"
+            b"\r\n"
+            b"FAKEPNG\r\n"
+            b"------WebKitFormBoundary--\r\n"
+        )
 
         with caplog.at_level("INFO", logger="multideck.upload"):
             conn = self._conn()
@@ -219,18 +215,17 @@ class TestUploadServerIntegration:
         assert "my_diagnosis" not in caplog.text
 
     def test_upload_missing_project(self):
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
-            f"\r\n"
-            f"data\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            b"\r\n"
+            b"data\r\n"
+            b"------Boundary--\r\n"
+        )
 
         conn = self._conn()
         conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": f"multipart/form-data; boundary=----Boundary",
+            "Content-Type": "multipart/form-data; boundary=----Boundary",
             "Content-Length": str(len(body)),
         })
         resp = conn.getresponse()
@@ -238,18 +233,17 @@ class TestUploadServerIntegration:
         assert data["ok"] is False
 
     def test_upload_rejects_unknown_project(self):
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"evil-project\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
-            f"\r\n"
-            f"data\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"evil-project\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            b"\r\n"
+            b"data\r\n"
+            b"------Boundary--\r\n"
+        )
 
         conn = self._conn()
         conn.request("POST", "/upload", body=body, headers={
@@ -262,22 +256,21 @@ class TestUploadServerIntegration:
         assert "Unknown project" in data["error"]
 
     def test_upload_strips_path_traversal(self):
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="inject"\r\n'
-            f"\r\n"
-            f"0\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="../../etc/passwd"\r\n'
-            f"\r\n"
-            f"malicious\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="inject"\r\n'
+            b"\r\n"
+            b"0\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="../../etc/passwd"\r\n'
+            b"\r\n"
+            b"malicious\r\n"
+            b"------Boundary--\r\n"
+        )
 
         conn = self._conn()
         conn.request("POST", "/upload", body=body, headers={
@@ -303,18 +296,17 @@ class TestUploadServerIntegration:
         import multideck.upload_server as mod
         monkeypatch.setattr(mod, "MAX_UPLOAD_BYTES", 10)
 
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
-            f"\r\n"
-            f"well past ten bytes of file data\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            b"\r\n"
+            b"well past ten bytes of file data\r\n"
+            b"------Boundary--\r\n"
+        )
         assert len(body) > 10  # sanity: genuinely exceeds the lowered cap
 
         conn = self._conn()

@@ -19,7 +19,7 @@ class TestRegistryShape:
         assert all(caps.multi_window is True for caps in AGENT_TOOLS.values())
 
     def test_happy_agents_derived_from_registry(self):
-        assert HAPPY_AGENTS == {t for t, c in AGENT_TOOLS.items() if c.happy}
+        assert {t for t, c in AGENT_TOOLS.items() if c.happy} == HAPPY_AGENTS
 
 
 class TestOneEditExtensionProof:

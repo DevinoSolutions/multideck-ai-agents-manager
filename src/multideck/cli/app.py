@@ -143,7 +143,10 @@ def main(
             group = menu.get("group")
             break
 
-    from multideck.launch import run_multideck, RunOpts  # heavy subsystem: in-body per policy
+    from multideck.launch import (  # heavy subsystem: in-body per policy
+        RunOpts,
+        run_multideck,
+    )
     rc = run_multideck(cfg, RunOpts(
         retile_all=retile_all,
         dry_run=dry_run,

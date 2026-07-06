@@ -10,11 +10,14 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from multideck.style import style
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _load_raw_config(path: Path) -> dict:
@@ -31,7 +34,7 @@ def _save_raw_config(path: Path, data: dict) -> None:
 
 
 def _load_config_or_exit(config_file: Path):
-    from multideck.config import load_config      # heavy subsystem: in-body per policy
+    from multideck.config import load_config  # heavy subsystem: in-body per policy
     try:
         return load_config(str(config_file))
     except (ValueError, FileNotFoundError) as e:  # ConfigError <: ValueError (E7 S2d) -> caught

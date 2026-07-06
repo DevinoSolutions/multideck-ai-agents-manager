@@ -7,9 +7,10 @@ import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
-from multideck.grid import Rect, MonitorRect
+if TYPE_CHECKING:
+    from multideck.grid import MonitorRect, Rect
 
 
 @functools.lru_cache(maxsize=1)
@@ -93,9 +94,8 @@ def get_platform() -> Platform:
     if sys.platform == "win32":
         from multideck.platform.windows import WindowsPlatform
         return WindowsPlatform()
-    elif sys.platform == "darwin":
+    if sys.platform == "darwin":
         from multideck.platform.macos import MacOSPlatform
         return MacOSPlatform()
-    else:
-        from multideck.platform.linux import LinuxPlatform
-        return LinuxPlatform()
+    from multideck.platform.linux import LinuxPlatform
+    return LinuxPlatform()

@@ -5,15 +5,19 @@ _print_qr: optional `qrcode` dep) -- both keep their guard in-body.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from multideck import __version__
 from multideck.style import style
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 LOGO_LINES = [
     r"           _ _   _    _        _   ",
@@ -87,18 +91,16 @@ def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
 
 def _force_utf8_console() -> None:
     """Make stdout render UTF-8 (block chars for the QR, box glyphs) on Windows
-    consoles that default to a legacy code page. Best-effort, never raises."""
+    consoles that default to a legacy code page. Best-effort: the expected
+    OS/attribute errors (redirected stdout, missing console) are suppressed so a
+    cosmetic failure never crashes the CLI; an unexpected error still surfaces."""
     if sys.platform != "win32":
         return
-    try:
+    with contextlib.suppress(OSError, AttributeError):
         import ctypes
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
-    except Exception:
-        pass
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # guarded by try/except; reconfigure exists on the real TextIOWrapper
-    except Exception:
-        pass
+    with contextlib.suppress(OSError, AttributeError, ValueError):
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # reason: guarded above; reconfigure exists on the real TextIOWrapper
 
 
 def _print_qr(url: str) -> None:

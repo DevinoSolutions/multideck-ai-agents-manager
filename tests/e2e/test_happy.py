@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+
 import pytest
 
 pytestmark = pytest.mark.e2e
@@ -55,8 +56,8 @@ class TestHappyIntegration:
         )
         assert result.returncode == 0
         lines = result.stdout.splitlines()
-        happy_lines = [l for l in lines if "with_happy" in l and "[happy]" in l]
-        no_happy_lines = [l for l in lines if "without_happy" in l and "[happy]" not in l]
+        happy_lines = [line for line in lines if "with_happy" in line and "[happy]" in line]
+        no_happy_lines = [line for line in lines if "without_happy" in line and "[happy]" not in line]
         assert len(happy_lines) >= 1
         assert len(no_happy_lines) >= 1
 

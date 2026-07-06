@@ -68,7 +68,7 @@ def test_help_snapshots(runner):
     """The primary anti-drift net: fails the instant a command's help output
     changes shape, is dropped, renamed, or re-parented during the split."""
     for args, expected in HELP_SNAPSHOTS.items():
-        result = runner.invoke(cli.main, list(args) + ["--help"])
+        result = runner.invoke(cli.main, [*list(args), "--help"])
         assert result.exit_code == 0
         assert _normalize_help(result.output) == _normalize_help(expected), \
             f"help output drifted for args={args!r}"
@@ -92,7 +92,7 @@ def test_acyclic_imports():
     """multideck.cli and multideck.upload_server must both import standalone --
     upload_server's deferred `_find_config`/`find_config` import and cli's
     command-module registration must never form a load cycle."""
-    import multideck.cli  # noqa: F401
+    import multideck.cli
     import multideck.upload_server  # noqa: F401
 
 
@@ -145,14 +145,14 @@ class TestAttachFlowCharacterization:
         popen_calls = []
         monkeypatch.setattr(subprocess, "Popen", lambda args, **k: popen_calls.append(args))
         tiled = []
-        monkeypatch.setattr("multideck.cli.attach._tile_titles", lambda titles: tiled.append(titles))
+        monkeypatch.setattr("multideck.cli.attach._tile_titles", tiled.append)
         monkeypatch.setattr("multideck.cli.attach._maybe_start_hotkey", lambda url: 1234)
 
         class _FakePlat:
             def supports_hotkey(self) -> bool:
                 return True
 
-        monkeypatch.setattr("multideck.platform.get_platform", lambda: _FakePlat())
+        monkeypatch.setattr("multideck.platform.get_platform", _FakePlat)
         monkeypatch.setattr("time.sleep", lambda s: None)
 
         cli._attach_flow("user@host", no_mux=False, group=None, yes=False)

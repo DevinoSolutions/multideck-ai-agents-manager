@@ -6,9 +6,26 @@ after that re-exports every symbol tests/external code still reach via
 """
 from __future__ import annotations
 
+from multideck.cli import (  # noqa: F401 -- import-time command registration
+    attach,
+    config_editor,
+    config_io,
+    daemons,
+    docs,
+    menu,
+    session_picker,
+    spawns,
+    status,
+    ui,
+)
 from multideck.cli.app import main
-from multideck.cli import attach, config_editor, config_io, daemons, docs, menu, session_picker, spawns, status, ui  # noqa: F401 -- import-time command registration
-from multideck.cli.attach import _attach_flow, _default_attach_host, _split_target, _ssh_json, _tile_titles
+from multideck.cli.attach import (
+    _attach_flow,
+    _default_attach_host,
+    _split_target,
+    _ssh_json,
+    _tile_titles,
+)
 from multideck.cli.config_editor import _config_menu
 from multideck.cli.menu import _run_discovery, _show_menu
 from multideck.cli.session_picker import _run_sessions_picker
@@ -17,8 +34,20 @@ from multideck.cli.status import _menu_down, _menu_status, _menu_up
 from multideck.cli.ui import _grouped, _print_session_overview
 
 __all__ = [
-    "main", "_attach_flow", "_config_menu", "_default_attach_host", "_grouped",
-    "_maybe_start_hotkey", "_menu_down", "_menu_status", "_menu_up",
-    "_print_session_overview", "_run_discovery", "_run_sessions_picker",
-    "_show_menu", "_split_target", "_ssh_json", "_tile_titles",
+    "_attach_flow",
+    "_config_menu",
+    "_default_attach_host",
+    "_grouped",
+    "_maybe_start_hotkey",
+    "_menu_down",
+    "_menu_status",
+    "_menu_up",
+    "_print_session_overview",
+    "_run_discovery",
+    "_run_sessions_picker",
+    "_show_menu",
+    "_split_target",
+    "_ssh_json",
+    "_tile_titles",
+    "main",
 ]

@@ -1,4 +1,6 @@
-from multideck.grid import compute_grid, TileSlot, Rect, MonitorRect
+import itertools
+
+from multideck.grid import MonitorRect, TileSlot, compute_grid
 
 
 def _mon(x, y, w, h, primary=False, scale=1.0):
@@ -71,7 +73,7 @@ class TestComputeGrid:
         slots = compute_grid(monitors, cols=3, rows=1)
         assert slots[0].x == 0
         assert slots[-1].x + slots[-1].w == 1921
-        for a, b in zip(slots, slots[1:]):
+        for a, b in itertools.pairwise(slots):
             assert a.x + a.w == b.x  # touching, no gap/overlap
         assert max(s.w for s in slots) - min(s.w for s in slots) <= 1
         assert sum(s.w for s in slots) == 1921

@@ -7,21 +7,31 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import click
 
-from multideck.config import MultideckConfig, ProjectConfig
 from multideck.grid import TileSlot, compute_grid
 from multideck.log import get_logger
-from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, get_platform
+from multideck.platform import (
+    Platform,
+    PsmuxWindowOpts,
+    TerminalLaunchOpts,
+    VSCodeLaunchOpts,
+    get_platform,
+)
 from multideck.sessions import AGENT_TOOLS, build_resume_command
 from multideck.style import style
 from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-def spawn_detached(args: list[str], extra_flags: int = 0) -> "subprocess.Popen":
+    from multideck.config import MultideckConfig, ProjectConfig
+
+
+def spawn_detached(args: list[str], extra_flags: int = 0) -> subprocess.Popen:
     """Popen a process that outlives both this process and a launching SSH session.
 
     On Windows, OpenSSH puts the command's children in a job object marked
@@ -83,7 +93,7 @@ def _get_tailscale_ip() -> str | None:
     import subprocess
     try:
         result = subprocess.run(["tailscale", "ip", "-4"],
-                                capture_output=True, text=True, timeout=5)
+                                capture_output=True, text=True, timeout=5, check=False)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip().splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -523,5 +533,5 @@ def kill_psmux(names: list[str]) -> list[str]:
     if not psmux:
         return []
     for name in names:
-        subprocess.run([psmux, "-L", name, "kill-server"], capture_output=True)
+        subprocess.run([psmux, "-L", name, "kill-server"], capture_output=True, check=False)
     return list(names)

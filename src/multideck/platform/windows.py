@@ -6,10 +6,15 @@ import subprocess
 from ctypes import POINTER, WINFUNCTYPE, byref, create_unicode_buffer, windll
 from typing import Any, Literal
 
-
 from multideck.grid import MonitorRect, Rect
 from multideck.log import get_logger
-from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, find_psmux
+from multideck.platform import (
+    Platform,
+    PsmuxWindowOpts,
+    TerminalLaunchOpts,
+    VSCodeLaunchOpts,
+    find_psmux,
+)
 
 user32 = windll.user32
 shcore = windll.shcore
@@ -19,14 +24,16 @@ class WindowsPlatform(Platform):
     def set_dpi_aware(self) -> None:
         try:
             user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
-            return
         except (OSError, AttributeError):
             pass
+        else:
+            return
         try:
             shcore.SetProcessDpiAwareness(2)
-            return
         except (OSError, AttributeError):
             pass
+        else:
+            return
         try:
             user32.SetProcessDPIAware()
         except (OSError, AttributeError):
@@ -143,10 +150,7 @@ class WindowsPlatform(Platform):
         if opts.ssh_host:
             remote_dir = opts.ssh_remote_dir or opts.cwd
             inner = f"cd {remote_dir} && {opts.command}"
-            if opts.ssh_shell:
-                remote = f"{opts.ssh_shell} '{inner}'"
-            else:
-                remote = inner
+            remote = f"{opts.ssh_shell} '{inner}'" if opts.ssh_shell else inner
             # Pass ssh + args as separate argv elements so the remote command
             # is a single, cleanly-quoted token. Building one `ssh ... "..."`
             # string and handing it to `cmd /k` double-nests the quotes, which

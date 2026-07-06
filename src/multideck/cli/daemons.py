@@ -11,7 +11,11 @@ from pathlib import Path
 import click
 
 from multideck.cli.app import main
-from multideck.cli.spawns import _maybe_start_upload_server, _running_upload_port, _tailnet_host
+from multideck.cli.spawns import (
+    _maybe_start_upload_server,
+    _running_upload_port,
+    _tailnet_host,
+)
 from multideck.cli.ui import _banner, _divider, _force_utf8_console, _print_qr
 from multideck.style import style
 
@@ -31,7 +35,7 @@ def termius_cmd(ctx: click.Context, host: str | None, user: str | None, install:
     if not host:
         try:
             result = subprocess.run(["tailscale", "ip", "-4"],
-                                    capture_output=True, text=True, timeout=5)
+                                    capture_output=True, text=True, timeout=5, check=False)
             if result.returncode == 0 and result.stdout.strip():
                 host = result.stdout.strip().splitlines()[0]
         except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -93,7 +97,10 @@ def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> 
     upload an image, and the file path is auto-pasted into that project's
     Claude session via psmux send-keys.
     """
-    from multideck.upload_server import _tailscale_ip, run_server  # heavy subsystem: in-body per policy
+    from multideck.upload_server import (  # heavy subsystem: in-body per policy
+        _tailscale_ip,
+        run_server,
+    )
 
     config_path = ctx.obj.get("config_path")
     if ensure:

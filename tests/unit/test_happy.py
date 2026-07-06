@@ -1,4 +1,4 @@
-from multideck.launch import _wrap_happy, _psmux_session_name, HAPPY_AGENTS
+from multideck.launch import HAPPY_AGENTS, _psmux_session_name, _wrap_happy
 
 
 class TestWrapHappy:

@@ -24,9 +24,10 @@ def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
     probe.settimeout(0.3)
     try:
         probe.connect(("127.0.0.1", port))
-        return  # already listening
     except OSError:
         pass
+    else:
+        return  # already listening
     finally:
         probe.close()
 
@@ -52,7 +53,9 @@ def _maybe_start_hotkey(server_url: str) -> int | None:
     if not get_platform().supports_hotkey():
         return None
 
-    from multideck.hotkey import listener_pid  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    from multideck.hotkey import (
+        listener_pid,  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    )
 
     existing = listener_pid()
     if existing:
@@ -76,9 +79,10 @@ def _probe_port(port: int) -> bool:
     s.settimeout(0.3)
     try:
         s.connect(("127.0.0.1", port))
-        return True
     except OSError:
         return False
+    else:
+        return True
     finally:
         s.close()
 
@@ -99,15 +103,18 @@ def _pid_alive(pid: int | None) -> bool:
         return bool(ok) and code.value == 259  # STILL_ACTIVE
     try:
         os.kill(pid, 0)
-        return True
     except OSError:
         return False
+    else:
+        return True
 
 
 def _running_upload_port() -> int | None:
     """Port of a *live* locally-running upload server, from its pid file. Skips
     stale pid files (a port whose recorded process is gone)."""
-    from multideck.upload_server import server_pid  # heavy subsystem: in-body per policy
+    from multideck.upload_server import (
+        server_pid,  # heavy subsystem: in-body per policy
+    )
     d = Path.home() / ".multideck"
     if not d.exists():
         return None
@@ -126,7 +133,7 @@ def _tailnet_host() -> str:
 
     try:
         r = subprocess.run(["tailscale", "status", "--json"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5, check=False)
         if r.returncode == 0 and r.stdout.strip():
             dns = (json.loads(r.stdout).get("Self") or {}).get("DNSName", "")
             if dns:
@@ -135,7 +142,7 @@ def _tailnet_host() -> str:
         pass
     try:
         r = subprocess.run(["tailscale", "ip", "-4"],
-                           capture_output=True, text=True, timeout=5)
+                           capture_output=True, text=True, timeout=5, check=False)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip().splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired):

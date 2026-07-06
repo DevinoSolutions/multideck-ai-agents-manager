@@ -40,7 +40,7 @@ HELP_TARGETS = [
 
 @pytest.mark.parametrize("args", HELP_TARGETS, ids=lambda a: " ".join(a) or "main")
 def test_help_smoke(runner, args):
-    result = runner.invoke(main, args + ["--help"])
+    result = runner.invoke(main, [*args, "--help"])
     assert result.exit_code == 0
     assert "Usage" in result.output
 

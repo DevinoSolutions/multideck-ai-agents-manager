@@ -1,6 +1,8 @@
 import os
-import pytest
+import sys
+
 from multideck.sessions.claude import encode_claude_project_path, get_claude_session_ids
+from multideck.sessions.codex import get_codex_session_ids
 
 
 class TestEncodeClaudeProjectPath:
@@ -64,10 +66,6 @@ class TestGetClaudeSessionIds:
         assert ids == ["uuid-2"]
 
 
-import sys
-from multideck.sessions.codex import get_codex_session_ids
-
-
 class TestGetCodexSessionIds:
     def test_returns_matching_sessions_sorted_by_mtime(self, fake_codex_sessions, tmp_path):
         fake_codex_sessions([
@@ -117,7 +115,6 @@ class TestGetCodexSessionIds:
         bad_dir.mkdir(parents=True, exist_ok=True)
         bad_file = bad_dir / "bad.jsonl"
         bad_file.write_text("not json\n")
-        import os
         os.utime(bad_file, (3000.0, 3000.0))
         ids = get_codex_session_ids("/home/user/api", 2, home_override=tmp_path)
         assert ids[0] == "uuid-good"

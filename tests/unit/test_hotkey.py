@@ -2,17 +2,16 @@ import json
 import sys
 import threading
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only")
 
 
 class TestProjectFromTitle:
     def test_extracts_name(self):
-        from multideck.hotkey import project_from_title, MD_TITLE_PREFIX
+        from multideck.hotkey import project_from_title
         assert project_from_title("md:marka") == "marka"
         assert project_from_title("md:upup") == "upup"
 
@@ -119,6 +118,7 @@ class TestDibToBmp:
         # 32bpp BI_BITFIELDS (what GDI / .NET / screenshots produce): 3 color
         # masks sit between the 40-byte header and the pixels.
         import struct
+
         from multideck.hotkey import _dib_to_bmp
         header = self._header(2, 2, 32, 3)
         masks = struct.pack("<III", 0x00FF0000, 0x0000FF00, 0x000000FF)
@@ -134,6 +134,7 @@ class TestDibToBmp:
 
     def test_rgb32_forces_alpha_opaque(self):
         import struct
+
         from multideck.hotkey import _dib_to_bmp
         header = self._header(2, 2, 32, 0)  # BI_RGB, no masks
         pixels = bytes([10, 20, 30, 0] * 4)  # alpha = 0 (transparent -> black)
@@ -146,6 +147,7 @@ class TestDibToBmp:
 
     def test_rgb24_untouched(self):
         import struct
+
         from multideck.hotkey import _dib_to_bmp
         header = self._header(2, 2, 24, 0)
         pixels = bytes([1, 2, 3] * 4)
@@ -205,6 +207,7 @@ class TestListenerLifecycle:
 
     def test_stop_kills_and_removes(self, tmp_path, monkeypatch):
         import subprocess
+
         from multideck import hotkey
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
@@ -233,6 +236,7 @@ class TestListenerLifecycle:
         # F-IC-006 (honest half): a failed kill returns False and leaves the
         # pid file in place so `status`/a retry can still find the process.
         import subprocess
+
         from multideck import hotkey
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
@@ -248,6 +252,7 @@ class TestListenerLifecycle:
 
     def test_write_then_clear_pid(self, tmp_path, monkeypatch):
         import os
+
         from multideck import hotkey
         p = tmp_path / "hotkey.pid"
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
@@ -318,7 +323,7 @@ class TestHeartbeatWiring:
     def test_heartbeat_loop_writes_and_stops_on_event(self, monkeypatch):
         from multideck import hotkey
         calls = []
-        monkeypatch.setattr(hotkey, "write_heartbeat", lambda name: calls.append(name))
+        monkeypatch.setattr(hotkey, "write_heartbeat", calls.append)
         monkeypatch.setattr(hotkey, "HEARTBEAT_INTERVAL", 0.01)  # don't wait a real 10s
 
         stop_event = threading.Event()
@@ -358,13 +363,14 @@ class TestMaybeStartHotkey:
 
 class TestHookStructsAndConstants:
     def test_kbdllhookstruct_size(self):
-        from multideck.hotkey import KBDLLHOOKSTRUCT
         import ctypes
+
+        from multideck.hotkey import KBDLLHOOKSTRUCT
         size = ctypes.sizeof(KBDLLHOOKSTRUCT)
         assert size > 0
 
     def test_constants(self):
-        from multideck.hotkey import VK_V, VK_MENU, CF_DIB, WH_KEYBOARD_LL
+        from multideck.hotkey import CF_DIB, VK_MENU, VK_V, WH_KEYBOARD_LL
         assert VK_V == 0x56
         assert VK_MENU == 0x12
         assert CF_DIB == 8
@@ -387,8 +393,9 @@ class TestHookProc:
 
     def test_decide_eats_altv_in_md_window(self, monkeypatch):
         import ctypes
+
         from multideck import hotkey
-        from multideck.hotkey import _hook_decide, VK_V, WM_KEYDOWN, HC_ACTION
+        from multideck.hotkey import HC_ACTION, VK_V, WM_KEYDOWN, _hook_decide
 
         kb = self._kb(VK_V)
         lparam = ctypes.cast(ctypes.pointer(kb), ctypes.c_void_p).value
@@ -443,5 +450,6 @@ class TestHookProc:
 
     def test_run_hotkey_signature_has_no_session_names(self):
         import inspect
+
         from multideck.hotkey import run_hotkey
         assert set(inspect.signature(run_hotkey).parameters) == {"server_url"}

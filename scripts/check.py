@@ -12,7 +12,7 @@ import subprocess
 import sys
 
 STEPS: list[tuple[str, list[str]]] = [
-    ("ruff  (lint + 3.10 syntax floor)", ["ruff", "check", "src"]),
+    ("ruff  (lint + 3.10 syntax floor)", ["ruff", "check", "src", "tests", "scripts"]),
     ("compileall (current interpreter)", [sys.executable, "-m", "compileall", "-q", "src"]),
     ("mypy  (type check)", [sys.executable, "-m", "mypy"]),
     ("pytest + coverage", [sys.executable, "-m", "pytest", "tests/unit/",
@@ -24,7 +24,7 @@ def main() -> int:
     failed: list[str] = []
     for name, cmd in STEPS:
         print(f"\n=== {name} ===", flush=True)
-        if subprocess.run(cmd).returncode != 0:
+        if subprocess.run(cmd, check=False).returncode != 0:
             failed.append(name)
     if failed:
         print("\nGATE FAILED: " + ", ".join(failed))

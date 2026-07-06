@@ -5,6 +5,7 @@ group with all 14 subcommands (13 original + E7's `migrate`).
 """
 from __future__ import annotations
 
+import contextlib
 import sys
 from pathlib import Path
 
@@ -12,7 +13,15 @@ import click
 
 from multideck.cli.app import main
 from multideck.cli.config_io import _load_raw_config, _save_raw_config
-from multideck.cli.ui import _banner, _confirm_change, _divider, _grid_preview, _menu_item, _open_in_editor, _prompt_or_back
+from multideck.cli.ui import (
+    _banner,
+    _confirm_change,
+    _divider,
+    _grid_preview,
+    _menu_item,
+    _open_in_editor,
+    _prompt_or_back,
+)
 from multideck.config import _random_tab_color, migrate_config_file
 from multideck.paths import find_config
 from multideck.style import style
@@ -353,7 +362,6 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
 @click.pass_context
 def config(ctx: click.Context) -> None:
     """View and modify your multideck configuration."""
-    pass
 
 
 @config.command("show")
@@ -591,10 +599,8 @@ def config_set(ctx: click.Context, path: str, field: str, value: str) -> None:
     if value.lower() in ("true", "false"):
         parsed = value.lower() == "true"
     else:
-        try:
+        with contextlib.suppress(ValueError):
             parsed = int(value)
-        except ValueError:
-            pass
     _set_project_field(ctx, path, field, parsed)
     click.echo(f"  Set {style(field, bold=True)} = {style(str(value), fg='cyan')} on {path}")
 

@@ -3,10 +3,14 @@ from __future__ import annotations
 import colorsys
 import json
 import random
-import sys
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import click
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 SCHEMA_VERSION = 1
 
@@ -210,7 +214,7 @@ _ALLOWED_PROJECT_KEYS = {
 def _warn_unknown_keys(raw: dict, allowed: set[str], path: str) -> None:
     for key in sorted(set(raw) - allowed):
         field_path = f"{path}.{key}" if path else key
-        print(f"Warning: unknown config key: {field_path}", file=sys.stderr)
+        click.echo(f"Warning: unknown config key: {field_path}", err=True)
 
 
 def _parse_layout(raw: dict) -> LayoutConfig:
@@ -241,9 +245,9 @@ def load_config(path: str) -> MultideckConfig:
     _require_type(raw, "version", int, "version")
     version = raw.get("version", 0)
     if version < SCHEMA_VERSION:
-        print(
+        click.echo(
             f"Warning: config schema v{version} < v{SCHEMA_VERSION}; run: multideck config migrate",
-            file=sys.stderr,
+            err=True,
         )
     _warn_unknown_keys(raw, _ALLOWED_TOP_KEYS, "")
 

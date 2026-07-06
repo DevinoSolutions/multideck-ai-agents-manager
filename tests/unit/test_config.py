@@ -1,8 +1,9 @@
-import json
 from pathlib import Path
 
 import pytest
-from multideck.config import ConfigError, load_config, MultideckConfig, ProjectConfig
+
+from multideck.config import ConfigError, MultideckConfig, load_config
+from multideck.init_config import generate_config, scan_for_projects
 
 
 class TestLoadConfig:
@@ -168,7 +169,7 @@ class TestLoadConfig:
             "layout": {"columns": "2"},
             "projects": [{"path": "api"}],
         })
-        with pytest.raises(ConfigError, match="layout.columns must be an integer"):
+        with pytest.raises(ConfigError, match=r"layout\.columns must be an integer"):
             load_config(path)
 
     def test_load_config_bool_columns_raises(self, tmp_config):
@@ -178,7 +179,7 @@ class TestLoadConfig:
             "layout": {"columns": True},
             "projects": [{"path": "api"}],
         })
-        with pytest.raises(ConfigError, match="layout.columns must be an integer"):
+        with pytest.raises(ConfigError, match=r"layout\.columns must be an integer"):
             load_config(path)
 
     def test_missing_version_defaults_zero_and_warns(self, capsys, tmp_config):
@@ -211,9 +212,6 @@ class TestPathResolution:
         assert cfg.projects[0].path == "/absolute/path"
 
 
-from multideck.init_config import scan_for_projects, generate_config
-
-
 class TestScanForProjects:
     def test_finds_git_repos(self, tmp_path):
         (tmp_path / "api" / ".git").mkdir(parents=True)
@@ -231,13 +229,13 @@ class TestScanForProjects:
     def test_adds_group_from_parent_folder(self, tmp_path):
         (tmp_path / "backend" / "api" / ".git").mkdir(parents=True)
         repos = scan_for_projects(str(tmp_path))
-        proj = [r for r in repos if r["path"] == "backend/api"][0]
+        proj = next(r for r in repos if r["path"] == "backend/api")
         assert proj["group"] == "backend"
 
     def test_no_group_for_top_level(self, tmp_path):
         (tmp_path / "api" / ".git").mkdir(parents=True)
         repos = scan_for_projects(str(tmp_path))
-        proj = [r for r in repos if r["path"] == "api"][0]
+        proj = next(r for r in repos if r["path"] == "api")
         assert "group" not in proj
 
     def test_duplicate_leaf_gets_unique_title(self, tmp_path):

@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from multideck.grid import Rect, TileSlot
 from multideck.log import get_logger
-from multideck.platform import Platform
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from multideck.platform import Platform
 
 RETRY_SECS_CONTAINS = 20   # contains-mode windows are slow to appear (e.g. VS Code)
 RETRY_SECS_EXACT = 6

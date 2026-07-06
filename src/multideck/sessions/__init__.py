@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING
 
-from multideck.sessions.claude import get_claude_session_ids, build_claude_resume
-from multideck.sessions.codex import get_codex_session_ids, build_codex_resume
+from multideck.sessions.claude import build_claude_resume, get_claude_session_ids
+from multideck.sessions.codex import build_codex_resume, get_codex_session_ids
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)

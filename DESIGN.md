@@ -386,13 +386,23 @@ lightweight ABC + lazy factory; the actually-heavy OS backends
 (`platform/windows.py`'s ctypes bindings, etc.) import only when
 `get_platform()` is called.)
 
-**The ruff ruleset is pinned explicitly to `E4, E7, E9, F`, matching ruff's
-own default — deliberate, not an arbitrary restriction.** The comment in
-`pyproject.toml` states it directly: this matches the baseline the audit
-measured, and pinning the identifiers explicitly makes the gate immune to
-ruff changing its defaults upstream. `E501`/`I`/`UP`/`B` are named in that
-comment as deliberate future ratchets — add one when you're choosing to do
-the cleanup it demands, never as a side effect of an unrelated change.
+**The ruff ruleset is a curated, expanded pack (`[tool.ruff.lint]`), no
+longer just the `E4, E7, E9, F` audited baseline.** The baseline stays first
+in the `select` list (pinned explicitly, immune to ruff's floating defaults);
+everything after it is the pre-refactor hardening pack, each group carrying a
+one-line why in `pyproject.toml`: hygiene (`W`/`I`/`UP`/`B`/`A`),
+simplification & return/raise discipline (`C4`/`SIM`/`RET`/`RSE`/`ISC`/`PIE`),
+the complexity ceilings (`C90` + `PLR0912`/`PLR0915`, seeded at the Phase-0
+measured max and ratcheted **down** only, never up), the loudness pack
+(`T20`/`BLE`/`S110`/`S112`/`TRY`/`LOG`/`G`/`DTZ` — nothing fails silently, so
+every error stays Sentry-capturable), and drift guards (`ERA`/`TC`/`TID`/`RUF`,
+where `RUF100` is the unused-noqa rot guard). The gate lints `src` + `tests` +
+`scripts`; the only sanctioned softening is `[tool.ruff.lint.per-file-ignores]`,
+one reason-comment per code — nothing from `src/` goes there. Changing the
+`select`/`ignore` list requires a written reason in this file, per house rule.
+`ANN401` (no `Any` in annotations) is intentionally deferred to the ty +
+mypy-strict `Any` purge, so `Any` elimination happens once under a validating
+type checker rather than twice; the final ruleset is identical either way.
 
 **Help-snapshot tests normalize one verified Click difference rather than
 pinning a Click version.** `tests/unit/test_cli_structure.py::_normalize_help`
@@ -507,13 +517,14 @@ small, tested change):
 
 **Tooling and testing gaps:**
 
-- **`tests/` is not ruff-linted.** `[tool.ruff] src = ["src"]` scopes the
-  gate to `src/` only; whether (and with what ruleset) to lint `tests/` is
-  an open decision. (Historical note: an audit-era ledger entry called
-  `tests/unit/test_hotkey.py`'s `HTTPServer`/`BaseHTTPRequestHandler`
-  imports unused — on the current tree they are *used*, by the live-HTTP
-  test harness added later; the open item is the ruleset decision itself,
-  not that specific import.)
+- **`tests/` and `scripts/` are now ruff-linted** (resolves the former "tests
+  not linted" gap). `scripts/check.py` invokes `ruff check src tests scripts`
+  under the expanded ruleset; `[tool.ruff] src = ["src"]` now only declares the
+  first-party import root for isort, not the lint scope. Test-specific softening
+  lives in `[tool.ruff.lint.per-file-ignores]` `"tests/**"`, one reason per code.
+  (Historical note: an audit-era ledger entry called `tests/unit/test_hotkey.py`'s
+  `HTTPServer`/`BaseHTTPRequestHandler` imports unused — on the current tree they
+  are *used*, by the live-HTTP test harness added later.)
 - **The pathlib migration was deliberately trimmed to predicates only
   (LS-A-002 trim).** `os.path.isdir`/`isfile`/`isabs` sites were converted;
   `os.path.expandvars` (no pathlib equivalent) and

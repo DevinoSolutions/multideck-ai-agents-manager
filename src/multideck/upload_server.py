@@ -1,6 +1,7 @@
 """Tiny upload server for mobile image transfer to psmux sessions."""
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import os
@@ -11,6 +12,7 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import ClassVar
 from urllib.parse import parse_qs, urlparse
 
 from multideck.launch import _psmux_session_name
@@ -44,7 +46,7 @@ def stop_server(port: int) -> bool:
         return False
     try:
         if sys.platform == "win32":
-            result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=False)
             if result.returncode != 0:
                 log.warning("taskkill pid %d failed rc=%d", pid, result.returncode)
                 return False
@@ -53,10 +55,8 @@ def stop_server(port: int) -> bool:
     except OSError:
         log.warning("failed to stop upload server pid %d", pid)
         return False
-    try:
+    with contextlib.suppress(OSError):
         _pid_path(port).unlink()
-    except OSError:
-        pass
     return True
 
 
@@ -134,7 +134,7 @@ def _flash(psmux: str | None, project: str, message: str, duration_ms: int,
         cmd += ["set", "-g", "message-style", style, ";"]
     cmd += ["display-message", "-d", str(duration_ms), message]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=3)
+        subprocess.run(cmd, capture_output=True, timeout=3, check=False)
     except (OSError, subprocess.SubprocessError) as e:
         get_logger("upload").warning("status-line flash failed for project=%s: %s", project, e)
 
@@ -222,7 +222,7 @@ pills.forEach(p => p.addEventListener('click', () => {
   input.disabled = false;
   drop.className = 'drop ready';
   label.textContent = 'tap to select file';
-  toast.textContent = ' ';
+  toast.textContent = '\u00A0';
   toast.className = 'toast';
 }));
 
@@ -350,7 +350,7 @@ def _config_sessions(config_path: str | None) -> list[dict]:
 
 
 def _alive(psmux: str, name: str) -> bool:
-    return subprocess.run([psmux, "-L", name, "has-session"], capture_output=True).returncode == 0
+    return subprocess.run([psmux, "-L", name, "has-session"], capture_output=True, check=False).returncode == 0
 
 
 def _discover_sessions(config_path: str | None) -> list[dict]:
@@ -367,7 +367,7 @@ def _discover_sessions(config_path: str | None) -> list[dict]:
         return []
     with ThreadPoolExecutor(max_workers=16) as pool:
         flags = list(pool.map(lambda c: _alive(psmux, c["name"]), candidates))
-    return [c for c, ok in zip(candidates, flags) if ok]
+    return [c for c, ok in zip(candidates, flags, strict=True) if ok]
 
 
 def _build_html(sessions: list[dict]) -> str:
@@ -562,7 +562,7 @@ def _mobileconfig(host: str) -> bytes:
   <key>PayloadVersion</key><integer>1</integer>
 </dict>
 </plist>
-""".encode("utf-8")
+""".encode()
 
 
 def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], dict[str, tuple[str, bytes]]]:
@@ -601,8 +601,8 @@ def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], d
         filename = ""
         for line in header_str.split("\r\n"):
             if "Content-Disposition:" in line:
-                for token in line.split(";"):
-                    token = token.strip()
+                for raw_token in line.split(";"):
+                    token = raw_token.strip()
                     if token.startswith("name="):
                         name = token.split("=", 1)[1].strip('"')
                     elif token.startswith("filename="):
@@ -634,16 +634,14 @@ def _request_focus(project: str) -> None:
     except OSError:
         current = ""
     if psmux and current:
-        try:
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
             subprocess.run([psmux, "-L", current, "detach-client"],
-                           capture_output=True, timeout=3)
-        except (OSError, subprocess.SubprocessError):
-            pass
+                           capture_output=True, timeout=3, check=False)
 
 
 class UploadHandler(BaseHTTPRequestHandler):
     config_path: str | None = None
-    cached_sessions: list[dict] = []
+    cached_sessions: ClassVar[list[dict]] = []
     sessions_ts: float = 0
     port: int | None = None
     pid: int | None = None
@@ -698,7 +696,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                     f"<div>Switched to <b style='color:#a6e3a1'>{safe}</b>.<br>"
                     "<span style='color:#6c7086;font-size:.85rem'>Open your terminal "
                     "(multideck sessions) to continue.</span></div></body>"
-                ).encode("utf-8")
+                ).encode()
                 self._send_bytes(body, "text/html; charset=utf-8")
             else:
                 self.send_error(404)
@@ -790,7 +788,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 result = subprocess.run(
                     [psmux, "-L", project, "send-keys", "-t", project,
                      "--", str(dest)],
-                    capture_output=True,
+                    capture_output=True, check=False,
                 )
                 injected = result.returncode == 0
             elif inject:
@@ -840,7 +838,7 @@ def _tailscale_ip() -> str | None:
     """Best-effort Tailscale IPv4 address, or None if Tailscale isn't
     installed, isn't running, or doesn't answer in time."""
     try:
-        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5, check=False)
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip().splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -905,8 +903,6 @@ def run_server(port: int = 8080, config_path: str | None = None, host: str | Non
             s.shutdown()       # called from a different thread than its serve_forever -> safe
         for s in servers:
             s.server_close()   # servers[0] exited via KeyboardInterrupt; just closes the socket
-        try:
+        with contextlib.suppress(OSError):
             pid_file.unlink()
-        except OSError:
-            pass
         log.info("stopped")

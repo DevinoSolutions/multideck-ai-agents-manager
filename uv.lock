@@ -299,11 +299,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "click", specifier = ">=8.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.13" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=2.1" },
     { name = "pexpect", marker = "extra == 'dev'", specifier = ">=4.8" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15" },
 ]
 provides-extras = ["dev"]
 

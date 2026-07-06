@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.error import URLError
 from urllib.request import urlopen
 
@@ -19,11 +19,21 @@ import click
 from multideck.cli.app import main
 from multideck.cli.config_io import _load_config_or_exit
 from multideck.cli.spawns import _maybe_start_upload_server, _pid_alive, _probe_port
-from multideck.cli.ui import _banner, _divider, _grouped, _print_names, _print_session_overview
-from multideck.config import MultideckConfig
+from multideck.cli.ui import (
+    _banner,
+    _divider,
+    _grouped,
+    _print_names,
+    _print_session_overview,
+)
 from multideck.log import heartbeat_fresh
 from multideck.paths import find_config
 from multideck.style import style
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from multideck.config import MultideckConfig
 
 
 def _health_check(port: int) -> bool:
@@ -42,7 +52,9 @@ def _upload_state(port: int) -> str:
     the "reports ON while dead" bug, now surfaced) / "off"."""
     if _health_check(port):
         return "on"
-    from multideck.upload_server import server_pid  # heavy subsystem: in-body per policy
+    from multideck.upload_server import (
+        server_pid,  # heavy subsystem: in-body per policy
+    )
     if _probe_port(port) or _pid_alive(server_pid(port)):
         return "dead"
     return "off"
@@ -53,7 +65,9 @@ def _listener_state() -> str:
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
     if not get_platform().supports_hotkey():
         return "off"
-    from multideck.hotkey import listener_pid  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    from multideck.hotkey import (
+        listener_pid,  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    )
     pid = listener_pid()
     if not pid:
         return "off"
@@ -151,7 +165,10 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
     config_file = find_config(ctx.obj.get("config_path"))
     cfg = _load_config_or_exit(config_file)
 
-    from multideck.launch import kill_psmux, psmux_status  # heavy subsystem: in-body per policy
+    from multideck.launch import (  # heavy subsystem: in-body per policy
+        kill_psmux,
+        psmux_status,
+    )
 
     up, _, _ = psmux_status(cfg, group=group)
     up_names = [u["name"] for u in up]
@@ -169,7 +186,9 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
         click.echo(f"  {style('-', dim=True)} No matching running sessions.")
 
     if do_all or stop_srv:
-        from multideck.upload_server import stop_server  # heavy subsystem: in-body per policy
+        from multideck.upload_server import (
+            stop_server,  # heavy subsystem: in-body per policy
+        )
         if stop_server(cfg.settings.upload_port):
             click.echo(f"  {style('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}.")
         else:
@@ -177,7 +196,9 @@ def down_cmd(ctx: click.Context, names: tuple[str, ...], group: str | None,
 
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
     if do_all and get_platform().supports_hotkey():
-        from multideck.hotkey import stop_listener  # ImportError off-Windows (hotkey.py guards); must stay lazy
+        from multideck.hotkey import (
+            stop_listener,  # ImportError off-Windows (hotkey.py guards); must stay lazy
+        )
         if stop_listener():
             click.echo(f"  {style('+', fg='green')} Stopped the Alt+V listener.")
         else:
@@ -191,7 +212,10 @@ def _menu_status(config_file: Path) -> None:
 
 
 def _menu_up(config_file: Path) -> None:
-    from multideck.launch import bring_up_psmux, psmux_status  # heavy subsystem: in-body per policy
+    from multideck.launch import (  # heavy subsystem: in-body per policy
+        bring_up_psmux,
+        psmux_status,
+    )
 
     cfg = _load_config_or_exit(config_file)
     up, down, projects = psmux_status(cfg)
@@ -203,7 +227,7 @@ def _menu_up(config_file: Path) -> None:
     elif not down:
         click.echo(f"  {style('+', fg='green')} All {len(up)} session(s) already running.")
     else:
-        dn_order, dn_buckets = _grouped(down)
+        _dn_order, dn_buckets = _grouped(down)
         pickable = _print_session_overview("this machine", up, down)
         opts = [f"{style('a', fg='cyan', bold=True)}=all {len(down)}"]
         if pickable:
@@ -234,7 +258,10 @@ def _menu_up(config_file: Path) -> None:
 
 
 def _menu_down(config_file: Path) -> None:
-    from multideck.launch import kill_psmux, psmux_status  # heavy subsystem: in-body per policy
+    from multideck.launch import (  # heavy subsystem: in-body per policy
+        kill_psmux,
+        psmux_status,
+    )
 
     cfg = _load_config_or_exit(config_file)
     up, _, _ = psmux_status(cfg)
@@ -279,7 +306,9 @@ def _menu_down(config_file: Path) -> None:
         kill_psmux(targets)
         click.echo(f"  {style('+', fg='green')} Stopped {style(str(len(targets)), fg='green', bold=True)} session(s).")
         if also_server:
-            from multideck.upload_server import stop_server  # heavy subsystem: in-body per policy
+            from multideck.upload_server import (
+                stop_server,  # heavy subsystem: in-body per policy
+            )
             stop_server(cfg.settings.upload_port)
             click.echo(f"  {style('+', fg='green')} Stopped upload server.")
     click.echo()

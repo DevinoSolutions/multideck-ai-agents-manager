@@ -155,7 +155,7 @@ class TestDiscoverProjects:
         focused tests deterministic. The real three-way merge (including the
         vscode source) is covered in test_discover_merge.py."""
         import multideck.discover
-        monkeypatch.setattr(multideck.discover, "_discover_vscode_projects", lambda: [])
+        monkeypatch.setattr(multideck.discover, "_discover_vscode_projects", list)
 
     def test_returns_tuple(self, tmp_path):
         result = discover_projects(home=tmp_path)
@@ -181,7 +181,7 @@ class TestDiscoverProjects:
             "payload": {"id": "abc", "cwd": str(proj_dir)},
         }) + "\n")
 
-        projects, days = discover_projects(home=tmp_path)
+        projects, _days = discover_projects(home=tmp_path)
         codex_projects = [p for p in projects if p["tool"] == "codex"]
         assert len(codex_projects) == 1
         assert codex_projects[0]["path"] == os.path.normpath(str(proj_dir))

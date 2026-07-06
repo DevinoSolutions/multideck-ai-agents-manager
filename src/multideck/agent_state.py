@@ -12,6 +12,7 @@ adds negligible latency to every turn.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -70,10 +71,8 @@ def write_state(cwd: str, state: str, session_id: str | None = None) -> None:
 def clear_state(cwd: str) -> None:
     if not cwd:
         return
-    try:
+    with contextlib.suppress(OSError):
         _path_for(cwd).unlink()
-    except OSError:
-        pass
 
 
 def state_for(cwd: str, max_age: float | None = None) -> dict | None:

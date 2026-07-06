@@ -18,7 +18,7 @@ class LinuxPlatform(Platform):
             return []
         result = subprocess.run(
             ["xrandr", "--query"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=10, check=False,
         )
         monitors: list[MonitorRect] = []
         is_first = True
@@ -29,7 +29,7 @@ class LinuxPlatform(Platform):
             )
             if not match:
                 continue
-            name, primary, w, h, x, y = match.groups()
+            _name, primary, w, h, x, y = match.groups()
             w, h, x, y = int(w), int(h), int(x), int(y)
 
             scale = 1.0
@@ -56,7 +56,7 @@ class LinuxPlatform(Platform):
             pattern = f"^{re.escape(title)}$" if mode == "exact" else re.escape(title)
             result = subprocess.run(
                 ["xdotool", "search", "--name", pattern],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, text=True, timeout=5, check=False,
             )
             wids = result.stdout.strip().splitlines()
             if wids:
@@ -65,7 +65,7 @@ class LinuxPlatform(Platform):
         if shutil.which("wmctrl"):
             result = subprocess.run(
                 ["wmctrl", "-l"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True, text=True, timeout=5, check=False,
             )
             for line in result.stdout.splitlines():
                 parts = line.split(None, 3)
@@ -85,7 +85,7 @@ class LinuxPlatform(Platform):
         if shutil.which("wmctrl"):
             subprocess.run(
                 ["wmctrl", "-i", "-r", str(handle), "-e", f"0,{rect.x},{rect.y},{rect.w},{rect.h}"],
-                timeout=5,
+                timeout=5, check=False,
             )
 
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:

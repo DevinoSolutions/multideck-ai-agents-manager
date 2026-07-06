@@ -11,24 +11,23 @@ import time
 
 import pytest
 
-from tests.conftest import FakePlatform
-
 from multideck.config import MultideckConfig, ProjectConfig, Settings
 from multideck.grid import MonitorRect, Rect, compute_grid
 from multideck.launch import (
     RunOpts,
-    _LaunchResult,
-    _Target,
     _dispatch_cli_agent_project,
     _dispatch_ide_project,
     _launch_projects,
+    _LaunchResult,
     _prepare_grid,
     _select_projects,
     _start_psmux_and_upload,
+    _Target,
     _tile_targets,
     run_multideck,
 )
 from multideck.platform import PsmuxWindowOpts
+from tests.conftest import FakePlatform
 
 
 class TestNoMonitors:

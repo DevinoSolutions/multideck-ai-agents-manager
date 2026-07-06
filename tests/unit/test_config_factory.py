@@ -7,10 +7,10 @@ import pytest
 
 from multideck.config import (
     DEFAULT_TOOLS,
+    SCHEMA_VERSION,
     ConfigError,
     LayoutConfig,
     Settings,
-    SCHEMA_VERSION,
     _parse_settings,
     default_config,
     layout_to_dict,

@@ -4,6 +4,7 @@ session_picker (not "sessions") to avoid confusion with multideck.sessions.
 """
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import time
@@ -29,13 +30,13 @@ def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
             r = subprocess.run(
                 [psmux, "-L", name, "display-message", "-p", "#{pane_current_path}"],
                 capture_output=True, text=True, timeout=3,
-                encoding="utf-8", errors="replace")
+                encoding="utf-8", errors="replace", check=False)
         except (OSError, subprocess.SubprocessError):
             return ""
         return (r.stdout or "").strip()
 
     with ThreadPoolExecutor(max_workers=16) as pool:
-        return dict(zip(names, pool.map(cwd, names)))
+        return dict(zip(names, pool.map(cwd, names), strict=True))
 
 
 def _status_label(state: str | None) -> str:
@@ -77,10 +78,8 @@ def _consume_focus_target() -> str | None:
         t = _FOCUS_TARGET_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         return None
-    try:
+    with contextlib.suppress(OSError):
         _FOCUS_TARGET_FILE.unlink()
-    except OSError:
-        pass
     return t or None
 
 
@@ -105,7 +104,9 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
     /focus detaches this picker's client, the attach returns, and the loop jumps
     straight to the requested project."""
 
-    from multideck.launch import _psmux_session_name  # heavy subsystem: in-body per policy
+    from multideck.launch import (
+        _psmux_session_name,  # heavy subsystem: in-body per policy
+    )
     from multideck.platform import find_psmux  # heavy subsystem: in-body per policy
 
     psmux = find_psmux()
@@ -123,7 +124,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
             continue
         proj_name = p.get("title") or Path(p["path"]).name
         sock = _psmux_session_name(proj_name)
-        if subprocess.run([psmux, "-L", sock, "has-session"], capture_output=True).returncode == 0:
+        if subprocess.run([psmux, "-L", sock, "has-session"], capture_output=True, check=False).returncode == 0:
             sessions.append(sock)
 
     if not sessions:
@@ -134,10 +135,10 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 
     def _reset_terminal():
         if sys.platform == "win32":
-            subprocess.run(["cmd", "/c", "cls"], shell=False)
+            subprocess.run(["cmd", "/c", "cls"], shell=False, check=False)
         else:
-            subprocess.run(["stty", "sane"], capture_output=True)
-            subprocess.run(["tput", "reset"], capture_output=True)
+            subprocess.run(["stty", "sane"], capture_output=True, check=False)
+            subprocess.run(["tput", "reset"], capture_output=True, check=False)
 
     def _attach(target):
         # Record the attachment so /focus can detach us to trigger a switch.

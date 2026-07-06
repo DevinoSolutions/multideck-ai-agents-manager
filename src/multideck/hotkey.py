@@ -1,20 +1,24 @@
 """Global Alt+V hotkey listener for clipboard image upload to psmux sessions."""
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import ctypes.wintypes
 import json
 import os
 import sys
 import threading
-from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
+from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 from multideck.log import HEARTBEAT_INTERVAL, get_logger, write_heartbeat
 from multideck.titles import MD_TITLE_PREFIX
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 if sys.platform != "win32":
     raise ImportError("hotkey module is Windows-only")
@@ -251,10 +255,8 @@ def listener_pid() -> int | None:
         return None
     if _pid_alive(pid):
         return pid
-    try:
+    with contextlib.suppress(OSError):
         _PID_PATH.unlink()
-    except OSError:
-        pass
     return None
 
 
@@ -268,14 +270,12 @@ def stop_listener() -> bool:
     pid = listener_pid()
     if not pid:
         return False
-    result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+    result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=False)
     if result.returncode != 0:
         log.warning("taskkill pid %d failed rc=%d", pid, result.returncode)
         return False
-    try:
+    with contextlib.suppress(OSError):
         _PID_PATH.unlink()
-    except OSError:
-        pass
     return True
 
 

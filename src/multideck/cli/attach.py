@@ -50,13 +50,14 @@ def _ssh_capture(target: str, remote_cmd: str, timeout: int = 30) -> tuple[int, 
     try:
         r = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", target, remote_cmd],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, timeout=timeout, check=False,
         )
-        return r.returncode, r.stdout, r.stderr
     except subprocess.TimeoutExpired:
         return 124, "", "ssh timed out"
     except FileNotFoundError:
         return 127, "", "ssh not found on PATH"
+    else:
+        return r.returncode, r.stdout, r.stderr
 
 
 def _ssh_json(target: str, remote_cmd: str, timeout: int = 30) -> dict | None:
@@ -275,7 +276,10 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -
             click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    from multideck.launch import bring_up_psmux, psmux_status  # heavy subsystem: in-body per policy
+    from multideck.launch import (  # heavy subsystem: in-body per policy
+        bring_up_psmux,
+        psmux_status,
+    )
 
     up, down, projects = psmux_status(cfg, group=group)
 
@@ -347,7 +351,9 @@ def hotkey_cmd(ctx: click.Context, server: str) -> None:
         click.echo(f"  {style('x', fg='red')} Hotkey listener is Windows-only.")
         sys.exit(1)
 
-    from multideck.hotkey import listener_pid  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    from multideck.hotkey import (
+        listener_pid,  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    )
     existing = listener_pid()
     if existing:
         click.echo(f"  {style('!', fg='yellow')} An Alt+V listener is already running "
@@ -364,7 +370,9 @@ def hotkey_cmd(ctx: click.Context, server: str) -> None:
     click.echo(f"  {style('Ctrl+C to stop.', dim=True)}")
     click.echo()
 
-    from multideck.hotkey import run_hotkey  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    from multideck.hotkey import (
+        run_hotkey,  # ImportError off-Windows (hotkey.py guards); must stay lazy
+    )
     try:
         run_hotkey(server)
     except KeyboardInterrupt:
