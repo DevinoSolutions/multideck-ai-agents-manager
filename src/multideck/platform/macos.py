@@ -99,8 +99,8 @@ class MacOSPlatform(Platform):
     def move_window(self, handle: object, rect: Rect) -> None:
         if not isinstance(handle, dict):
             return
-        proc = handle.get("process")  # ty: ignore[invalid-argument-type]  # reason: isinstance(handle, dict) narrows; ty 0.0.56 infers Never for key type
-        win = handle.get("window")  # ty: ignore[invalid-argument-type]  # reason: same isinstance narrowing gap
+        proc = handle.get("process")
+        win = handle.get("window")
         if not isinstance(proc, str) or not isinstance(win, str):
             return
         script = f"""

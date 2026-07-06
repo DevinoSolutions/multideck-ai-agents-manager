@@ -58,7 +58,7 @@ def _status_label(state: str | None) -> str:
         agent_state.DONE: style("done", fg="green", bold=True),
         agent_state.NEEDS_INPUT: style("needs input", fg="red", bold=True),
         agent_state.ERROR: style("error", fg="red", bold=True),
-    }.get(state, "")  # type: ignore[arg-type]  # reason: state is None-safe — .get returns the default [F-D1-005]  # ty: ignore[no-matching-overload]
+    }.get(state, "")  # type: ignore[arg-type]  # reason: state is None-safe — .get returns the default [F-D1-005]
 
 
 def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:

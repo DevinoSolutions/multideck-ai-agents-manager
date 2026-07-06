@@ -31,6 +31,7 @@ STEPS: list[tuple[str, list[str]]] = [
         "ty  (strict type check)",
         ["ty", "check", "src", "scripts", "--error-on-warning"],
     ),
+    ("vulture  (dead code)", ["vulture"]),
     (
         "pytest + coverage",
         [

@@ -8,7 +8,7 @@ requires-python = ">=3.10"
 dependencies = ["click>=8.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "mypy>=2.1", "pytest-cov>=5.0", "ty==0.0.56"]
+dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "mypy>=2.1", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
 
 [project.scripts]
 multideck = "multideck.cli:main"
@@ -107,3 +107,20 @@ ignore_missing_imports = true
 
 [tool.ty.environment]
 python-version = "3.13"
+
+[tool.vulture]
+paths = ["src", "scripts"]
+min_confidence = 80
+ignore_decorators = [
+  "@main.command",
+  "@main.group",
+  "@*.command",
+  "@click.*",
+  "@pytest.fixture",
+]
+ignore_names = [
+  "attach_port",  # cli/app.py: deprecated click option (hidden=True), still bound by click
+  "hdc",          # platform/windows.py: ctypes EnumDisplayMonitors callback positional (required by MONITORENUMPROC)
+  "lprect",       # platform/windows.py: ctypes EnumDisplayMonitors callback positional (required by MONITORENUMPROC)
+  "lparam",       # platform/windows.py: ctypes EnumDisplayMonitors callback positional (required by MONITORENUMPROC)
+]
