@@ -15,6 +15,10 @@ import sys
 STEPS: list[tuple[str, list[str]]] = [
     ("ruff  (lint + 3.10 syntax floor)", ["ruff", "check", "src", "tests", "scripts"]),
     (
+        "ruff format --check",
+        ["ruff", "format", "--check", "src", "tests", "scripts"],
+    ),
+    (
         "compileall (current interpreter)",
         [sys.executable, "-m", "compileall", "-q", "src"],
     ),

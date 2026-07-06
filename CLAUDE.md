@@ -44,6 +44,7 @@ Open every project in its own terminal, launch an AI agent in it, and auto-tile 
 - Click 8.3 vs 8.4 render a bare `--help` usage line differently (`[COMMAND]` bracketed vs not, for `invoke_without_command=True` groups). `tests/unit/test_cli_structure.py::_normalize_help` normalizes exactly that one substring so the help-snapshot pins pass under either installed version.
 - A config file with no `version` field (or an old one) prints a stderr warning on every load until `multideck config migrate` is run; `load_config` itself never writes.
 - `qrcode` (used by `cli/ui.py::_print_qr` for `multideck mobile`) is an optional dependency: imported in a try/except with an install tip, plus a dedicated mypy override in `pyproject.toml`. This is deliberate — don't "declare" it as a missing dependency.
+- `ruff format` was applied repo-wide as one isolated `style:` commit; its SHA is recorded in `.git-blame-ignore-revs`. Run `git config blame.ignoreRevsFile .git-blame-ignore-revs` once so local `git blame` skips it (GitHub honors the file automatically). `ruff format --check` is a gate step, so formatting stays enforced.
 
 ## Hard boundaries
 
