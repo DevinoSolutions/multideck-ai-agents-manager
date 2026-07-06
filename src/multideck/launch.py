@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from multideck.grid import MonitorRect, TileSlot, compute_grid
+from multideck.grid import TileSlot, compute_grid
 from multideck.log import get_logger
 from multideck.platform import (
     Platform,
@@ -153,13 +153,10 @@ def _prepare_grid(
 ) -> list[TileSlot] | None:
     """DPI-init, enumerate monitors, compute the tile grid, print the grid/
     dry-run banner. Returns the tile slots, or None when no monitors are
-    detected (unless dry_run, which synthesizes a 1920x1080 display so the
-    pipeline can run without real hardware)."""
+    detected -- the caller owns the no-monitors echo/log/exit code."""
     plat.set_dpi_aware()
 
     monitors = plat.list_monitors()
-    if not monitors and opts.dry_run:
-        monitors = [MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True)]
     if not monitors:
         return None
 
