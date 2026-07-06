@@ -23,6 +23,9 @@ desktop.ini
 # Environment variables (copy .env.example → .env and edit)
 .env
 
+# Node (husky hooks)
+node_modules/
+
 # Test / type / lint caches and local virtualenvs
 .venv/
 .coverage

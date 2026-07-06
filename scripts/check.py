@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 """Single source of truth for the multideck quality gate.
 
-    uv run python scripts/check.py      # or: python scripts/check.py
+    uv run python scripts/check.py          # full gate (default)
+    uv run python scripts/check.py --fast   # pre-commit: seconds, not minutes
 
 Runs on the current interpreter; CI additionally runs `compileall` across the
 full 3.10-3.14 matrix (see ci.yml). Exits non-zero on the first failing step.
@@ -12,7 +13,7 @@ from __future__ import annotations
 import subprocess
 import sys
 
-STEPS: list[tuple[str, list[str]]] = [
+FAST_STEPS: list[tuple[str, list[str]]] = [
     ("ruff  (lint + 3.10 syntax floor)", ["ruff", "check", "src", "tests", "scripts"]),
     (
         "ruff format --check",
@@ -23,14 +24,17 @@ STEPS: list[tuple[str, list[str]]] = [
         [sys.executable, "scripts/lint_rules.py"],
     ),
     (
+        "ty  (strict type check)",
+        ["ty", "check", "src", "scripts", "--error-on-warning"],
+    ),
+]
+
+FULL_ONLY_STEPS: list[tuple[str, list[str]]] = [
+    (
         "compileall (current interpreter)",
         [sys.executable, "-m", "compileall", "-q", "src"],
     ),
     ("mypy  (type check)", [sys.executable, "-m", "mypy"]),
-    (
-        "ty  (strict type check)",
-        ["ty", "check", "src", "scripts", "--error-on-warning"],
-    ),
     ("vulture  (dead code)", ["vulture"]),
     (
         "pytest + coverage",
@@ -47,15 +51,19 @@ STEPS: list[tuple[str, list[str]]] = [
 
 
 def main() -> int:
+    fast = "--fast" in sys.argv[1:]
+    steps = FAST_STEPS if fast else FAST_STEPS + FULL_ONLY_STEPS
+
     failed: list[str] = []
-    for name, cmd in STEPS:
+    for name, cmd in steps:
         print(f"\n=== {name} ===", flush=True)
         if subprocess.run(cmd, check=False).returncode != 0:
             failed.append(name)
     if failed:
         print("\nGATE FAILED: " + ", ".join(failed))
         return 1
-    print("\nGATE PASSED")
+    mode = "FAST" if fast else "FULL"
+    print(f"\nGATE PASSED ({mode})")
     return 0
 
 
