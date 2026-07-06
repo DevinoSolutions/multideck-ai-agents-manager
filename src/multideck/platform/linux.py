@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
-from typing import Any, Literal
+from typing import Literal
 
 from multideck.grid import MonitorRect, Rect
 from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts
@@ -96,7 +96,7 @@ class LinuxPlatform(Platform):
 
         return None
 
-    def move_window(self, handle: Any, rect: Rect) -> None:
+    def move_window(self, handle: object, rect: Rect) -> None:
         if not handle:
             return
         if shutil.which("wmctrl"):

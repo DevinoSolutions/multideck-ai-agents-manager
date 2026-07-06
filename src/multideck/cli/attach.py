@@ -16,6 +16,7 @@ from collections import Counter
 import click
 
 from multideck.cli.app import main
+from multideck.cli.config_io import _as_dict, _as_str, _project_dicts
 from multideck.cli.spawns import _maybe_start_hotkey, _maybe_start_upload_server
 from multideck.cli.ui import _banner, _divider, _print_session_overview
 from multideck.config import load_config
@@ -27,13 +28,18 @@ from multideck.tiling import Placement, place_windows
 from multideck.titles import MD_TITLE_PREFIX
 
 
+def _as_session_list(raw: list[object]) -> list[dict[str, object]]:
+    """Narrow a JSON list of unknown objects to a list of string-keyed dicts."""
+    return [item for item in raw if isinstance(item, dict)]  # ty: ignore[invalid-return-type]  # reason: isinstance(item, dict) narrows; ty 0.0.56 invariance gap
+
+
 def _default_attach_host() -> str | None:
     """Best-guess SSH target from the local config's project ``host`` fields."""
     try:
-        data = json.loads(find_config(None).read_text(encoding="utf-8"))
+        data = _as_dict(json.loads(find_config(None).read_text(encoding="utf-8")))
     except (OSError, ValueError):
         return None
-    hosts = [p.get("host") for p in data.get("projects", []) if p.get("host")]
+    hosts = [h for p in _project_dicts(data) if (h := _as_str(p.get("host")))]
     if not hosts:
         return None
     return Counter(hosts).most_common(1)[0][0]
@@ -74,15 +80,19 @@ def _ssh_capture(
         return r.returncode, r.stdout, r.stderr
 
 
-def _ssh_json(target: str, remote_cmd: str, timeout: int = 30) -> dict | None:
+def _ssh_json(
+    target: str, remote_cmd: str, timeout: int = 30
+) -> dict[str, object] | None:
     """Run a remote command and parse its last single-line JSON object (skips banners)."""
     _, out, _ = _ssh_capture(target, remote_cmd, timeout)
     for line in reversed([ln.strip() for ln in out.splitlines() if ln.strip()]):
         if line.startswith("{") and line.endswith("}"):
             try:
-                return json.loads(line)
+                obj = json.loads(line)
             except ValueError:
                 continue
+            if isinstance(obj, dict):
+                return obj
     return None
 
 
@@ -118,8 +128,8 @@ def _tile_titles(titles: list[str]) -> None:
 
 
 def _bring_up_and_requery(
-    target: str, grp_suffix: str, fallback_up: list[dict]
-) -> list[dict]:
+    target: str, grp_suffix: str, fallback_up: list[dict[str, object]]
+) -> list[dict[str, object]]:
     click.echo(
         f"  {style('o', fg='cyan')} starting sessions on host (this can take a moment)..."
     )
@@ -130,7 +140,10 @@ def _bring_up_and_requery(
         )
     time.sleep(1)
     new = _ssh_json(target, f"multideck up --json{grp_suffix}", timeout=30)
-    return new.get("up", fallback_up) if new else fallback_up
+    if not new:
+        return fallback_up
+    raw_up = new.get("up")
+    return _as_session_list(raw_up) if isinstance(raw_up, list) else fallback_up  # ty: ignore[invalid-argument-type]  # reason: isinstance(raw_up, list) proves list; ty 0.0.56 invariance gap
 
 
 def _attach_flow(
@@ -195,8 +208,10 @@ def _attach_flow(
         _attach_nomux(target, status)
         return
 
-    up = status.get("up", [])
-    down = status.get("down", [])
+    raw_up = status.get("up")
+    raw_down = status.get("down")
+    up = _as_session_list(raw_up) if isinstance(raw_up, list) else []  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+    down = _as_session_list(raw_down) if isinstance(raw_down, list) else []  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
     port = status.get("uploadPort", 8033)
 
     if down and yes:
@@ -244,7 +259,7 @@ def _attach_flow(
 
     titles: list[str] = []
     for sess in up:
-        name = sess["name"]
+        name = _as_str(sess.get("name"))
         title = f"{MD_TITLE_PREFIX}{name}"
         click.echo(f"  {style('o', fg='cyan')} {title}")
         subprocess.Popen(
@@ -298,10 +313,10 @@ def _attach_flow(
             click.echo(f"  {style('!', fg='yellow')} couldn't start the Alt+V listener")
 
 
-def _attach_nomux(target: str, status: dict) -> None:
+def _attach_nomux(target: str, status: dict[str, object]) -> None:
     """Open one plain SSH window per project, running the agent directly (no psmux)."""
 
-    projects = status.get("projects", [])
+    projects = _project_dicts(status)
     if not projects:
         click.echo(f"  {style('x', fg='red')} No eligible projects in the host config.")
         sys.exit(1)
@@ -313,9 +328,9 @@ def _attach_nomux(target: str, status: dict) -> None:
 
     titles: list[str] = []
     for p in projects:
-        title = f"{MD_TITLE_PREFIX}{p['name']}"
-        remote_dir = p.get("resolved") or p["path"]
-        cmd = p.get("cmd") or "claude --continue"
+        title = f"{MD_TITLE_PREFIX}{_as_str(p.get('name'))}"
+        remote_dir = _as_str(p.get("resolved")) or _as_str(p.get("path"))
+        cmd = _as_str(p.get("cmd")) or "claude --continue"
         click.echo(f"  {style('o', fg='cyan')} {title}")
         subprocess.Popen(
             [
@@ -411,7 +426,7 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -
     _divider()
     click.echo()
 
-    targets = None if do_all else [d["name"] for d in down]
+    targets = None if do_all else [_as_str(d.get("name")) for d in down]
     if not projects:
         where = f" in group '{group}'" if group else ""
         click.echo(f"  {style('!', fg='yellow')} No eligible projects{where}.")

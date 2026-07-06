@@ -89,9 +89,13 @@ def _confirm_change(message: str) -> None:
     click.echo()
 
 
-def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
+def _prompt_or_back(
+    label: str, default: str = "", *, show_default: bool = True
+) -> str | None:
     hint = style("  (b to go back)", dim=True)
-    value = click.prompt(f"  {label}{hint}", default=default, **kwargs).strip()
+    value: str = click.prompt(
+        f"  {label}{hint}", default=default, show_default=show_default
+    ).strip()
     if value.lower() == "b":
         return None
     return value
@@ -109,13 +113,13 @@ def _force_utf8_console() -> None:
 
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
     with contextlib.suppress(OSError, AttributeError, ValueError):
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # reason: guarded above; reconfigure exists on the real TextIOWrapper
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # reason: guarded above; reconfigure exists on the real TextIOWrapper  # ty: ignore[unresolved-attribute]
 
 
 def _print_qr(url: str) -> None:
     """Print a scannable QR for the URL if the qrcode lib is available."""
     try:
-        import qrcode
+        import qrcode  # ty: ignore[unresolved-import]  # reason: optional dep, guarded by try/except (see pyproject qrcode note)
     except ImportError:
         click.echo(
             f"  {style('Tip:', dim=True)} {style('pip install qrcode', bold=True)} "
@@ -128,16 +132,20 @@ def _print_qr(url: str) -> None:
     qr.print_ascii(invert=True)
 
 
-def _grouped(entries: list[dict]) -> tuple[list[str], dict[str, list[str]]]:
+def _grouped(
+    entries: list[dict[str, object]],
+) -> tuple[list[str], dict[str, list[str]]]:
     """Bucket session entries by project group, preserving first-seen order."""
     order: list[str] = []
     buckets: dict[str, list[str]] = {}
     for e in entries:
-        g = e.get("group") or "(no group)"
+        group = e.get("group")
+        g = group if isinstance(group, str) and group else "(no group)"
         if g not in buckets:
             buckets[g] = []
             order.append(g)
-        buckets[g].append(e["name"])
+        raw_name = e["name"]
+        buckets[g].append(raw_name if isinstance(raw_name, str) else "")
     return order, buckets
 
 
@@ -153,7 +161,7 @@ def _print_names(names: list[str], indent: str = "       ", width: int = 66) -> 
 
 
 def _print_session_overview(
-    hostname: str, up: list[dict], down: list[dict]
+    hostname: str, up: list[dict[str, object]], down: list[dict[str, object]]
 ) -> list[str]:
     """Render a grouped up/down overview; return the ordered list of pickable groups."""
     dn_order, dn_buckets = _grouped(down)

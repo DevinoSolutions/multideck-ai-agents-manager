@@ -19,7 +19,7 @@ from multideck.paths import _config_path
 from multideck.style import style
 
 
-def _show_menu(groups: list[str], config_file: Path | None = None) -> dict:
+def _show_menu(groups: list[str], config_file: Path | None = None) -> dict[str, object]:
     config_changed = False
     while True:
         click.clear()
@@ -165,9 +165,11 @@ def _run_discovery(config_file: Path) -> bool:
 
     tool_colors = {"claude": "magenta", "codex": "cyan", "vscode": "blue"}
     for i, p in enumerate(projects):
-        leaf = Path(p["path"]).name
-        tc = tool_colors.get(p["tool"], "white")
-        badge = style(f"[{p['tool']}]", fg=tc, dim=True)
+        path = p["path"]
+        tool = p["tool"]
+        leaf = Path(path).name if isinstance(path, str) else ""
+        tc = tool_colors.get(tool, "white") if isinstance(tool, str) else "white"
+        badge = style(f"[{tool}]", fg=tc, dim=True)
         num = style(f"{i + 1:>2}", dim=True)
         click.echo(f"   {num}  {leaf:<34} {badge}")
 

@@ -171,8 +171,9 @@ def main(
                 continue
             if menu.get("reload"):
                 cfg = _load_config_or_exit(config_file)
-            retile_all = menu["retile_all"]
-            group = menu.get("group")
+            retile_all = bool(menu["retile_all"])
+            group_choice = menu.get("group")
+            group = group_choice if isinstance(group_choice, str) else None
             break
 
     from multideck.launch import (  # heavy subsystem: in-body per policy

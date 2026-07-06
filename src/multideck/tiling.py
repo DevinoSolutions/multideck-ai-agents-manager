@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from multideck.grid import Rect, TileSlot
 from multideck.log import get_logger
@@ -36,7 +36,7 @@ class Placement:
             self.name = self.key
 
 
-def _lookup(snap: dict[str, Any], key: str, mode: str) -> Any | None:
+def _lookup(snap: dict[str, object], key: str, mode: str) -> object | None:
     if mode == "exact":
         return snap.get(key)
     key_lower = key.lower()

@@ -78,13 +78,17 @@ def clear_state(cwd: str) -> None:
         _path_for(cwd).unlink()
 
 
-def state_for(cwd: str, max_age: float | None = None) -> dict | None:
+def state_for(cwd: str, max_age: float | None = None) -> dict[str, object] | None:
     """Return the state record for a cwd, or None if absent/expired."""
     p = _path_for(cwd)
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if max_age is not None and (time.time() - d.get("ts", 0)) > max_age:
+    if not isinstance(d, dict):
+        return None
+    ts = d.get("ts", 0)
+    ts_num = ts if isinstance(ts, (int, float)) and not isinstance(ts, bool) else 0
+    if max_age is not None and (time.time() - ts_num) > max_age:
         return None
     return d

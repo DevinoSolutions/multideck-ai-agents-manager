@@ -18,7 +18,7 @@ from urllib.request import urlopen
 import click
 
 from multideck.cli.app import main
-from multideck.cli.config_io import _load_config_or_exit
+from multideck.cli.config_io import _as_str, _load_config_or_exit
 from multideck.cli.spawns import _maybe_start_upload_server, _pid_alive, _probe_port
 from multideck.cli.ui import (
     _banner,
@@ -117,7 +117,7 @@ def _render_status(config_file: Path) -> bool:
             f"{style('Bring some up from the menu or `multideck up`.', dim=True)}"
         )
     if down:
-        preview = ", ".join(d["name"] for d in down[:6]) + (
+        preview = ", ".join(_as_str(d.get("name")) for d in down[:6]) + (
             "..." if len(down) > 6 else ""
         )
         click.echo(
@@ -202,7 +202,7 @@ def down_cmd(
     )
 
     up, _, _ = psmux_status(cfg, group=group)
-    up_names = [u["name"] for u in up]
+    up_names = [_as_str(u.get("name")) for u in up]
     if names:
         wanted = {n.lower() for n in names}
         targets = [n for n in up_names if n.lower() in wanted]
@@ -293,7 +293,7 @@ def _menu_up(config_file: Path) -> None:
         if choice in ("n", "no", "cancel", "q"):
             return
         if choice in ("a", "all", "y", ""):
-            only = [d["name"] for d in down]
+            only = [_as_str(d.get("name")) for d in down]
         elif choice.isdigit() and 1 <= int(choice) <= len(pickable):
             only = dn_buckets[pickable[int(choice) - 1]]
         else:
@@ -359,9 +359,9 @@ def _menu_down(config_file: Path) -> None:
         if choice in ("n", "no", "cancel", "q", ""):
             return
         if choice in ("a", "all", "y"):
-            targets = [u["name"] for u in up]
+            targets = [_as_str(u.get("name")) for u in up]
         elif choice == "x":
-            targets = [u["name"] for u in up]
+            targets = [_as_str(u.get("name")) for u in up]
             also_server = True
         elif choice.isdigit() and 1 <= int(choice) <= len(pickable):
             targets = buckets[pickable[int(choice) - 1]]

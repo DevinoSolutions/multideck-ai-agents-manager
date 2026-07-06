@@ -28,6 +28,10 @@ STEPS: list[tuple[str, list[str]]] = [
     ),
     ("mypy  (type check)", [sys.executable, "-m", "mypy"]),
     (
+        "ty  (strict type check)",
+        ["ty", "check", "src", "scripts", "--error-on-warning"],
+    ),
+    (
         "pytest + coverage",
         [
             sys.executable,

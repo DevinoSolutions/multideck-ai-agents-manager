@@ -8,7 +8,7 @@ requires-python = ">=3.10"
 dependencies = ["click>=8.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "mypy>=2.1", "pytest-cov>=5.0"]
+dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "mypy>=2.1", "pytest-cov>=5.0", "ty==0.0.56"]
 
 [project.scripts]
 multideck = "multideck.cli:main"
@@ -57,9 +57,7 @@ select = [
   "TC",                           # type-only imports into TYPE_CHECKING (serves the startup-cost policy)
   "TID",                          # flake8-tidy-imports — banned-api table added in Phase 2 (audit §4.3)
   "RUF",                          # ruff-native; RUF100 = unused-noqa (the noqa-rot guard)
-  # ANN401 (no Any in annotations) is activated in Phase 3, together with the
-  # ty + mypy-strict Any purge, so Any elimination happens once under a validating
-  # type checker (audit §3 / §6.2). The final ruleset is identical either way.
+  "ANN401",                       # no typing.Any in annotations — Phase 3 Any purge
 ]
 ignore = [
   "TRY003",  # long-message-outside-exception-class: noise, no loudness value here
@@ -84,6 +82,7 @@ max-statements = 194
 # typing.Any joins in Phase 3 (with ANN401, under the Any purge); os.environ /
 # os.getenv join in Phase 5 (once multideck.env owns process-env access).
 "click.style" = { msg = "Use multideck.style.style — the single styling seam [LS-A-003]." }
+"typing.Any" = { msg = "Use object + isinstance narrowing — no typing.Any anywhere in src [Phase-3 audit §6.2]." }
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/**" = ["T201"]  # check.py & tooling print by design
@@ -91,14 +90,20 @@ max-statements = 194
   "PLR0915",  # sprawling test funcs are readable enough; no ceiling for tests
   "S110",     # tests may assert-swallow in teardown/polling helpers
   "PLW1510",  # harness subprocess.run asserts on observable outcomes (stdout/files/.returncode), not an implicit check=
+  "ANN401",   # tests are not strict-typed yet (tests-strict is staged); Any is acceptable in test helpers
+  "TID251",   # tests import typing.Any freely; the ban targets src only
 ]
 "src/multideck/style.py" = ["TID251"]  # the click.style ban's origin seam (1-line module; residual risk accepted)
 
 [tool.mypy]
-files = ["src"]
+files = ["src", "scripts"]
 python_version = "3.13"
+strict = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = "qrcode.*"
 ignore_missing_imports = true
+
+[tool.ty.environment]
+python-version = "3.13"

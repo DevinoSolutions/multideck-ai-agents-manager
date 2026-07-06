@@ -4,7 +4,7 @@ import ctypes
 import ctypes.wintypes
 import subprocess
 from ctypes import POINTER, WINFUNCTYPE, byref, create_unicode_buffer, windll
-from typing import Any, Literal
+from typing import Literal
 
 from multideck.grid import MonitorRect, Rect
 from multideck.log import get_logger
@@ -63,7 +63,7 @@ class WindowsPlatform(Platform):
             ctypes.c_void_p,
         )
 
-        def callback(hmon, hdc, lprect, lparam):
+        def callback(hmon: int, hdc: int, lprect: object, lparam: int) -> int:
             info = MONITORINFOEXW()
             info.cbSize = ctypes.sizeof(MONITORINFOEXW)
             user32.GetMonitorInfoW(hmon, byref(info))
@@ -105,7 +105,7 @@ class WindowsPlatform(Platform):
 
         WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
-        def callback(hwnd, _):
+        def callback(hwnd: int, _: int) -> bool:
             nonlocal result
             if not user32.IsWindowVisible(hwnd):
                 return True
@@ -123,11 +123,13 @@ class WindowsPlatform(Platform):
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return result
 
-    def snapshot_windows(self) -> dict[str, int]:
-        titles: dict[str, int] = {}
+    def snapshot_windows(self) -> dict[str, object]:
+        # dict is invariant, so the ABC's dict[str, object] contract can't be
+        # overridden with dict[str, int]; the handle is an opaque HWND anyway.
+        titles: dict[str, object] = {}
         WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
-        def callback(hwnd, _):
+        def callback(hwnd: int, _: int) -> bool:
             if not user32.IsWindowVisible(hwnd):
                 return True
             buf = create_unicode_buffer(512)
@@ -139,7 +141,7 @@ class WindowsPlatform(Platform):
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return titles
 
-    def move_window(self, handle: Any, rect: Rect) -> None:
+    def move_window(self, handle: object, rect: Rect) -> None:
         # A minimized window still enumerates and MoveWindow silently updates
         # its restored placement, but it stays in the taskbar -- so a re-tile
         # appears to skip it. Restore first so every window lands on screen.

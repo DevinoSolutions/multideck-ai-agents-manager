@@ -11,9 +11,28 @@ from multideck.config import _random_tab_color, default_config
 from multideck.sessions.claude import encode_claude_project_path
 
 
+def _field_str(d: dict[str, object], key: str) -> str:
+    """A descriptor dict's string field, narrowed from dict[str, object]."""
+    value = d.get(key, "")
+    return value if isinstance(value, str) else ""
+
+
+def _field_int(d: dict[str, object], key: str) -> int:
+    value = d.get(key, 0)
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _field_mtime(d: dict[str, object]) -> float:
+    """The 'last_active' epoch seconds of a descriptor, or 0.0."""
+    value = d.get("last_active", 0.0)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    return value
+
+
 def _claude_sessions_for_path(
     project_path: str, home: Path | None = None
-) -> dict | None:
+) -> dict[str, object] | None:
     """Check if Claude has sessions for a given project path."""
     home = home or Path.home()
     encoded = encode_claude_project_path(project_path)
@@ -29,13 +48,13 @@ def _claude_sessions_for_path(
     }
 
 
-def _discover_codex_projects(home: Path | None = None) -> list[dict]:
+def _discover_codex_projects(home: Path | None = None) -> list[dict[str, object]]:
     home = home or Path.home()
     sess_root = home / ".codex" / "sessions"
     if not sess_root.is_dir():
         return []
 
-    seen: dict[str, dict] = {}
+    seen: dict[str, dict[str, object]] = {}
     for f in sess_root.rglob("*.jsonl"):
         try:
             with open(f, encoding="utf-8") as fh:
@@ -49,8 +68,8 @@ def _discover_codex_projects(home: Path | None = None) -> list[dict]:
             seen[key] = {
                 "path": cwd,
                 "tool": "codex",
-                "session_count": (prev["session_count"] if prev else 0) + 1,
-                "last_active": max(mtime, prev["last_active"] if prev else 0),
+                "session_count": (_field_int(prev, "session_count") if prev else 0) + 1,
+                "last_active": max(mtime, _field_mtime(prev) if prev else 0.0),
             }
         except (json.JSONDecodeError, KeyError, OSError):
             continue
@@ -79,12 +98,12 @@ def _uri_to_path(uri: str) -> str | None:
     return path
 
 
-def _discover_vscode_projects() -> list[dict]:
+def _discover_vscode_projects() -> list[dict[str, object]]:
     storage = _vscode_storage_dir()
     if not storage:
         return []
 
-    results = []
+    results: list[dict[str, object]] = []
     for d in storage.iterdir():
         wj = d / "workspace.json"
         if not wj.is_file():
@@ -114,7 +133,7 @@ def _discover_vscode_projects() -> list[dict]:
 
 def _discover_claude_standalone(
     home: Path | None = None, known_encoded: set[str] | None = None
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """Discover Claude projects that weren't found via Codex (brute-force decode)."""
     home = home or Path.home()
     projects_dir = home / ".claude" / "projects"
@@ -122,7 +141,7 @@ def _discover_claude_standalone(
         return []
 
     known_encoded = known_encoded or set()
-    results = []
+    results: list[dict[str, object]] = []
 
     for d in projects_dir.iterdir():
         if not d.is_dir() or d.name in known_encoded:
@@ -189,14 +208,16 @@ MIN_PROJECTS = 3
 MAX_STEPS = 160
 
 
-def _merge_candidate(by_path: dict[str, dict], key: str, cand: dict) -> None:
+def _merge_candidate(
+    by_path: dict[str, dict[str, object]], key: str, cand: dict[str, object]
+) -> None:
     """Offer one candidate for `key`, keeping whichever has the max
     last_active seen so far. Ties go to whichever was offered first (R9)."""
-    if key not in by_path or cand["last_active"] > by_path[key]["last_active"]:
+    if key not in by_path or _field_mtime(cand) > _field_mtime(by_path[key]):
         by_path[key] = cand
 
 
-def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
+def discover_projects(home: Path | None = None) -> tuple[list[dict[str, object]], int]:
     """Find projects from Claude and Codex session history.
 
     Expands the time window (3 days, 6, 9, ...) until at least
@@ -210,7 +231,7 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
     codex = _discover_codex_projects(home)
     vscode = _discover_vscode_projects()
 
-    by_path: dict[str, dict] = {}
+    by_path: dict[str, dict[str, object]] = {}
     matched_encoded: set[str] = set()
 
     def _norm_key(path: str) -> str:
@@ -218,20 +239,22 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
         return k.lower() if sys.platform == "win32" else k
 
     for p in codex + vscode:
-        if not _is_real_project(p["path"]):
+        path = _field_str(p, "path")
+        if not _is_real_project(path):
             continue
-        p["path"] = os.path.normpath(p["path"])
-        key = _norm_key(p["path"])
+        path = os.path.normpath(path)
+        p["path"] = path
+        key = _norm_key(path)
 
-        claude_info = _claude_sessions_for_path(p["path"], home)
+        claude_info = _claude_sessions_for_path(path, home)
         if claude_info:
-            encoded = encode_claude_project_path(p["path"])
+            encoded = encode_claude_project_path(path)
             matched_encoded.add(encoded)
             _merge_candidate(
                 by_path,
                 key,
                 {
-                    "path": p["path"],
+                    "path": path,
                     "tool": "claude",
                     "session_count": claude_info["session_count"],
                     "last_active": claude_info["last_active"],
@@ -241,15 +264,15 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
         _merge_candidate(by_path, key, p)
 
     for p in _discover_claude_standalone(home, matched_encoded):
-        if not _is_real_project(p["path"]):
+        path = _field_str(p, "path")
+        if not _is_real_project(path):
             continue
-        p["path"] = os.path.normpath(p["path"])
-        key = _norm_key(p["path"])
+        path = os.path.normpath(path)
+        p["path"] = path
+        key = _norm_key(path)
         _merge_candidate(by_path, key, p)
 
-    all_projects = sorted(
-        by_path.values(), key=lambda p: p["last_active"], reverse=True
-    )
+    all_projects = sorted(by_path.values(), key=_field_mtime, reverse=True)
     if not all_projects:
         return [], 0
 
@@ -257,7 +280,7 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
     for step in range(1, MAX_STEPS + 1):
         days = step * STEP_DAYS
         cutoff = now - (days * 86400)
-        recent = [p for p in all_projects if p["last_active"] >= cutoff]
+        recent = [p for p in all_projects if _field_mtime(p) >= cutoff]
         if len(recent) >= MIN_PROJECTS:
             return recent, days
 
@@ -282,7 +305,7 @@ def _find_base_dir(paths: list[str]) -> str:
             if first and first != ".":
                 children[first] = children.get(first, 0) + 1
 
-        best = max(children, key=children.get) if children else None  # type: ignore[arg-type]  # reason: children is non-empty in this branch and every key exists, so the max-key is never None [P2]
+        best = max(children, key=lambda k: children[k]) if children else None
         if best and children[best] >= threshold:
             candidate = os.path.join(candidate, best)
         else:
@@ -291,30 +314,31 @@ def _find_base_dir(paths: list[str]) -> str:
     return candidate
 
 
-def projects_to_config(projects: list[dict]) -> dict:
-    paths = [p["path"] for p in projects]
+def projects_to_config(projects: list[dict[str, object]]) -> dict[str, object]:
+    paths = [_field_str(p, "path") for p in projects]
     base_dir = _find_base_dir(paths) if projects else ""
 
-    leaf_counts = Counter(Path(p["path"]).name for p in projects)
+    leaf_counts = Counter(Path(_field_str(p, "path")).name for p in projects)
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
 
     used: set[str] = set()
-    config_projects = []
+    config_projects: list[dict[str, object]] = []
     for p in projects:
+        path = _field_str(p, "path")
         try:
-            rel = os.path.relpath(p["path"], base_dir).replace("\\", "/")
+            rel = os.path.relpath(path, base_dir).replace("\\", "/")
         except ValueError:
-            rel = p["path"].replace("\\", "/")
+            rel = path.replace("\\", "/")
 
-        entry: dict = {"path": rel}
+        entry: dict[str, object] = {"path": rel}
 
-        parent = Path(p["path"]).parent.name.lower()
+        parent = Path(path).parent.name.lower()
         if (
             parent
             and parent not in GENERIC_DIRS
             and parent != Path(base_dir).name.lower()
         ):
-            entry["group"] = Path(p["path"]).parent.name
+            entry["group"] = Path(path).parent.name
 
         if (parts := rel.split("/")) and parts[-1] in dup_leaves:
             entry["title"] = rel.replace("/", "-")

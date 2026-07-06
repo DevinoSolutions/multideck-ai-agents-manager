@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from multideck.config import MultideckConfig, ProjectConfig
 
 
-def spawn_detached(args: list[str], extra_flags: int = 0) -> subprocess.Popen:
+def spawn_detached(args: list[str], extra_flags: int = 0) -> subprocess.Popen[bytes]:
     """Popen a process that outlives both this process and a launching SSH session.
 
     On Windows, OpenSSH puts the command's children in a job object marked
@@ -554,9 +554,16 @@ def _log_project(
 # ---------------------------------------------------------------------------
 
 
+def _field_str(d: dict[str, object], key: str) -> str:
+    """A psmux-descriptor dict's string field (these dicts are built in-module
+    with str values; narrows the dict[str, object] read back to str)."""
+    value = d.get(key, "")
+    return value if isinstance(value, str) else ""
+
+
 def eligible_psmux_projects(
     config: MultideckConfig, group: str | None = None
-) -> list[dict]:
+) -> list[dict[str, object]]:
     """Projects that map to a persistent psmux session.
 
     A project is eligible when it is enabled, runs a CLI agent (not an IDE),
@@ -568,7 +575,7 @@ def eligible_psmux_projects(
     if base_dir:
         base_dir = os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)
 
-    out: list[dict] = []
+    out: list[dict[str, object]] = []
     for proj in config.projects:
         if not proj.enabled:
             continue
@@ -596,7 +603,7 @@ def eligible_psmux_projects(
 
 def psmux_status(
     config: MultideckConfig, group: str | None = None
-) -> tuple[list[dict], list[dict], list[dict]]:
+) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
     """Return ``(up, down, all_projects)`` for eligible projects.
 
     ``up``/``down`` are split by whether a live psmux session already exists.
@@ -605,12 +612,12 @@ def psmux_status(
 
     psmux = find_psmux()
     projects = eligible_psmux_projects(config, group)
-    up: list[dict] = []
-    down: list[dict] = []
+    up: list[dict[str, object]] = []
+    down: list[dict[str, object]] = []
 
     checkable = []
     for p in projects:
-        info = {
+        info: dict[str, object] = {
             "name": p["name"],
             "path": p["path"],
             "tool": p["tool"],
@@ -618,7 +625,7 @@ def psmux_status(
         }
         if psmux and p["resolved"] and p["cmd"]:
             proc = subprocess.Popen(
-                [psmux, "-L", p["name"], "has-session"],
+                [psmux, "-L", _field_str(p, "name"), "has-session"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -647,15 +654,15 @@ def bring_up_psmux(
     plat = get_platform()
     windows: list[PsmuxWindowOpts] = []
     for p in eligible_psmux_projects(config, group):
-        if only is not None and p["name"] not in only:
+        if only is not None and _field_str(p, "name") not in only:
             continue
         if not p["resolved"] or not p["cmd"]:
             continue
         windows.append(
             PsmuxWindowOpts(
-                window_name=p["name"],
-                cwd=p["resolved"],
-                command=p["cmd"],
+                window_name=_field_str(p, "name"),
+                cwd=_field_str(p, "resolved"),
+                command=_field_str(p, "cmd"),
             )
         )
     if windows:

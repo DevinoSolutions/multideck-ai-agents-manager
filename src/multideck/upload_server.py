@@ -13,8 +13,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import ClassVar
+from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import parse_qs, urlparse
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from multideck.launch import _psmux_session_name
 from multideck.log import get_logger
@@ -340,7 +343,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 </html>"""
 
 
-def _config_sessions(config_path: str | None) -> list[dict]:
+def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
     """Eligible psmux session names from config -- no psmux calls, so it's fast."""
     config_file = find_config(config_path)
     if not config_file.exists():
@@ -348,7 +351,7 @@ def _config_sessions(config_path: str | None) -> list[dict]:
 
     data = json.loads(config_file.read_text(encoding="utf-8"))
     default_tool = data.get("settings", {}).get("defaultTool", "claude")
-    out: list[dict] = []
+    out: list[dict[str, object]] = []
     for p in data.get("projects", []):
         if not p.get("enabled", True):
             continue
@@ -369,7 +372,7 @@ def _alive(psmux: str, name: str) -> bool:
     )
 
 
-def _discover_sessions(config_path: str | None) -> list[dict]:
+def _discover_sessions(config_path: str | None) -> list[dict[str, object]]:
     """Active psmux sessions from config.
 
     Checks every candidate socket concurrently -- with a large config a serial
@@ -382,14 +385,14 @@ def _discover_sessions(config_path: str | None) -> list[dict]:
     if not candidates or not psmux:
         return []
     with ThreadPoolExecutor(max_workers=16) as pool:
-        flags = list(pool.map(lambda c: _alive(psmux, c["name"]), candidates))
+        flags = list(pool.map(lambda c: _alive(psmux, str(c["name"])), candidates))
     return [c for c, ok in zip(candidates, flags, strict=True) if ok]
 
 
-def _build_html(sessions: list[dict]) -> str:
+def _build_html(sessions: list[dict[str, object]]) -> str:
     pills = []
     for s in sessions:
-        name_esc = html.escape(s["name"])
+        name_esc = html.escape(str(s["name"]))
         pills.append(f'<div class="pill" data-name="{name_esc}">{name_esc}</div>')
     placeholder = (
         "\n".join(pills) if pills else '<p class="none">no active sessions</p>'
@@ -447,8 +450,16 @@ def _in_rounded(px: float, py: float, n: int, r: float) -> bool:
     return dx * dx + dy * dy <= r * r
 
 
-def _in_tri(px, py, a, b, c) -> bool:
-    def sign(p, q, rr):
+def _in_tri(
+    px: float,
+    py: float,
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+) -> bool:
+    def sign(
+        p: tuple[float, float], q: tuple[float, float], rr: tuple[float, float]
+    ) -> float:
         return (px - rr[0]) * (q[1] - rr[1]) - (q[0] - rr[0]) * (py - rr[1])
 
     d1, d2, d3 = sign(a, a, b), sign(b, b, c), sign(c, c, a)
@@ -549,7 +560,7 @@ self.addEventListener('fetch', e => {
 
 # Static PWA routes: (content-type, lazy bytes factory). Served with a long
 # immutable cache since the icons/manifest/sw rarely change.
-_PWA_ROUTES = {
+_PWA_ROUTES: dict[str, tuple[str, Callable[[], bytes]]] = {
     "/manifest.webmanifest": ("application/manifest+json", lambda: _MANIFEST),
     "/sw.js": ("application/javascript", lambda: _SERVICE_WORKER),
     "/icon-192.png": ("image/png", lambda: render_icon(192, True)),
@@ -690,13 +701,13 @@ def _request_focus(project: str) -> None:
 
 class UploadHandler(BaseHTTPRequestHandler):
     config_path: str | None = None
-    cached_sessions: ClassVar[list[dict]] = []
+    cached_sessions: ClassVar[list[dict[str, object]]] = []
     sessions_ts: float = 0
     port: int | None = None
     pid: int | None = None
     started_at: float = 0.0
 
-    def _sessions(self) -> list[dict]:
+    def _sessions(self) -> list[dict[str, object]]:
         now = time.time()
         with _sessions_lock:
             if now - UploadHandler.sessions_ts > 10:
@@ -715,7 +726,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/" or path == "":
             self._send_bytes(
@@ -778,7 +789,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         log = get_logger("upload")
         parsed = urlparse(self.path)
         if parsed.path != "/upload":
@@ -906,7 +917,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                         style=_MSG_RED,
                     )
 
-    def _json_response(self, data: dict, status: int = 200):
+    def _json_response(self, data: dict[str, object], status: int = 200) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -914,9 +925,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, fmt, *args):
-        # Off at the default INFO level -- no noise, no INFO-logging of the
-        # ?project= query string -- but available via DEBUG for triage.
+    def log_message(self, fmt: str, *args: object) -> None:  # ty: ignore[invalid-method-override]  # reason: *args: object is a safe contravariant widening of *args: Any from BaseHTTPRequestHandler
         get_logger("upload").debug(fmt, *args)
 
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from typing import Any, Literal
+from typing import Literal
 
 from multideck.grid import MonitorRect, Rect
 from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts
@@ -63,7 +63,7 @@ class MacOSPlatform(Platform):
 
     def find_window(
         self, title: str, mode: Literal["exact", "contains"] = "exact"
-    ) -> dict | None:
+    ) -> dict[str, str] | None:
         if mode not in ("exact", "contains"):
             raise ValueError(f"unknown find_window mode: {mode!r}")
         script = """
@@ -96,11 +96,13 @@ class MacOSPlatform(Platform):
                 return {"process": proc_name, "window": win_name}
         return None
 
-    def move_window(self, handle: Any, rect: Rect) -> None:
-        if not handle or "process" not in handle:
+    def move_window(self, handle: object, rect: Rect) -> None:
+        if not isinstance(handle, dict):
             return
-        proc = handle["process"]
-        win = handle["window"]
+        proc = handle.get("process")  # ty: ignore[invalid-argument-type]  # reason: isinstance(handle, dict) narrows; ty 0.0.56 infers Never for key type
+        win = handle.get("window")  # ty: ignore[invalid-argument-type]  # reason: same isinstance narrowing gap
+        if not isinstance(proc, str) or not isinstance(win, str):
+            return
         script = f"""
         tell application "System Events"
             tell process "{proc}"

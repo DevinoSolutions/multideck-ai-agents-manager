@@ -147,7 +147,7 @@ def _tailnet_host() -> str:
         )
         if r.returncode == 0 and r.stdout.strip():
             dns = (json.loads(r.stdout).get("Self") or {}).get("DNSName", "")
-            if dns:
+            if isinstance(dns, str) and dns:
                 return dns.rstrip(".")
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
         pass

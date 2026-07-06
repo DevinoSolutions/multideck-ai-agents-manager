@@ -21,7 +21,7 @@ SKIP_DIRS = {
 }
 
 
-def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
+def scan_for_projects(root: str, max_depth: int = 3) -> list[dict[str, object]]:
     root_path = Path(root).resolve()
     repos: list[Path] = []
     stack: list[tuple[Path, int]] = [(root_path, 0)]
@@ -53,11 +53,11 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
     dup_leaves = {name for name, count in leaf_counts.items() if count > 1}
 
     used: set[str] = set()
-    projects: list[dict] = []
+    projects: list[dict[str, object]] = []
     for d in dirs:
         rel = d.relative_to(root_path).as_posix()
         parts = rel.split("/")
-        proj: dict = {"path": rel}
+        proj: dict[str, object] = {"path": rel}
         if len(parts) > 1:
             proj["group"] = parts[0]
         if parts[-1] in dup_leaves:
@@ -70,7 +70,7 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
     return projects
 
 
-def generate_config(root: str) -> dict:
+def generate_config(root: str) -> dict[str, object]:
     projects = scan_for_projects(root)
     return default_config(projects, base_dir=str(Path(root).resolve()))
 

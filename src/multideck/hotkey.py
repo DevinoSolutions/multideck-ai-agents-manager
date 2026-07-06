@@ -234,7 +234,7 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
     try:
         with urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())
-            return result.get("ok", False)
+            return bool(result.get("ok", False)) if isinstance(result, dict) else False
     except (URLError, OSError, json.JSONDecodeError):
         return False
 
@@ -350,13 +350,13 @@ def _hook_decide(
     live hook + message loop; `state` carries `alt_held` across calls the
     way the old closure's `nonlocal` did."""
     if nCode != HC_ACTION:
-        return user32.CallNextHookEx(None, nCode, wParam, lParam)
+        return int(user32.CallNextHookEx(None, nCode, wParam, lParam))
 
     kb = ctypes.cast(lParam, ctypes.POINTER(KBDLLHOOKSTRUCT)).contents
 
     if kb.vkCode in _ALT_KEYS:
         state["alt_held"] = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
-        return user32.CallNextHookEx(None, nCode, wParam, lParam)
+        return int(user32.CallNextHookEx(None, nCode, wParam, lParam))
 
     if (
         kb.vkCode == VK_V
@@ -367,17 +367,17 @@ def _hook_decide(
         project = project_from_title(title)
 
         if project is None:
-            return user32.CallNextHookEx(None, nCode, wParam, lParam)
+            return int(user32.CallNextHookEx(None, nCode, wParam, lParam))
 
         if not clipboard_has_image():
-            return user32.CallNextHookEx(None, nCode, wParam, lParam)
+            return int(user32.CallNextHookEx(None, nCode, wParam, lParam))
 
         threading.Thread(
             target=_do_upload, args=(server_url, project), daemon=True
         ).start()
         return 1
 
-    return user32.CallNextHookEx(None, nCode, wParam, lParam)
+    return int(user32.CallNextHookEx(None, nCode, wParam, lParam))
 
 
 def _make_hook_proc(
@@ -396,8 +396,8 @@ def _make_hook_proc(
             return _hook_decide(state, server_url, nCode, wParam, lParam)
         except Exception:
             log.exception("Alt+V hook callback error")
-            return user32.CallNextHookEx(
-                None, nCode, wParam, lParam
+            return int(
+                user32.CallNextHookEx(None, nCode, wParam, lParam)
             )  # chain never broken
 
     return hook_proc

@@ -15,7 +15,12 @@ from pathlib import Path
 import click
 
 from multideck.cli.app import main
-from multideck.cli.config_io import _load_raw_config
+from multideck.cli.config_io import (
+    _as_dict,
+    _as_str,
+    _load_raw_config,
+    _project_dicts,
+)
 from multideck.cli.spawns import _running_upload_port, _tailnet_host
 from multideck.cli.ui import _banner, _divider, _menu_item
 from multideck.paths import find_config
@@ -53,7 +58,7 @@ def _status_label(state: str | None) -> str:
         agent_state.DONE: style("done", fg="green", bold=True),
         agent_state.NEEDS_INPUT: style("needs input", fg="red", bold=True),
         agent_state.ERROR: style("error", fg="red", bold=True),
-    }.get(state, "")  # type: ignore[arg-type]  # reason: state is None-safe — .get returns the default [F-D1-005]
+    }.get(state, "")  # type: ignore[arg-type]  # reason: state is None-safe — .get returns the default [F-D1-005]  # ty: ignore[no-matching-overload]
 
 
 def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
@@ -67,9 +72,15 @@ def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
     out: dict[str, str] = {}
     for sock, cwd in cwds.items():
         rec = agent_state.state_for(cwd) if cwd else None
-        state = rec.get("state") if rec else None
-        if rec and state in stale and (time.time() - rec.get("ts", 0)) > stale[state]:
-            state = None
+        raw_state = rec.get("state") if rec else None
+        state = raw_state if isinstance(raw_state, str) else None
+        if rec is not None and state is not None and state in stale:
+            ts = rec.get("ts", 0)
+            ts_num = (
+                ts if isinstance(ts, (int, float)) and not isinstance(ts, bool) else 0
+            )
+            if (time.time() - ts_num) > stale[state]:
+                state = None
         out[sock] = _status_label(state)
     return out
 
@@ -125,14 +136,20 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         return
 
     data = _load_raw_config(config_file)
+    default_tool = _as_str(_as_dict(data.get("settings")).get("defaultTool"), "claude")
     sessions: list[str] = []
-    for p in data.get("projects", []):
+    for p in _project_dicts(data):
         if not p.get("enabled", True):
             continue
-        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
+        tool = p.get("tool", default_tool)
         if tool in ("code", "vscode", "cursor"):
             continue
-        proj_name = p.get("title") or Path(p["path"]).name
+        title = p.get("title")
+        proj_name = (
+            title
+            if isinstance(title, str) and title
+            else Path(_as_str(p.get("path"))).name
+        )
         sock = _psmux_session_name(proj_name)
         if (
             subprocess.run(
@@ -150,14 +167,14 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         )
         return
 
-    def _reset_terminal():
+    def _reset_terminal() -> None:
         if sys.platform == "win32":
             subprocess.run(["cmd", "/c", "cls"], shell=False, check=False)
         else:
             subprocess.run(["stty", "sane"], capture_output=True, check=False)
             subprocess.run(["tput", "reset"], capture_output=True, check=False)
 
-    def _attach(target):
+    def _attach(target: str) -> None:
         # Record the attachment so /focus can detach us to trigger a switch.
         _set_picker_attached(target)
         try:

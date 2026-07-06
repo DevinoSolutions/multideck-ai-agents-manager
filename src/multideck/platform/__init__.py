@@ -7,7 +7,7 @@ import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
     from multideck.grid import MonitorRect, Rect
@@ -60,10 +60,10 @@ class Platform(ABC):
     @abstractmethod
     def find_window(
         self, title: str, mode: Literal["exact", "contains"] = "exact"
-    ) -> Any | None: ...
+    ) -> object | None: ...
 
     @abstractmethod
-    def move_window(self, handle: Any, rect: Rect) -> None: ...
+    def move_window(self, handle: object, rect: Rect) -> None: ...
 
     @abstractmethod
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None: ...
@@ -71,7 +71,7 @@ class Platform(ABC):
     @abstractmethod
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None: ...
 
-    def snapshot_windows(self) -> dict[str, Any]:
+    def snapshot_windows(self) -> dict[str, object]:
         """Return {title: handle} for all visible windows in a single pass."""
         return {}
 

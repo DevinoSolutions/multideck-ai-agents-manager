@@ -13,7 +13,16 @@ from pathlib import Path
 import click
 
 from multideck.cli.app import main
-from multideck.cli.config_io import _load_raw_config, _save_raw_config
+from multideck.cli.config_io import (
+    _as_dict,
+    _as_int,
+    _as_str,
+    _load_raw_config,
+    _project_dicts,
+    _save_raw_config,
+    _sub,
+    _sublist,
+)
 from multideck.cli.ui import (
     _banner,
     _confirm_change,
@@ -34,12 +43,12 @@ def _config_menu(config_file: Path) -> None:
         click.clear()
         _banner()
         data = _load_raw_config(config_file)
-        layout = data.get("layout", {})
-        settings = data.get("settings", {})
-        projects = data.get("projects", [])
-        tools = settings.get("tools", {})
-        cols, rows = layout.get("columns", 2), layout.get("rows", 1)
-        dtool = settings.get("defaultTool", "claude")
+        layout = _as_dict(data.get("layout"))
+        settings = _as_dict(data.get("settings"))
+        projects = _project_dicts(data)
+        tools = _as_dict(settings.get("tools"))
+        cols, rows = _as_int(layout.get("columns"), 2), _as_int(layout.get("rows"), 1)
+        dtool = _as_str(settings.get("defaultTool"), "claude")
         total_slots = cols * rows
 
         click.echo()
@@ -61,7 +70,7 @@ def _config_menu(config_file: Path) -> None:
             f"Default AI tool   {style(dtool, fg='green')}"
             f"  {style('-- launched in each project', dim=True)}",
         )
-        base = data.get("baseDir")
+        base = _as_str(data.get("baseDir"))
         if base:
             short = base if len(base) <= 35 else "..." + base[-32:]
             _menu_item("3", f"Projects folder   {style(short, fg='green')}")
@@ -157,9 +166,9 @@ def _config_menu(config_file: Path) -> None:
             click.echo()
             for line in _grid_preview(new_cols, new_rows, indent="      "):
                 click.echo(line)
-            data.setdefault("layout", {})
-            data["layout"]["columns"] = new_cols
-            data["layout"]["rows"] = new_rows
+            layout_d = _sub(data, "layout")
+            layout_d["columns"] = new_cols
+            layout_d["rows"] = new_rows
             _save_raw_config(config_file, data)
             _confirm_change(
                 f"Window grid set to {style(f'{new_cols} x {new_rows}', fg='green')}"
@@ -189,8 +198,7 @@ def _config_menu(config_file: Path) -> None:
                     val = available[idx]
             except ValueError:
                 pass
-            data.setdefault("settings", {})
-            data["settings"]["defaultTool"] = val
+            _sub(data, "settings")["defaultTool"] = val
             _save_raw_config(config_file, data)
             _confirm_change(f"Default tool set to {style(val, fg='green')}.")
 
@@ -207,7 +215,9 @@ def _config_menu(config_file: Path) -> None:
                 f"  {style('api/backend, it opens C:/projects/api/backend.', dim=True)}"
             )
             click.echo()
-            val = _prompt_or_back("Projects folder", default=data.get("baseDir", ""))
+            val = _prompt_or_back(
+                "Projects folder", default=_as_str(data.get("baseDir"))
+            )
             if val is None or not val:
                 continue
             normalized = val.replace("\\", "/")
@@ -219,9 +229,9 @@ def _config_menu(config_file: Path) -> None:
             _tools_menu(config_file, data)
 
         elif choice == "5":
-            data.setdefault("settings", {})
-            new_val = not data["settings"].get("happy", False)
-            data["settings"]["happy"] = new_val
+            settings_d = _sub(data, "settings")
+            new_val = not settings_d.get("happy", False)
+            settings_d["happy"] = new_val
             _save_raw_config(config_file, data)
             if new_val:
                 _confirm_change(
@@ -235,9 +245,9 @@ def _config_menu(config_file: Path) -> None:
                 )
 
         elif choice == "6":
-            data.setdefault("settings", {})
-            new_val = not data["settings"].get("psmux", False)
-            data["settings"]["psmux"] = new_val
+            settings_d = _sub(data, "settings")
+            new_val = not settings_d.get("psmux", False)
+            settings_d["psmux"] = new_val
             _save_raw_config(config_file, data)
             if new_val:
                 _confirm_change(
@@ -251,15 +261,15 @@ def _config_menu(config_file: Path) -> None:
                 )
 
         elif choice == "7":
-            data.setdefault("settings", {})
-            currently_on = data["settings"].get("uploadServer", False)
+            settings_d = _sub(data, "settings")
+            currently_on = settings_d.get("uploadServer", False)
             if currently_on:
-                data["settings"]["uploadServer"] = False
+                settings_d["uploadServer"] = False
                 _save_raw_config(config_file, data)
                 _confirm_change(f"Upload server {style('disabled', dim=True)}.")
             else:
                 click.echo()
-                cur_port = data["settings"].get("uploadPort", 8033)
+                cur_port = settings_d.get("uploadPort", 8033)
                 val = _prompt_or_back(
                     f"Port {style(f'(Enter for {cur_port})', dim=True)}",
                     default=str(cur_port),
@@ -271,8 +281,8 @@ def _config_menu(config_file: Path) -> None:
                     port = int(val)
                 except ValueError:
                     continue
-                data["settings"]["uploadServer"] = True
-                data["settings"]["uploadPort"] = port
+                settings_d["uploadServer"] = True
+                settings_d["uploadPort"] = port
                 _save_raw_config(config_file, data)
                 _confirm_change(
                     f"Upload server {style('enabled', fg='green')} on port {style(str(port), fg='cyan')}. "
@@ -293,7 +303,7 @@ def _config_menu(config_file: Path) -> None:
             path = _prompt_or_back("Folder path", default=cwd)
             if path is None or not path:
                 continue
-            entry: dict = {"path": path.replace("\\", "/")}
+            entry: dict[str, object] = {"path": path.replace("\\", "/")}
             click.echo()
             click.echo(
                 f"  {style('Optional settings (Enter to skip, b to cancel):', dim=True)}"
@@ -326,11 +336,11 @@ def _config_menu(config_file: Path) -> None:
                 continue
             if not color:
                 used = {
-                    p.get("color") for p in data.get("projects", []) if p.get("color")
+                    c for p in _project_dicts(data) if (c := _as_str(p.get("color")))
                 }
                 color = _random_tab_color(used)
             entry["color"] = color
-            data.setdefault("projects", []).append(entry)
+            _sublist(data, "projects").append(entry)
             _save_raw_config(config_file, data)
             _confirm_change(f"Added project {style(path, fg='green')}.")
 
@@ -345,8 +355,8 @@ def _config_menu(config_file: Path) -> None:
             return
 
 
-def _tools_menu(config_file: Path, data: dict) -> None:
-    tools = data.get("settings", {}).get("tools", {})
+def _tools_menu(config_file: Path, data: dict[str, object]) -> None:
+    tools = _as_dict(_as_dict(data.get("settings")).get("tools"))
     while True:
         click.clear()
         _banner()
@@ -388,16 +398,16 @@ def _tools_menu(config_file: Path, data: dict) -> None:
                 f"  {style('Command is what runs in the terminal (e.g. aider --model sonnet).', dim=True)}"
             )
             click.echo()
-            name = _prompt_or_back("Tool name")
-            if not name:
+            tool_name = _prompt_or_back("Tool name")
+            if not tool_name:
                 continue
-            existing = tools.get(name, "")
+            existing = _as_str(tools.get(tool_name))
             cmd = _prompt_or_back("Shell command to run", default=existing)
             if cmd is None:
                 continue
-            data.setdefault("settings", {}).setdefault("tools", {})
-            data["settings"]["tools"][name] = cmd
-            tools = data["settings"]["tools"]
+            tools_d = _sub(_sub(data, "settings"), "tools")
+            tools_d[tool_name] = cmd
+            tools = tools_d
             _save_raw_config(config_file, data)
             _confirm_change(
                 f"Tool {style(name, fg='green')} set to {style(cmd, dim=True)}."
@@ -429,19 +439,20 @@ def _tools_menu(config_file: Path, data: dict) -> None:
             return
 
 
-def _remove_project_menu(config_file: Path, data: dict) -> None:
-    projects = data.get("projects", [])
+def _remove_project_menu(config_file: Path, data: dict[str, object]) -> None:
+    projects = _sublist(data, "projects")
     if not projects:
         click.echo(f"  {style('No projects to remove.', dim=True)}")
         return
 
     click.clear()
     _banner()
-    for i, p in enumerate(projects, 1):
-        leaf = Path(p.get("path", "?")).name
+    for i, raw in enumerate(projects, 1):
+        p = _as_dict(raw)
+        leaf = Path(_as_str(p.get("path"), "?")).name
         extra = ""
         if p.get("group"):
-            extra = f"  {style(p['group'], dim=True)}"
+            extra = f"  {style(_as_str(p.get('group')), dim=True)}"
         if not p.get("enabled", True):
             extra += f"  {style('disabled', fg='red')}"
         click.echo(f"   {style(str(i).rjust(2), dim=True)}  {leaf:<30}{extra}")
@@ -453,10 +464,11 @@ def _remove_project_menu(config_file: Path, data: dict) -> None:
     try:
         idx = int(val) - 1
         if 0 <= idx < len(projects):
-            removed = projects.pop(idx)
+            removed = _as_dict(projects.pop(idx))
             _save_raw_config(config_file, data)
             _confirm_change(
-                f"Removed project {style(Path(removed.get('path', '?')).name, fg='green')}."
+                f"Removed project "
+                f"{style(Path(_as_str(removed.get('path'), '?')).name, fg='green')}."
             )
         else:
             click.echo(f"  {style('x', fg='red')} Invalid number.")
@@ -485,32 +497,31 @@ def config_show(ctx: click.Context) -> None:
         f"  {style('Base dir:', bold=True)}     {data.get('baseDir', style('(not set)', dim=True))}"
     )
 
-    layout = data.get("layout", {})
-    cols, rows = layout.get("columns", 2), layout.get("rows", 1)
+    layout = _as_dict(data.get("layout"))
+    cols, rows = _as_int(layout.get("columns"), 2), _as_int(layout.get("rows"), 1)
     click.echo(f"  {style('Layout:', bold=True)}       {cols} x {rows}")
 
-    settings = data.get("settings", {})
+    settings = _as_dict(data.get("settings"))
     click.echo(
         f"  {style('Default tool:', bold=True)} {settings.get('defaultTool', 'claude')}"
     )
     click.echo()
 
-    tools = settings.get("tools", {})
+    tools = _as_dict(settings.get("tools"))
     if tools:
         click.echo(f"  {style('Tools:', bold=True)}")
         for name, cmd in tools.items():
             click.echo(f"    {style(name, fg='cyan'):<20} {style(cmd, dim=True)}")
         click.echo()
 
-    projects = data.get("projects", [])
+    projects = _project_dicts(data)
     click.echo(f"  {style('Projects:', bold=True)} {len(projects)}")
     for p in projects:
-        path = p.get("path", "?")
         tool = p.get("tool", "")
         group = p.get("group", "")
         enabled = p.get("enabled", True)
 
-        leaf = Path(path).name
+        leaf = Path(_as_str(p.get("path"), "?")).name
         parts = []
         if tool:
             parts.append(style(tool, fg="cyan"))
@@ -549,9 +560,9 @@ def config_layout(ctx: click.Context, columns: int, rows: int) -> None:
     """Set grid layout. Usage: multideck config layout 3 2"""
     config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    data.setdefault("layout", {})
-    data["layout"]["columns"] = max(1, columns)
-    data["layout"]["rows"] = max(1, rows)
+    layout_d = _sub(data, "layout")
+    layout_d["columns"] = max(1, columns)
+    layout_d["rows"] = max(1, rows)
     _save_raw_config(config_file, data)
     click.echo(f"  Layout set to {columns} x {rows}")
 
@@ -576,8 +587,7 @@ def config_default_tool(ctx: click.Context, tool: str) -> None:
     """Set the default tool for new projects."""
     config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    data.setdefault("settings", {})
-    data["settings"]["defaultTool"] = tool
+    _sub(data, "settings")["defaultTool"] = tool
     _save_raw_config(config_file, data)
     click.echo(f"  Default tool set to {style(tool, fg='cyan')}")
 
@@ -590,8 +600,7 @@ def config_tool(ctx: click.Context, name: str, command: str) -> None:
     """Add or update a tool command. Usage: multideck config tool aider 'aider --model sonnet'"""
     config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    data.setdefault("settings", {}).setdefault("tools", {})
-    data["settings"]["tools"][name] = command
+    _sub(_sub(data, "settings"), "tools")[name] = command
     _save_raw_config(config_file, data)
     click.echo(f"  Tool {style(name, fg='cyan')} = {style(command, dim=True)}")
 
@@ -603,7 +612,7 @@ def config_remove_tool(ctx: click.Context, name: str) -> None:
     """Remove a tool."""
     config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    tools = data.get("settings", {}).get("tools", {})
+    tools = _as_dict(_as_dict(data.get("settings")).get("tools"))
     if name not in tools:
         click.echo(f"  Tool '{name}' not found.", err=True)
         sys.exit(1)
@@ -634,9 +643,7 @@ def config_add(
     """Add a project. Usage: multideck config add ./myapp -g INTERNAL -t claude"""
     config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    data.setdefault("projects", [])
-
-    entry: dict = {"path": path.replace("\\", "/")}
+    entry: dict[str, object] = {"path": path.replace("\\", "/")}
     if group:
         entry["group"] = group
     if tool:
@@ -650,7 +657,7 @@ def config_add(
     if windows:
         entry["windows"] = windows
 
-    data["projects"].append(entry)
+    _sublist(data, "projects").append(entry)
     _save_raw_config(config_file, data)
     click.echo(f"  Added {style(path, fg='cyan')}")
 
@@ -662,17 +669,19 @@ def config_remove(ctx: click.Context, path: str) -> None:
     """Remove a project by path (or leaf name)."""
     config_file = find_config(ctx.obj.get("config_path"))
     data = _load_raw_config(config_file)
-    projects = data.get("projects", [])
+    projects = _project_dicts(data)
     normalized = path.replace("\\", "/")
 
     before = len(projects)
-    data["projects"] = [
+    kept = [
         p
         for p in projects
-        if p.get("path", "") != normalized and Path(p.get("path", "")).name != path
+        if _as_str(p.get("path")) != normalized
+        and Path(_as_str(p.get("path"))).name != path
     ]
+    data["projects"] = kept
 
-    removed = before - len(data["projects"])
+    removed = before - len(kept)
     if removed == 0:
         click.echo(f"  No project matching '{path}' found.", err=True)
         sys.exit(1)
@@ -745,8 +754,11 @@ def _set_project_field(
     normalized = path.replace("\\", "/")
 
     found = False
-    for p in data.get("projects", []):
-        if p.get("path", "") == normalized or Path(p.get("path", "")).name == path:
+    for p in _project_dicts(data):
+        if (
+            _as_str(p.get("path")) == normalized
+            or Path(_as_str(p.get("path"))).name == path
+        ):
             p[field] = value
             found = True
             break
