@@ -1,0 +1,7 @@
+title = "multideck gitleaks config"
+
+[[rules]]
+id = "tailscale-magdns-hostname"
+description = "Tailscale MagicDNS hostname (contains the tailnet name)"
+regex = '''[a-z0-9-]+\.tail[a-z0-9-]+\.ts\.net'''
+tags = ["tailscale", "infra"]
