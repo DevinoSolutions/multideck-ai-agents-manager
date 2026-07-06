@@ -9,7 +9,7 @@ dependencies = ["click>=8.0", "pydantic-settings>=2.14"]
 
 [project.optional-dependencies]
 sentry = ["sentry-sdk>=2"]
-dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "mypy>=2.1", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
+dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
 
 [project.scripts]
 multideck = "multideck.cli:main"
@@ -98,20 +98,6 @@ max-statements = 194
 ]
 "src/multideck/style.py" = ["TID251"]  # the click.style ban's origin seam (1-line module; residual risk accepted)
 "src/multideck/env.py" = ["TID251"]   # the os.environ ban's origin seam — env.py IS the env-access layer
-
-[tool.mypy]
-files = ["src", "scripts"]
-python_version = "3.13"
-strict = true
-warn_unused_ignores = true
-
-[[tool.mypy.overrides]]
-module = "qrcode.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sentry_sdk.*"
-ignore_missing_imports = true
 
 [tool.ty.environment]
 python-version = "3.13"

@@ -114,7 +114,7 @@ def _force_utf8_console() -> None:
 
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
     with contextlib.suppress(OSError, AttributeError, ValueError):
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # reason: guarded above; reconfigure exists on the real TextIOWrapper  # ty: ignore[unresolved-attribute]
+        sys.stdout.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute]  # reason: guarded above; reconfigure exists on the real TextIOWrapper
 
 
 def _print_qr(url: str) -> None:

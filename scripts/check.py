@@ -34,7 +34,6 @@ FULL_ONLY_STEPS: list[tuple[str, list[str]]] = [
         "compileall (current interpreter)",
         [sys.executable, "-m", "compileall", "-q", "src"],
     ),
-    ("mypy  (type check)", [sys.executable, "-m", "mypy"]),
     ("vulture  (dead code)", ["vulture"]),
     (
         "pytest + coverage",
