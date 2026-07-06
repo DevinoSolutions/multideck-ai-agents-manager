@@ -5,9 +5,10 @@ description = "Open every project in its own terminal and auto-tile across all m
 readme = "README.md"
 license = "AGPL-3.0"
 requires-python = ">=3.10"
-dependencies = ["click>=8.0"]
+dependencies = ["click>=8.0", "pydantic-settings>=2.14"]
 
 [project.optional-dependencies]
+sentry = ["sentry-sdk>=2"]
 dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "mypy>=2.1", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
 
 [project.scripts]
@@ -83,6 +84,8 @@ max-statements = 194
 # os.getenv join in Phase 5 (once multideck.env owns process-env access).
 "click.style" = { msg = "Use multideck.style.style — the single styling seam [LS-A-003]." }
 "typing.Any" = { msg = "Use object + isinstance narrowing — no typing.Any anywhere in src [Phase-3 audit §6.2]." }
+"os.environ" = { msg = "Use multideck.env accessors — env.py is the single env-access seam [Phase-5 audit §8]." }
+"os.getenv" = { msg = "Use multideck.env accessors — env.py is the single env-access seam [Phase-5 audit §8]." }
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/**" = ["T201"]  # check.py & tooling print by design
@@ -94,6 +97,7 @@ max-statements = 194
   "TID251",   # tests import typing.Any freely; the ban targets src only
 ]
 "src/multideck/style.py" = ["TID251"]  # the click.style ban's origin seam (1-line module; residual risk accepted)
+"src/multideck/env.py" = ["TID251"]   # the os.environ ban's origin seam — env.py IS the env-access layer
 
 [tool.mypy]
 files = ["src", "scripts"]
@@ -103,6 +107,10 @@ warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
 module = "qrcode.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sentry_sdk.*"
 ignore_missing_imports = true
 
 [tool.ty.environment]

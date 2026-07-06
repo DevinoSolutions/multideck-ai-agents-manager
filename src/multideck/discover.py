@@ -78,13 +78,9 @@ def _discover_codex_projects(home: Path | None = None) -> list[dict[str, object]
 
 
 def _vscode_storage_dir() -> Path | None:
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA", ""))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    d = base / "Code" / "User" / "workspaceStorage"
+    from multideck.env import vscode_storage_base  # heavy subsystem: in-body per policy
+
+    d = vscode_storage_base() / "Code" / "User" / "workspaceStorage"
     return d if d.is_dir() else None
 
 

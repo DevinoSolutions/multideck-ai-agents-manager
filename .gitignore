@@ -20,6 +20,9 @@ desktop.ini
 .vscode/
 *.log
 
+# Environment variables (copy .env.example → .env and edit)
+.env
+
 # Test / type / lint caches and local virtualenvs
 .venv/
 .coverage

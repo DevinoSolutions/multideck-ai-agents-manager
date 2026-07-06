@@ -55,6 +55,7 @@ MD002_ALLOW = {
     "src/multideck/cli/spawns.py": "OpenProcess vs os.kill pid-liveness primitive",
     "src/multideck/cli/session_picker.py": "terminal reset (cls vs stty/tput) is per-OS",
     "src/multideck/cli/attach.py": "reports the sys.platform value in JSON status (data, not a gate)",
+    "src/multideck/env.py": "host-env readers (config_base, vscode_storage_base) select per-OS default directories",
 }
 
 # MD003: the only two src files allowed to hold a literal "md:".

@@ -78,8 +78,9 @@ def _open_in_editor(path: Path) -> None:
     elif sys.platform == "darwin":
         subprocess.Popen(["open", path_str])
     else:
-        editor = os.environ.get("EDITOR", "xdg-open")
-        subprocess.Popen([editor, path_str])
+        from multideck.env import editor_command  # heavy subsystem: in-body per policy
+
+        subprocess.Popen([editor_command(), path_str])
 
 
 def _confirm_change(message: str) -> None:

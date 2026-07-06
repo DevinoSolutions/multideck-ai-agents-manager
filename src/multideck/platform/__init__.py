@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import functools
-import os
 import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -19,7 +17,11 @@ def find_psmux() -> str | None:
     if found:
         return found
     if sys.platform == "win32":
-        local = Path(os.environ.get("LOCALAPPDATA", "")) / "psmux" / "psmux.exe"
+        from multideck.env import (
+            localappdata_dir,
+        )  # heavy subsystem: in-body per policy
+
+        local = localappdata_dir() / "psmux" / "psmux.exe"
         if local.is_file():
             return str(local)
     return None

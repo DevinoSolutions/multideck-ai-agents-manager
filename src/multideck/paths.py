@@ -10,19 +10,13 @@ upload_server would depend back on the package it's imported by).
 
 from __future__ import annotations
 
-import os
-import sys
 from pathlib import Path
 
 
 def _config_dir() -> Path:
-    if sys.platform == "win32":
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-    elif sys.platform == "darwin":
-        base = Path.home() / "Library" / "Application Support"
-    else:
-        base = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
-    return base / "multideck"
+    from multideck.env import config_base  # heavy subsystem: in-body per policy
+
+    return config_base() / "multideck"
 
 
 def _config_path() -> Path:
