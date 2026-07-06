@@ -14,12 +14,12 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
+from pydantic import (
+    HttpUrl,  # noqa: TC002  # reason: pydantic needs HttpUrl at runtime for model validation
+)
 from pydantic_settings import BaseSettings
-
-if TYPE_CHECKING:
-    from pydantic import HttpUrl
 
 
 class MultideckEnv(BaseSettings):

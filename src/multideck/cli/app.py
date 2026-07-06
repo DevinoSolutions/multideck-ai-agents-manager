@@ -77,6 +77,14 @@ def main(
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config_path
 
+    from multideck.env import get_env  # heavy subsystem: in-body per policy
+
+    env = get_env()
+    if env.sentry_dsn:
+        from multideck.sentry import init_sentry  # heavy subsystem: in-body per policy
+
+        init_sentry(str(env.sentry_dsn))
+
     if ctx.invoked_subcommand is not None:
         return
 
