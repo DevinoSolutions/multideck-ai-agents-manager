@@ -35,13 +35,16 @@ class MacOSPlatform(Platform):
     def list_monitors(self) -> list[MonitorRect]:
         if not shutil.which("swift"):
             return []
-        result = subprocess.run(
-            ["swift", "-e", SWIFT_MONITORS],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["swift", "-e", SWIFT_MONITORS],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return []
         if result.returncode != 0 or not result.stdout.strip():
             return []
         raw = json.loads(result.stdout)

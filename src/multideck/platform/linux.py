@@ -16,13 +16,16 @@ class LinuxPlatform(Platform):
     def list_monitors(self) -> list[MonitorRect]:
         if not shutil.which("xrandr"):
             return []
-        result = subprocess.run(
-            ["xrandr", "--query"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["xrandr", "--query"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return []
         monitors: list[MonitorRect] = []
         is_first = True
         for line in result.stdout.splitlines():
