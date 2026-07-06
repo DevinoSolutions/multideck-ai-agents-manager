@@ -37,7 +37,9 @@ class WindowsPlatform(Platform):
         try:
             user32.SetProcessDPIAware()
         except (OSError, AttributeError):
-            get_logger("platform").warning("could not set DPI awareness; tiling may be misaligned")
+            get_logger("platform").warning(
+                "could not set DPI awareness; tiling may be misaligned"
+            )
 
     def list_monitors(self) -> list[MonitorRect]:
         monitors: list[MonitorRect] = []
@@ -54,8 +56,11 @@ class WindowsPlatform(Platform):
             ]
 
         MONITORENUMPROC = WINFUNCTYPE(
-            ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
-            POINTER(ctypes.wintypes.RECT), ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            POINTER(ctypes.wintypes.RECT),
+            ctypes.c_void_p,
         )
 
         def callback(hmon, hdc, lprect, lparam):
@@ -72,22 +77,28 @@ class WindowsPlatform(Platform):
                 shcore.GetDpiForMonitor(hmon, 0, byref(dpi_x), byref(dpi_y))
                 scale = dpi_x.value / 96.0
             except (OSError, AttributeError):
-                get_logger("platform").warning("DPI query failed for a monitor; assuming scale 1.0")
+                get_logger("platform").warning(
+                    "DPI query failed for a monitor; assuming scale 1.0"
+                )
 
-            monitors.append(MonitorRect(
-                x=wa.left,
-                y=wa.top,
-                w=wa.right - wa.left,
-                h=wa.bottom - wa.top,
-                is_primary=is_primary,
-                scale_factor=scale,
-            ))
+            monitors.append(
+                MonitorRect(
+                    x=wa.left,
+                    y=wa.top,
+                    w=wa.right - wa.left,
+                    h=wa.bottom - wa.top,
+                    is_primary=is_primary,
+                    scale_factor=scale,
+                )
+            )
             return 1
 
         user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(callback), 0)
         return monitors
 
-    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> int | None:
+    def find_window(
+        self, title: str, mode: Literal["exact", "contains"] = "exact"
+    ) -> int | None:
         if mode not in ("exact", "contains"):
             raise ValueError(f"unknown find_window mode: {mode!r}")
         result: int | None = None
@@ -139,9 +150,13 @@ class WindowsPlatform(Platform):
 
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
         args = [
-            "wt", "-w", "new",
-            "-d", opts.cwd,
-            "--title", opts.title,
+            "wt",
+            "-w",
+            "new",
+            "-d",
+            opts.cwd,
+            "--title",
+            opts.title,
         ]
         if opts.color:
             args.extend(["--tabColor", opts.color])
@@ -175,45 +190,87 @@ class WindowsPlatform(Platform):
         if not windows:
             return
 
-        checks = [(w, subprocess.Popen([psmux, "-L", w.window_name, "has-session"],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-                   for w in windows]
+        checks = [
+            (
+                w,
+                subprocess.Popen(
+                    [psmux, "-L", w.window_name, "has-session"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                ),
+            )
+            for w in windows
+        ]
         to_create = [w for w, p in checks if p.wait() != 0]
 
         if not to_create:
             return
 
-        kills = [subprocess.Popen([psmux, "-L", w.window_name, "kill-server"],
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                 for w in to_create]
+        kills = [
+            subprocess.Popen(
+                [psmux, "-L", w.window_name, "kill-server"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for w in to_create
+        ]
         for p in kills:
             p.wait()
 
-        creates = [subprocess.Popen(
-                       [psmux, "-L", w.window_name, "new-session", "-d",
-                        "-s", w.window_name, "-c", w.cwd],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                   for w in to_create]
+        creates = [
+            subprocess.Popen(
+                [
+                    psmux,
+                    "-L",
+                    w.window_name,
+                    "new-session",
+                    "-d",
+                    "-s",
+                    w.window_name,
+                    "-c",
+                    w.cwd,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for w in to_create
+        ]
         for p in creates:
             if p.wait() != 0:
                 raise subprocess.CalledProcessError(p.returncode, p.args)
 
         for w in to_create:
             subprocess.Popen(
-                [psmux, "-L", w.window_name, "send-keys",
-                 "-t", w.window_name, f"cmd /c {w.command}", "Enter"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                [
+                    psmux,
+                    "-L",
+                    w.window_name,
+                    "send-keys",
+                    "-t",
+                    w.window_name,
+                    f"cmd /c {w.command}",
+                    "Enter",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
-    def attach_psmux(self, session_name: str, title: str,
-                     color: str | None = None,
-                     config_path: str | None = None) -> None:
+    def attach_psmux(
+        self,
+        session_name: str,
+        title: str,
+        color: str | None = None,
+        config_path: str | None = None,
+    ) -> None:
         psmux = find_psmux()
         if not psmux:
             return
         args = [
-            "wt", "-w", "new",
-            "--title", title,
+            "wt",
+            "-w",
+            "new",
+            "--title",
+            title,
         ]
         if color:
             args.extend(["--tabColor", color])
@@ -226,5 +283,3 @@ class WindowsPlatform(Platform):
 
     def supports_hotkey(self) -> bool:
         return True
-
-

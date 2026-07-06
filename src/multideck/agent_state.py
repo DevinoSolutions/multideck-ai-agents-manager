@@ -10,6 +10,7 @@ terminal (no scraping) and uniform across agent types.
 Deliberately dependency-light (stdlib only) so the hook handler that imports it
 adds negligible latency to every turn.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -23,11 +24,11 @@ from pathlib import Path
 STATE_DIR = Path.home() / ".multideck" / "state"
 
 # Canonical state values.
-WORKING = "working"        # a turn is in flight
-DONE = "done"              # finished -- waiting on the user
+WORKING = "working"  # a turn is in flight
+DONE = "done"  # finished -- waiting on the user
 NEEDS_INPUT = "needs-input"  # blocked on the user (permission prompt)
-ERROR = "error"            # turn ended on an error
-IDLE = "idle"              # session open, nothing pending
+ERROR = "error"  # turn ended on an error
+IDLE = "idle"  # session open, nothing pending
 
 _VALID = {WORKING, DONE, NEEDS_INPUT, ERROR, IDLE}
 
@@ -57,12 +58,14 @@ def write_state(cwd: str, state: str, session_id: str | None = None) -> None:
         return
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     tmp = _path_for(cwd).with_suffix(".tmp")
-    payload = json.dumps({
-        "state": state,
-        "ts": time.time(),
-        "cwd": _norm(cwd),
-        "session_id": session_id,
-    })
+    payload = json.dumps(
+        {
+            "state": state,
+            "ts": time.time(),
+            "cwd": _norm(cwd),
+            "session_id": session_id,
+        }
+    )
     # Write-then-rename so a concurrent reader never sees a half-written file.
     tmp.write_text(payload, encoding="utf-8")
     os.replace(tmp, _path_for(cwd))

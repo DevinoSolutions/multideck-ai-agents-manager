@@ -4,6 +4,7 @@ every command module below runs their `@main.command` decorators. The block
 after that re-exports every symbol tests/external code still reach via
 `multideck.cli.<name>`.
 """
+
 from __future__ import annotations
 
 from multideck.cli import (  # noqa: F401 -- import-time command registration

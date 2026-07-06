@@ -12,16 +12,29 @@ class TestLaunchDryRun:
         (tmp_path / "api").mkdir()
         (tmp_path / "web").mkdir()
         cfg = tmp_path / "multideck.config.json"
-        cfg.write_text(json.dumps({
-            "baseDir": str(tmp_path),
-            "projects": [
-                {"path": "api"},
-                {"path": "web"},
-            ],
-        }))
+        cfg.write_text(
+            json.dumps(
+                {
+                    "baseDir": str(tmp_path),
+                    "projects": [
+                        {"path": "api"},
+                        {"path": "web"},
+                    ],
+                }
+            )
+        )
         result = subprocess.run(
-            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                "-m",
+                "multideck",
+                "--go",
+                "--dry-run",
+                "--config",
+                str(cfg),
+            ],
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "api" in result.stdout
@@ -32,16 +45,31 @@ class TestLaunchDryRun:
         (tmp_path / "api").mkdir()
         (tmp_path / "web").mkdir()
         cfg = tmp_path / "multideck.config.json"
-        cfg.write_text(json.dumps({
-            "baseDir": str(tmp_path),
-            "projects": [
-                {"path": "api", "group": "backend"},
-                {"path": "web", "group": "frontend"},
-            ],
-        }))
+        cfg.write_text(
+            json.dumps(
+                {
+                    "baseDir": str(tmp_path),
+                    "projects": [
+                        {"path": "api", "group": "backend"},
+                        {"path": "web", "group": "frontend"},
+                    ],
+                }
+            )
+        )
         result = subprocess.run(
-            [sys.executable, "-m", "multideck", "--go", "--dry-run", "-g", "backend", "--config", str(cfg)],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                "-m",
+                "multideck",
+                "--go",
+                "--dry-run",
+                "-g",
+                "backend",
+                "--config",
+                str(cfg),
+            ],
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "api" in result.stdout
@@ -50,16 +78,29 @@ class TestLaunchDryRun:
         (tmp_path / "api").mkdir()
         (tmp_path / "skip").mkdir()
         cfg = tmp_path / "multideck.config.json"
-        cfg.write_text(json.dumps({
-            "baseDir": str(tmp_path),
-            "projects": [
-                {"path": "api"},
-                {"path": "skip", "enabled": False},
-            ],
-        }))
+        cfg.write_text(
+            json.dumps(
+                {
+                    "baseDir": str(tmp_path),
+                    "projects": [
+                        {"path": "api"},
+                        {"path": "skip", "enabled": False},
+                    ],
+                }
+            )
+        )
         result = subprocess.run(
-            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                "-m",
+                "multideck",
+                "--go",
+                "--dry-run",
+                "--config",
+                str(cfg),
+            ],
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "api" in result.stdout
@@ -69,8 +110,17 @@ class TestLaunchDryRun:
         cfg = tmp_path / "multideck.config.json"
         cfg.write_text(json.dumps({"projects": []}))
         result = subprocess.run(
-            [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)],
-            capture_output=True, text=True,
+            [
+                sys.executable,
+                "-m",
+                "multideck",
+                "--go",
+                "--dry-run",
+                "--config",
+                str(cfg),
+            ],
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert "All windows already positioned" in result.stdout

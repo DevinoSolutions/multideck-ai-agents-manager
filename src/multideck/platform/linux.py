@@ -18,7 +18,10 @@ class LinuxPlatform(Platform):
             return []
         result = subprocess.run(
             ["xrandr", "--query"],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         monitors: list[MonitorRect] = []
         is_first = True
@@ -40,23 +43,34 @@ class LinuxPlatform(Platform):
                     dpi = w / (phys_w_mm / 25.4)
                     scale = round(dpi / 96.0, 2)
 
-            monitors.append(MonitorRect(
-                x=x, y=y, w=w, h=h,
-                is_primary=primary is not None or (is_first and not any(m.is_primary for m in monitors)),
-                scale_factor=max(1.0, scale),
-            ))
+            monitors.append(
+                MonitorRect(
+                    x=x,
+                    y=y,
+                    w=w,
+                    h=h,
+                    is_primary=primary is not None
+                    or (is_first and not any(m.is_primary for m in monitors)),
+                    scale_factor=max(1.0, scale),
+                )
+            )
             is_first = False
 
         return monitors
 
-    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> str | None:
+    def find_window(
+        self, title: str, mode: Literal["exact", "contains"] = "exact"
+    ) -> str | None:
         if mode not in ("exact", "contains"):
             raise ValueError(f"unknown find_window mode: {mode!r}")
         if shutil.which("xdotool"):
             pattern = f"^{re.escape(title)}$" if mode == "exact" else re.escape(title)
             result = subprocess.run(
                 ["xdotool", "search", "--name", pattern],
-                capture_output=True, text=True, timeout=5, check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             wids = result.stdout.strip().splitlines()
             if wids:
@@ -65,7 +79,10 @@ class LinuxPlatform(Platform):
         if shutil.which("wmctrl"):
             result = subprocess.run(
                 ["wmctrl", "-l"],
-                capture_output=True, text=True, timeout=5, check=False,
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
             )
             for line in result.stdout.splitlines():
                 parts = line.split(None, 3)
@@ -84,8 +101,16 @@ class LinuxPlatform(Platform):
             return
         if shutil.which("wmctrl"):
             subprocess.run(
-                ["wmctrl", "-i", "-r", str(handle), "-e", f"0,{rect.x},{rect.y},{rect.w},{rect.h}"],
-                timeout=5, check=False,
+                [
+                    "wmctrl",
+                    "-i",
+                    "-r",
+                    str(handle),
+                    "-e",
+                    f"0,{rect.x},{rect.y},{rect.w},{rect.h}",
+                ],
+                timeout=5,
+                check=False,
             )
 
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
@@ -95,22 +120,71 @@ class LinuxPlatform(Platform):
             if opts.ssh_shell:
                 cmd = f"ssh -t {opts.ssh_host} \"{opts.ssh_shell} '{inner}'\""
             else:
-                cmd = f"ssh -t {opts.ssh_host} \"{inner}\""
+                cmd = f'ssh -t {opts.ssh_host} "{inner}"'
         else:
             cmd = opts.command
 
         if shutil.which("kitty"):
-            subprocess.Popen(["kitty", "--title", opts.title, "--directory", opts.cwd, "sh", "-c", cmd])
+            subprocess.Popen(
+                [
+                    "kitty",
+                    "--title",
+                    opts.title,
+                    "--directory",
+                    opts.cwd,
+                    "sh",
+                    "-c",
+                    cmd,
+                ]
+            )
         elif shutil.which("alacritty"):
-            subprocess.Popen(["alacritty", "--title", opts.title, "--working-directory", opts.cwd, "-e", "sh", "-c", cmd])
+            subprocess.Popen(
+                [
+                    "alacritty",
+                    "--title",
+                    opts.title,
+                    "--working-directory",
+                    opts.cwd,
+                    "-e",
+                    "sh",
+                    "-c",
+                    cmd,
+                ]
+            )
         elif shutil.which("gnome-terminal"):
-            subprocess.Popen(["gnome-terminal", f"--title={opts.title}", f"--working-directory={opts.cwd}", "--", "sh", "-c", cmd])
+            subprocess.Popen(
+                [
+                    "gnome-terminal",
+                    f"--title={opts.title}",
+                    f"--working-directory={opts.cwd}",
+                    "--",
+                    "sh",
+                    "-c",
+                    cmd,
+                ]
+            )
         elif shutil.which("konsole"):
-            subprocess.Popen(["konsole", "--title", opts.title, "--workdir", opts.cwd, "-e", "sh", "-c", cmd])
+            subprocess.Popen(
+                [
+                    "konsole",
+                    "--title",
+                    opts.title,
+                    "--workdir",
+                    opts.cwd,
+                    "-e",
+                    "sh",
+                    "-c",
+                    cmd,
+                ]
+            )
         elif shutil.which("xterm"):
-            subprocess.Popen(["xterm", "-T", opts.title, "-e", f"cd {opts.cwd} && {cmd}"])
+            subprocess.Popen(
+                ["xterm", "-T", opts.title, "-e", f"cd {opts.cwd} && {cmd}"]
+            )
         else:
-            raise RuntimeError("No supported terminal emulator found. Install one of: kitty, alacritty, gnome-terminal, konsole, xterm")
+            raise RuntimeError(
+                "No supported terminal emulator found. Install one of: kitty, alacritty, gnome-terminal, konsole, xterm"
+            )
 
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None:
         args = [opts.command]

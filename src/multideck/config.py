@@ -152,7 +152,7 @@ def _random_tab_color(used: set[str]) -> str:
         s = random.uniform(0.55, 0.95)
         light = random.uniform(0.40, 0.65)
         r, g, b = colorsys.hls_to_rgb(h, light, s)
-        color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+        color = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
         if color not in used:
             return color
     return f"#{random.randint(0, 0xFFFFFF):06x}"
@@ -170,8 +170,12 @@ def _backfill_colors(projects: list[ProjectConfig]) -> bool:
 
 
 _TYPE_LABELS = {
-    int: "an integer", str: "a string", bool: "a boolean",
-    float: "a number", dict: "an object", list: "an array",
+    int: "an integer",
+    str: "a string",
+    bool: "a boolean",
+    float: "a number",
+    dict: "an object",
+    list: "an array",
 }
 
 
@@ -179,7 +183,9 @@ def _describe_type(t: type) -> str:
     return _TYPE_LABELS.get(t, t.__name__)
 
 
-def _require_type(raw: dict, key: str, types: type | tuple[type, ...], label: str) -> None:
+def _require_type(
+    raw: dict, key: str, types: type | tuple[type, ...], label: str
+) -> None:
     """Raise ConfigError if raw[key] is present but not an instance of `types`.
 
     bool is rejected for int-only fields (bool is an int subclass in Python)
@@ -201,13 +207,28 @@ def _require_type(raw: dict, key: str, types: type | tuple[type, ...], label: st
 _ALLOWED_TOP_KEYS = {"version", "baseDir", "layout", "settings", "projects"}
 _ALLOWED_LAYOUT_KEYS = {"columns", "rows"}
 _ALLOWED_SETTINGS_KEYS = {
-    "defaultTool", "settleSeconds", "launchDelayMs", "happy", "psmux",
-    "uploadServer", "uploadPort", "ssh", "tools",
+    "defaultTool",
+    "settleSeconds",
+    "launchDelayMs",
+    "happy",
+    "psmux",
+    "uploadServer",
+    "uploadPort",
+    "ssh",
+    "tools",
 }
 _ALLOWED_SSH_KEYS = {"shell"}
 _ALLOWED_PROJECT_KEYS = {
-    "path", "group", "color", "tool", "title", "enabled", "happy",
-    "host", "remotePath", "windows",
+    "path",
+    "group",
+    "color",
+    "tool",
+    "title",
+    "enabled",
+    "happy",
+    "host",
+    "remotePath",
+    "windows",
 }
 
 

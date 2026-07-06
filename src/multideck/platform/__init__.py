@@ -58,7 +58,9 @@ class Platform(ABC):
     def list_monitors(self) -> list[MonitorRect]: ...
 
     @abstractmethod
-    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> Any | None: ...
+    def find_window(
+        self, title: str, mode: Literal["exact", "contains"] = "exact"
+    ) -> Any | None: ...
 
     @abstractmethod
     def move_window(self, handle: Any, rect: Rect) -> None: ...
@@ -76,9 +78,13 @@ class Platform(ABC):
     def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
         raise NotImplementedError("psmux is only supported on Windows")
 
-    def attach_psmux(self, session_name: str, title: str,
-                     color: str | None = None,
-                     config_path: str | None = None) -> None:
+    def attach_psmux(
+        self,
+        session_name: str,
+        title: str,
+        color: str | None = None,
+        config_path: str | None = None,
+    ) -> None:
         raise NotImplementedError("psmux is only supported on Windows")
 
     def supports_psmux(self) -> bool:
@@ -93,9 +99,12 @@ class Platform(ABC):
 def get_platform() -> Platform:
     if sys.platform == "win32":
         from multideck.platform.windows import WindowsPlatform
+
         return WindowsPlatform()
     if sys.platform == "darwin":
         from multideck.platform.macos import MacOSPlatform
+
         return MacOSPlatform()
     from multideck.platform.linux import LinuxPlatform
+
     return LinuxPlatform()

@@ -106,10 +106,30 @@ class TestProjectsToConfig:
                 (base / group / name).mkdir(parents=True)
 
         projects = [
-            {"path": str(base / "INTERNAL" / "app1"), "tool": "claude", "session_count": 1, "last_active": 1},
-            {"path": str(base / "INTERNAL" / "app2"), "tool": "claude", "session_count": 1, "last_active": 1},
-            {"path": str(base / "LEAD-GEN" / "app1"), "tool": "claude", "session_count": 1, "last_active": 1},
-            {"path": str(base / "LEAD-GEN" / "app2"), "tool": "claude", "session_count": 1, "last_active": 1},
+            {
+                "path": str(base / "INTERNAL" / "app1"),
+                "tool": "claude",
+                "session_count": 1,
+                "last_active": 1,
+            },
+            {
+                "path": str(base / "INTERNAL" / "app2"),
+                "tool": "claude",
+                "session_count": 1,
+                "last_active": 1,
+            },
+            {
+                "path": str(base / "LEAD-GEN" / "app1"),
+                "tool": "claude",
+                "session_count": 1,
+                "last_active": 1,
+            },
+            {
+                "path": str(base / "LEAD-GEN" / "app2"),
+                "tool": "claude",
+                "session_count": 1,
+                "last_active": 1,
+            },
         ]
         config = projects_to_config(projects)
         groups = {p.get("group") for p in config["projects"]}
@@ -139,8 +159,18 @@ class TestProjectsToConfig:
         (base / "a" / "app").mkdir(parents=True)
         (base / "b" / "app").mkdir(parents=True)
         projects = [
-            {"path": str(base / "a" / "app"), "tool": "claude", "session_count": 1, "last_active": 1},
-            {"path": str(base / "b" / "app"), "tool": "claude", "session_count": 1, "last_active": 1},
+            {
+                "path": str(base / "a" / "app"),
+                "tool": "claude",
+                "session_count": 1,
+                "last_active": 1,
+            },
+            {
+                "path": str(base / "b" / "app"),
+                "tool": "claude",
+                "session_count": 1,
+                "last_active": 1,
+            },
         ]
         config = projects_to_config(projects)
         titles = [p.get("title") for p in config["projects"]]
@@ -155,6 +185,7 @@ class TestDiscoverProjects:
         focused tests deterministic. The real three-way merge (including the
         vscode source) is covered in test_discover_merge.py."""
         import multideck.discover
+
         monkeypatch.setattr(multideck.discover, "_discover_vscode_projects", list)
 
     def test_returns_tuple(self, tmp_path):
@@ -177,9 +208,14 @@ class TestDiscoverProjects:
         sess_dir = tmp_path / ".codex" / "sessions" / "2026" / "01"
         sess_dir.mkdir(parents=True)
         sess_file = sess_dir / "sess.jsonl"
-        sess_file.write_text(json.dumps({
-            "payload": {"id": "abc", "cwd": str(proj_dir)},
-        }) + "\n")
+        sess_file.write_text(
+            json.dumps(
+                {
+                    "payload": {"id": "abc", "cwd": str(proj_dir)},
+                }
+            )
+            + "\n"
+        )
 
         projects, _days = discover_projects(home=tmp_path)
         codex_projects = [p for p in projects if p["tool"] == "codex"]
@@ -193,9 +229,14 @@ class TestDiscoverProjects:
         sess_dir = tmp_path / ".codex" / "sessions" / "2025" / "01"
         sess_dir.mkdir(parents=True)
         sess_file = sess_dir / "old.jsonl"
-        sess_file.write_text(json.dumps({
-            "payload": {"id": "old", "cwd": str(proj_dir)},
-        }) + "\n")
+        sess_file.write_text(
+            json.dumps(
+                {
+                    "payload": {"id": "old", "cwd": str(proj_dir)},
+                }
+            )
+            + "\n"
+        )
         old_time = time.time() - (90 * 86400)
         os.utime(sess_file, (old_time, old_time))
 
@@ -208,6 +249,7 @@ class TestDiscoverProjects:
         proj_dir.mkdir(parents=True)
 
         from multideck.sessions.claude import encode_claude_project_path
+
         encoded = encode_claude_project_path(str(proj_dir))
         claude_dir = tmp_path / ".claude" / "projects" / encoded
         claude_dir.mkdir(parents=True)
@@ -217,9 +259,14 @@ class TestDiscoverProjects:
         codex_dir = tmp_path / ".codex" / "sessions" / "2025"
         codex_dir.mkdir(parents=True)
         codex_sess = codex_dir / "older.jsonl"
-        codex_sess.write_text(json.dumps({
-            "payload": {"id": "old", "cwd": str(proj_dir)},
-        }) + "\n")
+        codex_sess.write_text(
+            json.dumps(
+                {
+                    "payload": {"id": "old", "cwd": str(proj_dir)},
+                }
+            )
+            + "\n"
+        )
         old_time = time.time() - 86400
         os.utime(codex_sess, (old_time, old_time))
 

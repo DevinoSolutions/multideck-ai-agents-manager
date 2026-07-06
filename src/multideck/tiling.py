@@ -4,6 +4,7 @@ see audit/stage2/E9.md). Both call sites used to hand-roll their own
 snapshot/retry loop with no shared helper; this is now the one place that
 logic lives, so a fix here reaches both callers.
 """
+
 from __future__ import annotations
 
 import time
@@ -18,17 +19,17 @@ if TYPE_CHECKING:
 
     from multideck.platform import Platform
 
-RETRY_SECS_CONTAINS = 20   # contains-mode windows are slow to appear (e.g. VS Code)
+RETRY_SECS_CONTAINS = 20  # contains-mode windows are slow to appear (e.g. VS Code)
 RETRY_SECS_EXACT = 6
 POLL_INTERVAL_S = 1.0
 
 
 @dataclass
 class Placement:
-    key: str            # match string: exact title, or substring for contains
-    mode: str            # "exact" | "contains"
-    slot: TileSlot        # destination rect (carries monitor_index for screen labelling)
-    name: str = ""        # display label for callbacks; defaults to key
+    key: str  # match string: exact title, or substring for contains
+    mode: str  # "exact" | "contains"
+    slot: TileSlot  # destination rect (carries monitor_index for screen labelling)
+    name: str = ""  # display label for callbacks; defaults to key
 
     def __post_init__(self) -> None:
         if not self.name:
@@ -76,7 +77,9 @@ def place_windows(
             if handle is None:
                 still_pending.append(p)
                 continue
-            plat.move_window(handle, Rect(x=p.slot.x, y=p.slot.y, w=p.slot.w, h=p.slot.h))
+            plat.move_window(
+                handle, Rect(x=p.slot.x, y=p.slot.y, w=p.slot.w, h=p.slot.h)
+            )
             placed.append(p)
             if on_placed is not None:
                 on_placed(p)
@@ -85,7 +88,10 @@ def place_windows(
     _sweep()
 
     if pending:
-        deadline = max(RETRY_SECS_CONTAINS if p.mode == "contains" else RETRY_SECS_EXACT for p in pending)
+        deadline = max(
+            RETRY_SECS_CONTAINS if p.mode == "contains" else RETRY_SECS_EXACT
+            for p in pending
+        )
         for _ in range(deadline):
             if not pending:
                 break
@@ -95,7 +101,9 @@ def place_windows(
     if pending:
         log = get_logger("launch")
         for p in pending:
-            log.warning("tiling: window not found after retries: key=%r mode=%s", p.key, p.mode)
+            log.warning(
+                "tiling: window not found after retries: key=%r mode=%s", p.key, p.mode
+            )
             if on_missing is not None:
                 on_missing(p)
 

@@ -6,6 +6,7 @@ drops unknown keys -- round-tripping an editor save through the dataclass
 would silently lose data. This module is that documented two-path contract,
 not an oversight (E6.md S2.4 / S0 deviation).
 """
+
 from __future__ import annotations
 
 import json
@@ -35,8 +36,12 @@ def _save_raw_config(path: Path, data: dict) -> None:
 
 def _load_config_or_exit(config_file: Path):
     from multideck.config import load_config  # heavy subsystem: in-body per policy
+
     try:
         return load_config(str(config_file))
-    except (ValueError, FileNotFoundError) as e:  # ConfigError <: ValueError (E7 S2d) -> caught
+    except (
+        ValueError,
+        FileNotFoundError,
+    ) as e:  # ConfigError <: ValueError (E7 S2d) -> caught
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)

@@ -10,6 +10,7 @@ Heartbeats live here (not in hotkey.py) so cross-platform callers -- `status`,
 Linux CI -- can check liveness without importing the Windows-only hotkey
 module.
 """
+
 from __future__ import annotations
 
 import logging
@@ -20,8 +21,8 @@ from pathlib import Path
 LOG_DIR = Path.home() / ".multideck" / "logs"
 HEARTBEAT_DIR = Path.home() / ".multideck"
 
-HEARTBEAT_INTERVAL = 10   # seconds between heartbeat writes
-HEARTBEAT_MAX_AGE = 30    # 3x the interval, tolerant of scheduler jitter
+HEARTBEAT_INTERVAL = 10  # seconds between heartbeat writes
+HEARTBEAT_MAX_AGE = 30  # 3x the interval, tolerant of scheduler jitter
 
 _MAX_BYTES = 1_000_000
 _BACKUP_COUNT = 3
@@ -83,6 +84,7 @@ def reset_logging() -> None:
 # interval; status reads its mtime to tell "running" from "wedged". Freshness
 # is judged by mtime, not file contents, so a torn write can't corrupt the
 # check.
+
 
 def _heartbeat_path(name: str) -> Path:
     return HEARTBEAT_DIR / f"{name}.heartbeat"

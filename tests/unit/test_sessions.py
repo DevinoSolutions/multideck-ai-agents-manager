@@ -10,7 +10,10 @@ class TestEncodeClaudeProjectPath:
         result = encode_claude_project_path(
             r"C:\Users\amind\OneDrive\Desktop\Projects\CUSTOM MCPs & PRODUCTIVITY\multideck-ai-agent"
         )
-        assert result == "C--Users-amind-OneDrive-Desktop-Projects-CUSTOM-MCPs---PRODUCTIVITY-multideck-ai-agent"
+        assert (
+            result
+            == "C--Users-amind-OneDrive-Desktop-Projects-CUSTOM-MCPs---PRODUCTIVITY-multideck-ai-agent"
+        )
 
     def test_unix_path(self):
         result = encode_claude_project_path("/home/user/code/my-project")
@@ -33,11 +36,14 @@ class TestGetClaudeSessionIds:
     def test_returns_ids_sorted_by_mtime(self, fake_claude_sessions, tmp_path):
         home = tmp_path
         encoded = "test-project"
-        fake_claude_sessions(encoded, [
-            ("uuid-oldest", 1000.0),
-            ("uuid-newest", 3000.0),
-            ("uuid-middle", 2000.0),
-        ])
+        fake_claude_sessions(
+            encoded,
+            [
+                ("uuid-oldest", 1000.0),
+                ("uuid-newest", 3000.0),
+                ("uuid-middle", 2000.0),
+            ],
+        )
         ids = get_claude_session_ids("test-project", 3, home_override=home)
         assert ids == ["uuid-newest", "uuid-middle", "uuid-oldest"]
 
@@ -67,38 +73,50 @@ class TestGetClaudeSessionIds:
 
 
 class TestGetCodexSessionIds:
-    def test_returns_matching_sessions_sorted_by_mtime(self, fake_codex_sessions, tmp_path):
-        fake_codex_sessions([
-            ("/home/user/api", "uuid-oldest", 1000.0),
-            ("/home/user/api", "uuid-newest", 3000.0),
-            ("/home/user/other", "uuid-other", 2000.0),
-            ("/home/user/api", "uuid-middle", 2000.0),
-        ])
+    def test_returns_matching_sessions_sorted_by_mtime(
+        self, fake_codex_sessions, tmp_path
+    ):
+        fake_codex_sessions(
+            [
+                ("/home/user/api", "uuid-oldest", 1000.0),
+                ("/home/user/api", "uuid-newest", 3000.0),
+                ("/home/user/other", "uuid-other", 2000.0),
+                ("/home/user/api", "uuid-middle", 2000.0),
+            ]
+        )
         home = tmp_path
         ids = get_codex_session_ids("/home/user/api", 3, home_override=home)
         assert ids == ["uuid-newest", "uuid-middle", "uuid-oldest"]
 
-    def test_case_insensitive_on_windows(self, fake_codex_sessions, monkeypatch, tmp_path):
+    def test_case_insensitive_on_windows(
+        self, fake_codex_sessions, monkeypatch, tmp_path
+    ):
         monkeypatch.setattr(sys, "platform", "win32")
-        fake_codex_sessions([
-            ("C:\\Users\\User\\api", "uuid-1", 1000.0),
-        ])
+        fake_codex_sessions(
+            [
+                ("C:\\Users\\User\\api", "uuid-1", 1000.0),
+            ]
+        )
         home = tmp_path
         ids = get_codex_session_ids("c:\\users\\user\\api", 1, home_override=home)
         assert ids == ["uuid-1"]
 
     def test_fewer_than_requested(self, fake_codex_sessions, tmp_path):
-        fake_codex_sessions([
-            ("/home/user/api", "uuid-1", 1000.0),
-        ])
+        fake_codex_sessions(
+            [
+                ("/home/user/api", "uuid-1", 1000.0),
+            ]
+        )
         home = tmp_path
         ids = get_codex_session_ids("/home/user/api", 3, home_override=home)
         assert ids == ["uuid-1", None, None]
 
     def test_no_matching_sessions(self, fake_codex_sessions, tmp_path):
-        fake_codex_sessions([
-            ("/home/user/other", "uuid-1", 1000.0),
-        ])
+        fake_codex_sessions(
+            [
+                ("/home/user/other", "uuid-1", 1000.0),
+            ]
+        )
         home = tmp_path
         ids = get_codex_session_ids("/home/user/api", 2, home_override=home)
         assert ids == [None, None]
@@ -108,9 +126,11 @@ class TestGetCodexSessionIds:
         assert ids == [None, None]
 
     def test_malformed_jsonl_skipped(self, fake_codex_sessions, tmp_path):
-        fake_codex_sessions([
-            ("/home/user/api", "uuid-good", 2000.0),
-        ])
+        fake_codex_sessions(
+            [
+                ("/home/user/api", "uuid-good", 2000.0),
+            ]
+        )
         bad_dir = tmp_path / ".codex" / "sessions" / "2026" / "06" / "30"
         bad_dir.mkdir(parents=True, exist_ok=True)
         bad_file = bad_dir / "bad.jsonl"

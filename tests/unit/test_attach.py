@@ -6,19 +6,23 @@ from multideck.launch import eligible_psmux_projects
 
 
 def _cfg(projects, **settings):
-    return MultideckConfig(projects=projects, base_dir=None, settings=Settings(**settings))
+    return MultideckConfig(
+        projects=projects, base_dir=None, settings=Settings(**settings)
+    )
 
 
 class TestEligibleProjects:
     def test_filters_remote_ide_and_disabled(self):
-        cfg = _cfg([
-            ProjectConfig(path="/a/api", tool="claude"),
-            ProjectConfig(path="/a/web", tool="codex"),
-            ProjectConfig(path="/a/docs", tool="vscode"),
-            ProjectConfig(path="/a/ide", tool="cursor"),
-            ProjectConfig(path="/a/remote", tool="claude", host="me@box"),
-            ProjectConfig(path="/a/off", tool="claude", enabled=False),
-        ])
+        cfg = _cfg(
+            [
+                ProjectConfig(path="/a/api", tool="claude"),
+                ProjectConfig(path="/a/web", tool="codex"),
+                ProjectConfig(path="/a/docs", tool="vscode"),
+                ProjectConfig(path="/a/ide", tool="cursor"),
+                ProjectConfig(path="/a/remote", tool="claude", host="me@box"),
+                ProjectConfig(path="/a/off", tool="claude", enabled=False),
+            ]
+        )
         out = eligible_psmux_projects(cfg)
         assert [p["name"] for p in out] == ["api", "web"]
         assert out[0]["tool"] == "claude"
@@ -36,11 +40,13 @@ class TestEligibleProjects:
         assert out[0]["name"] == "My-App-1"
 
     def test_group_filter_case_insensitive(self):
-        cfg = _cfg([
-            ProjectConfig(path="/a/api", tool="claude", group="INTERNAL"),
-            ProjectConfig(path="/a/web", tool="claude", group="LEAD"),
-            ProjectConfig(path="/a/x", tool="claude"),
-        ])
+        cfg = _cfg(
+            [
+                ProjectConfig(path="/a/api", tool="claude", group="INTERNAL"),
+                ProjectConfig(path="/a/web", tool="claude", group="LEAD"),
+                ProjectConfig(path="/a/x", tool="claude"),
+            ]
+        )
         out = eligible_psmux_projects(cfg, group="internal")
         assert [p["name"] for p in out] == ["api"]
 
@@ -51,21 +57,25 @@ class TestEligibleProjects:
 
 class TestGroupedOverview:
     def test_grouped_preserves_order(self):
-        order, buckets = cli._grouped([
-            {"name": "a", "group": "X"},
-            {"name": "b", "group": "Y"},
-            {"name": "c", "group": "X"},
-            {"name": "d"},
-        ])
+        order, buckets = cli._grouped(
+            [
+                {"name": "a", "group": "X"},
+                {"name": "b", "group": "Y"},
+                {"name": "c", "group": "X"},
+                {"name": "d"},
+            ]
+        )
         assert order == ["X", "Y", "(no group)"]
         assert buckets["X"] == ["a", "c"]
         assert buckets["(no group)"] == ["d"]
 
     def test_overview_pickable_excludes_no_group(self, capsys):
         up = [{"name": "z", "group": "AUTOMATIONS"}]
-        down = [{"name": "a", "group": "INTERNAL"},
-                {"name": "b", "group": "LEAD"},
-                {"name": "c"}]
+        down = [
+            {"name": "a", "group": "INTERNAL"},
+            {"name": "b", "group": "LEAD"},
+            {"name": "c"},
+        ]
         pickable = cli._print_session_overview("host", up, down)
         assert pickable == ["INTERNAL", "LEAD"]
         out = capsys.readouterr().out
@@ -75,12 +85,18 @@ class TestGroupedOverview:
 class TestDefaultAttachHost:
     def test_picks_most_common_host(self, tmp_path, monkeypatch):
         cfgfile = tmp_path / "c.json"
-        cfgfile.write_text(json.dumps({"projects": [
-            {"path": "a", "host": "u@h1"},
-            {"path": "b", "host": "u@h1"},
-            {"path": "c", "host": "u@h2"},
-            {"path": "d"},
-        ]}))
+        cfgfile.write_text(
+            json.dumps(
+                {
+                    "projects": [
+                        {"path": "a", "host": "u@h1"},
+                        {"path": "b", "host": "u@h1"},
+                        {"path": "c", "host": "u@h2"},
+                        {"path": "d"},
+                    ]
+                }
+            )
+        )
         monkeypatch.setattr("multideck.cli.attach.find_config", lambda *_: cfgfile)
         assert cli._default_attach_host() == "u@h1"
 
@@ -103,10 +119,15 @@ class TestSplitTarget:
 
 class TestSshJsonParsing:
     def test_skips_banner_lines(self, monkeypatch):
-        noisy = "WARNING: banner\nMOTD line\n{\"up\": [], \"down\": []}\n"
-        monkeypatch.setattr("multideck.cli.attach._ssh_capture", lambda *a, **k: (0, noisy, ""))
+        noisy = 'WARNING: banner\nMOTD line\n{"up": [], "down": []}\n'
+        monkeypatch.setattr(
+            "multideck.cli.attach._ssh_capture", lambda *a, **k: (0, noisy, "")
+        )
         assert cli._ssh_json("u@h", "multideck up --json") == {"up": [], "down": []}
 
     def test_returns_none_without_json(self, monkeypatch):
-        monkeypatch.setattr("multideck.cli.attach._ssh_capture", lambda *a, **k: (255, "no route to host", "err"))
+        monkeypatch.setattr(
+            "multideck.cli.attach._ssh_capture",
+            lambda *a, **k: (255, "no route to host", "err"),
+        )
         assert cli._ssh_json("u@h", "multideck up --json") is None

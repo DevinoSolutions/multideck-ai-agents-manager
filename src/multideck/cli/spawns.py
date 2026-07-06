@@ -5,6 +5,7 @@ import stay in-body -- hoisting them would make every command module pay to
 import launch/platform at `multideck --help` time (cli/__init__ imports every
 command module eagerly to register it).
 """
+
 from __future__ import annotations
 
 import json
@@ -38,6 +39,7 @@ def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
     # heavy subsystem: in-body per policy. Must outlive the SSH bring-up
     # command that spawns it -- see spawn_detached.
     from multideck.launch import spawn_detached
+
     spawn_detached(args)
 
 
@@ -50,6 +52,7 @@ def _maybe_start_hotkey(server_url: str) -> int | None:
     started), or None if it couldn't be confirmed.
     """
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
+
     if not get_platform().supports_hotkey():
         return None
 
@@ -63,6 +66,7 @@ def _maybe_start_hotkey(server_url: str) -> int | None:
 
     args = [sys.executable, "-m", "multideck", "hotkey", "-s", server_url]
     from multideck.launch import spawn_detached  # heavy subsystem: in-body per policy
+
     spawn_detached(args)
     # The child writes its pid only after the keyboard hook installs; give it a
     # short window to come up so we can report (and so a hook failure surfaces).
@@ -93,6 +97,7 @@ def _pid_alive(pid: int | None) -> bool:
         return False
     if sys.platform == "win32":
         import ctypes  # win-only: ctypes.windll doesn't exist off Windows
+
         k = ctypes.windll.kernel32
         h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
         if not h:
@@ -115,6 +120,7 @@ def _running_upload_port() -> int | None:
     from multideck.upload_server import (
         server_pid,  # heavy subsystem: in-body per policy
     )
+
     d = Path.home() / ".multideck"
     if not d.exists():
         return None
@@ -132,8 +138,13 @@ def _tailnet_host() -> str:
     the LAN IP. MagicDNS gives the prettiest, most stable URL."""
 
     try:
-        r = subprocess.run(["tailscale", "status", "--json"],
-                           capture_output=True, text=True, timeout=5, check=False)
+        r = subprocess.run(
+            ["tailscale", "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
         if r.returncode == 0 and r.stdout.strip():
             dns = (json.loads(r.stdout).get("Self") or {}).get("DNSName", "")
             if dns:
@@ -141,8 +152,13 @@ def _tailnet_host() -> str:
     except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
         pass
     try:
-        r = subprocess.run(["tailscale", "ip", "-4"],
-                           capture_output=True, text=True, timeout=5, check=False)
+        r = subprocess.run(
+            ["tailscale", "ip", "-4"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip().splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired):

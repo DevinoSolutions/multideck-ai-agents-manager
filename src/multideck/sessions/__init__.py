@@ -13,6 +13,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class AgentTool:
     """Per-tool capabilities of a CLI agent (claude, codex, ...)."""
+
     session_ids: Callable[[str, int], list[str | None]] | None = None
     resume_command: Callable[[str, str | None], str] | None = None
     happy: bool = False  # can be wrapped with `happy` for mobile access
@@ -23,10 +24,14 @@ class AgentTool:
 
 
 AGENT_TOOLS: dict[str, AgentTool] = {
-    "claude": AgentTool(session_ids=get_claude_session_ids,
-                        resume_command=build_claude_resume, happy=True),
-    "codex": AgentTool(session_ids=get_codex_session_ids,
-                       resume_command=build_codex_resume, happy=True),
+    "claude": AgentTool(
+        session_ids=get_claude_session_ids,
+        resume_command=build_claude_resume,
+        happy=True,
+    ),
+    "codex": AgentTool(
+        session_ids=get_codex_session_ids, resume_command=build_codex_resume, happy=True
+    ),
 }
 
 

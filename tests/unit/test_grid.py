@@ -12,17 +12,29 @@ class TestComputeGrid:
         monitors = [_mon(0, 0, 1920, 1080, primary=True)]
         slots = compute_grid(monitors, cols=2, rows=1)
         assert len(slots) == 2
-        assert slots[0] == TileSlot(x=0, y=0, w=960, h=1080, monitor_index=0, label="r1c1")
-        assert slots[1] == TileSlot(x=960, y=0, w=960, h=1080, monitor_index=0, label="r1c2")
+        assert slots[0] == TileSlot(
+            x=0, y=0, w=960, h=1080, monitor_index=0, label="r1c1"
+        )
+        assert slots[1] == TileSlot(
+            x=960, y=0, w=960, h=1080, monitor_index=0, label="r1c2"
+        )
 
     def test_single_monitor_2x2(self):
         monitors = [_mon(0, 0, 1920, 1080)]
         slots = compute_grid(monitors, cols=2, rows=2)
         assert len(slots) == 4
-        assert slots[0] == TileSlot(x=0, y=0, w=960, h=540, monitor_index=0, label="r1c1")
-        assert slots[1] == TileSlot(x=960, y=0, w=960, h=540, monitor_index=0, label="r1c2")
-        assert slots[2] == TileSlot(x=0, y=540, w=960, h=540, monitor_index=0, label="r2c1")
-        assert slots[3] == TileSlot(x=960, y=540, w=960, h=540, monitor_index=0, label="r2c2")
+        assert slots[0] == TileSlot(
+            x=0, y=0, w=960, h=540, monitor_index=0, label="r1c1"
+        )
+        assert slots[1] == TileSlot(
+            x=960, y=0, w=960, h=540, monitor_index=0, label="r1c2"
+        )
+        assert slots[2] == TileSlot(
+            x=0, y=540, w=960, h=540, monitor_index=0, label="r2c1"
+        )
+        assert slots[3] == TileSlot(
+            x=960, y=540, w=960, h=540, monitor_index=0, label="r2c2"
+        )
 
     def test_two_monitors_different_sizes(self):
         monitors = [_mon(0, 0, 1920, 1080), _mon(1920, 0, 2560, 1440)]
@@ -64,7 +76,9 @@ class TestComputeGrid:
         monitors = [_mon(0, 0, 1920, 1080)]
         slots = compute_grid(monitors, cols=1, rows=1)
         assert len(slots) == 1
-        assert slots[0] == TileSlot(x=0, y=0, w=1920, h=1080, monitor_index=0, label="r1c1")
+        assert slots[0] == TileSlot(
+            x=0, y=0, w=1920, h=1080, monitor_index=0, label="r1c1"
+        )
 
     def test_odd_width_tiles_cover_full_extent(self):
         # 1921 / 3 does not divide evenly; the tiles must still span [0, 1921]

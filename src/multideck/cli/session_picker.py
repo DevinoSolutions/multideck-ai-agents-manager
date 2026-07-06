@@ -2,6 +2,7 @@
 looping attach-and-return picker (`_run_sessions_picker`). Named
 session_picker (not "sessions") to avoid confusion with multideck.sessions.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -29,8 +30,13 @@ def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
         try:
             r = subprocess.run(
                 [psmux, "-L", name, "display-message", "-p", "#{pane_current_path}"],
-                capture_output=True, text=True, timeout=3,
-                encoding="utf-8", errors="replace", check=False)
+                capture_output=True,
+                text=True,
+                timeout=3,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
         except (OSError, subprocess.SubprocessError):
             return ""
         return (r.stdout or "").strip()
@@ -41,6 +47,7 @@ def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
 
 def _status_label(state: str | None) -> str:
     from multideck import agent_state  # heavy subsystem: in-body per policy
+
     return {
         agent_state.WORKING: style("working...", fg="yellow", bold=True),
         agent_state.DONE: style("done", fg="green", bold=True),
@@ -55,6 +62,7 @@ def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
     notify, ...) -- ground truth, not terminal scraping. A staleness guard keeps
     a session killed mid-turn from showing 'working...' forever."""
     from multideck import agent_state  # heavy subsystem: in-body per policy
+
     stale = {agent_state.WORKING: 1800, agent_state.NEEDS_INPUT: 3600}
     out: dict[str, str] = {}
     for sock, cwd in cwds.items():
@@ -111,7 +119,9 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 
     psmux = find_psmux()
     if not psmux:
-        click.echo(f"  {style('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
+        click.echo(
+            f"  {style('x', fg='red')} psmux not found on PATH. Install: choco install psmux"
+        )
         return
 
     data = _load_raw_config(config_file)
@@ -124,13 +134,20 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
             continue
         proj_name = p.get("title") or Path(p["path"]).name
         sock = _psmux_session_name(proj_name)
-        if subprocess.run([psmux, "-L", sock, "has-session"], capture_output=True, check=False).returncode == 0:
+        if (
+            subprocess.run(
+                [psmux, "-L", sock, "has-session"], capture_output=True, check=False
+            ).returncode
+            == 0
+        ):
             sessions.append(sock)
 
     if not sessions:
         click.echo(f"  {style('x', fg='red')} No active psmux sessions.")
-        click.echo(f"  {style('Run', dim=True)} {style('multideck up', bold=True)} {style('or', dim=True)} "
-                   f"{style('multideck --go', bold=True)} {style('first.', dim=True)}")
+        click.echo(
+            f"  {style('Run', dim=True)} {style('multideck up', bold=True)} {style('or', dim=True)} "
+            f"{style('multideck --go', bold=True)} {style('first.', dim=True)}"
+        )
         return
 
     def _reset_terminal():
@@ -169,11 +186,15 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 
         click.clear()
         _banner()
-        click.echo(f"  {style('psmux sessions', bold=True)}  {style('(synced with desktop)', dim=True)}")
+        click.echo(
+            f"  {style('psmux sessions', bold=True)}  {style('(synced with desktop)', dim=True)}"
+        )
         _divider()
         click.echo()
         if upload_url:
-            click.echo(f"  {style('WebApp To Upload Images', bold=True)}  {style(upload_url, fg='cyan', bold=True)}")
+            click.echo(
+                f"  {style('WebApp To Upload Images', bold=True)}  {style(upload_url, fg='cyan', bold=True)}"
+            )
             click.echo()
         statuses = _session_statuses(_session_cwds(psmux, sessions))
         for i, sess in enumerate(sessions, 1):
@@ -184,10 +205,16 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         _menu_item("q", "Back", key_fg="yellow")
         click.echo()
 
-        choice = click.prompt(
-            f"  {style('attach to', fg='cyan')}",
-            default="1", show_default=False, prompt_suffix=" ",
-        ).strip().lower()
+        choice = (
+            click.prompt(
+                f"  {style('attach to', fg='cyan')}",
+                default="1",
+                show_default=False,
+                prompt_suffix=" ",
+            )
+            .strip()
+            .lower()
+        )
 
         if choice == "q":
             return

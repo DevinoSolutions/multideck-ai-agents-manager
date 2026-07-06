@@ -11,11 +11,23 @@ class TestIdempotency:
     def test_dry_run_twice_same_output(self, tmp_path):
         (tmp_path / "api").mkdir()
         cfg = tmp_path / "multideck.config.json"
-        cfg.write_text(json.dumps({
-            "baseDir": str(tmp_path),
-            "projects": [{"path": "api"}],
-        }))
-        cmd = [sys.executable, "-m", "multideck", "--go", "--dry-run", "--config", str(cfg)]
+        cfg.write_text(
+            json.dumps(
+                {
+                    "baseDir": str(tmp_path),
+                    "projects": [{"path": "api"}],
+                }
+            )
+        )
+        cmd = [
+            sys.executable,
+            "-m",
+            "multideck",
+            "--go",
+            "--dry-run",
+            "--config",
+            str(cfg),
+        ]
         r1 = subprocess.run(cmd, capture_output=True, text=True)
         r2 = subprocess.run(cmd, capture_output=True, text=True)
         assert r1.returncode == 0

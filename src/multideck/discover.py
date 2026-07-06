@@ -11,7 +11,9 @@ from multideck.config import _random_tab_color, default_config
 from multideck.sessions.claude import encode_claude_project_path
 
 
-def _claude_sessions_for_path(project_path: str, home: Path | None = None) -> dict | None:
+def _claude_sessions_for_path(
+    project_path: str, home: Path | None = None
+) -> dict | None:
     """Check if Claude has sessions for a given project path."""
     home = home or Path.home()
     encoded = encode_claude_project_path(project_path)
@@ -98,17 +100,21 @@ def _discover_vscode_projects() -> list[dict]:
         if not folder or not Path(folder).is_dir():
             continue
         mtime = d.stat().st_mtime
-        results.append({
-            "path": folder,
-            "tool": "vscode",
-            "session_count": 1,
-            "last_active": mtime,
-        })
+        results.append(
+            {
+                "path": folder,
+                "tool": "vscode",
+                "session_count": 1,
+                "last_active": mtime,
+            }
+        )
 
     return results
 
 
-def _discover_claude_standalone(home: Path | None = None, known_encoded: set[str] | None = None) -> list[dict]:
+def _discover_claude_standalone(
+    home: Path | None = None, known_encoded: set[str] | None = None
+) -> list[dict]:
     """Discover Claude projects that weren't found via Codex (brute-force decode)."""
     home = home or Path.home()
     projects_dir = home / ".claude" / "projects"
@@ -127,12 +133,14 @@ def _discover_claude_standalone(home: Path | None = None, known_encoded: set[str
         decoded = _try_decode(d.name)
         if not decoded:
             continue
-        results.append({
-            "path": decoded,
-            "tool": "claude",
-            "session_count": len(sessions),
-            "last_active": max(f.stat().st_mtime for f in sessions),
-        })
+        results.append(
+            {
+                "path": decoded,
+                "tool": "claude",
+                "session_count": len(sessions),
+                "last_active": max(f.stat().st_mtime for f in sessions),
+            }
+        )
 
     return results
 
@@ -155,7 +163,16 @@ def _try_decode(encoded: str) -> str | None:
     return None
 
 
-GENERIC_DIRS = {"desktop", "documents", "downloads", "projects", "repos", "src", "home", "work"}
+GENERIC_DIRS = {
+    "desktop",
+    "documents",
+    "downloads",
+    "projects",
+    "repos",
+    "src",
+    "home",
+    "work",
+}
 
 
 def _is_real_project(path: str) -> bool:
@@ -210,12 +227,16 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
         if claude_info:
             encoded = encode_claude_project_path(p["path"])
             matched_encoded.add(encoded)
-            _merge_candidate(by_path, key, {
-                "path": p["path"],
-                "tool": "claude",
-                "session_count": claude_info["session_count"],
-                "last_active": claude_info["last_active"],
-            })
+            _merge_candidate(
+                by_path,
+                key,
+                {
+                    "path": p["path"],
+                    "tool": "claude",
+                    "session_count": claude_info["session_count"],
+                    "last_active": claude_info["last_active"],
+                },
+            )
 
         _merge_candidate(by_path, key, p)
 
@@ -226,7 +247,9 @@ def discover_projects(home: Path | None = None) -> tuple[list[dict], int]:
         key = _norm_key(p["path"])
         _merge_candidate(by_path, key, p)
 
-    all_projects = sorted(by_path.values(), key=lambda p: p["last_active"], reverse=True)
+    all_projects = sorted(
+        by_path.values(), key=lambda p: p["last_active"], reverse=True
+    )
     if not all_projects:
         return [], 0
 
@@ -286,7 +309,11 @@ def projects_to_config(projects: list[dict]) -> dict:
         entry: dict = {"path": rel}
 
         parent = Path(p["path"]).parent.name.lower()
-        if parent and parent not in GENERIC_DIRS and parent != Path(base_dir).name.lower():
+        if (
+            parent
+            and parent not in GENERIC_DIRS
+            and parent != Path(base_dir).name.lower()
+        ):
             entry["group"] = Path(p["path"]).parent.name
 
         if (parts := rel.split("/")) and parts[-1] in dup_leaves:

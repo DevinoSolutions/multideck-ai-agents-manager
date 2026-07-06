@@ -3,6 +3,7 @@ no-subcommand interactive dispatch. Kept alone in this module (importing
 nothing from sibling command modules at top level) so every command module
 can `from multideck.cli.app import main` without a cycle -- see E6.md S2.1.
 """
+
 from __future__ import annotations
 
 import sys
@@ -23,13 +24,38 @@ from multideck.paths import find_config
 @click.option("--dry-run", is_flag=True, hidden=True)
 @click.option("-g", "--group", default=None, help="Launch only projects in this group")
 @click.option("--init", "do_init", is_flag=True, help="Re-scan and regenerate config")
-@click.option("--base-dir", default=None, type=click.Path(), help="Folder to scan with --init")
-@click.option("--config", "config_path", default=None, type=click.Path(), help="Path to config file")
+@click.option(
+    "--base-dir", default=None, type=click.Path(), help="Folder to scan with --init"
+)
+@click.option(
+    "--config",
+    "config_path",
+    default=None,
+    type=click.Path(),
+    help="Path to config file",
+)
 @click.option("--force", is_flag=True, help="With --init, overwrite existing config")
-@click.option("--edit", "do_edit", is_flag=True, help="Open config in your default editor")
-@click.option("--attach-to", "attach_host", default=None, help="Attach to remote psmux sessions (host or user@host)")
-@click.option("--attach-port", default=8033, hidden=True, help="(deprecated) port is now read from the host config")
-@click.option("--no-mux", "attach_no_mux", is_flag=True, help="With --attach-to: one plain SSH window per project (no psmux/tmux)")
+@click.option(
+    "--edit", "do_edit", is_flag=True, help="Open config in your default editor"
+)
+@click.option(
+    "--attach-to",
+    "attach_host",
+    default=None,
+    help="Attach to remote psmux sessions (host or user@host)",
+)
+@click.option(
+    "--attach-port",
+    default=8033,
+    hidden=True,
+    help="(deprecated) port is now read from the host config",
+)
+@click.option(
+    "--no-mux",
+    "attach_no_mux",
+    is_flag=True,
+    help="With --attach-to: one plain SSH window per project (no psmux/tmux)",
+)
 @click.version_option(__version__)
 @click.pass_context
 def main(
@@ -76,7 +102,9 @@ def main(
 
     if do_edit:
         if not config_file.exists():
-            click.echo(f"No config at {config_file}. Run multideck first to generate one.")
+            click.echo(
+                f"No config at {config_file}. Run multideck first to generate one."
+            )
             sys.exit(1)
         _open_in_editor(config_file)
         return
@@ -91,11 +119,15 @@ def main(
             if success:
                 click.echo(f"Wrote config to {config_file}")
             else:
-                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
+                click.echo(
+                    f"{config_file} exists -- use --force to overwrite.", err=True
+                )
                 sys.exit(1)
         else:
             if config_file.exists() and not force:
-                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
+                click.echo(
+                    f"{config_file} exists -- use --force to overwrite.", err=True
+                )
                 sys.exit(1)
             _run_discovery(config_file)
         return
@@ -147,11 +179,15 @@ def main(
         RunOpts,
         run_multideck,
     )
-    rc = run_multideck(cfg, RunOpts(
-        retile_all=retile_all,
-        dry_run=dry_run,
-        group=group,
-        config_path=str(config_file),
-    ))
+
+    rc = run_multideck(
+        cfg,
+        RunOpts(
+            retile_all=retile_all,
+            dry_run=dry_run,
+            group=group,
+            config_path=str(config_file),
+        ),
+    )
     if rc:
         sys.exit(rc)

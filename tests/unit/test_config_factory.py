@@ -21,7 +21,9 @@ from multideck.config import (
 from multideck.discover import projects_to_config
 from multideck.init_config import generate_config
 
-EXAMPLE_CONFIG_PATH = Path(__file__).resolve().parents[2] / "multideck.config.example.json"
+EXAMPLE_CONFIG_PATH = (
+    Path(__file__).resolve().parents[2] / "multideck.config.example.json"
+)
 
 
 class TestFactoryRoundtrip:
@@ -56,7 +58,9 @@ class TestProjectsToConfigUsesFactoryEnvelope:
     def test_projects_to_config_uses_factory_envelope(self, tmp_path):
         proj = tmp_path / "group" / "app"
         proj.mkdir(parents=True)
-        projects = [{"path": str(proj), "tool": "claude", "session_count": 1, "last_active": 1}]
+        projects = [
+            {"path": str(proj), "tool": "claude", "session_count": 1, "last_active": 1}
+        ]
         config = projects_to_config(projects)
         assert config["version"] == SCHEMA_VERSION
         assert config["settings"]["tools"] == dict(DEFAULT_TOOLS)
@@ -72,7 +76,14 @@ class TestSingleSourceSettingsBlock:
         proj = tmp_path / "group" / "app2"
         proj.mkdir(parents=True)
         discovered = projects_to_config(
-            [{"path": str(proj), "tool": "claude", "session_count": 1, "last_active": 1}]
+            [
+                {
+                    "path": str(proj),
+                    "tool": "claude",
+                    "session_count": 1,
+                    "last_active": 1,
+                }
+            ]
         )
 
         factory = default_config([])
@@ -83,9 +94,11 @@ class TestSingleSourceSettingsBlock:
 
 class TestMigrateConfigFile:
     def test_migrate_stamps_version_and_persists_colors(self, tmp_config):
-        path = tmp_config({
-            "projects": [{"path": "api"}, {"path": "web", "color": "#123456"}],
-        })
+        path = tmp_config(
+            {
+                "projects": [{"path": "api"}, {"path": "web", "color": "#123456"}],
+            }
+        )
 
         changed = migrate_config_file(path)
 
@@ -104,10 +117,12 @@ class TestMigrateConfigFile:
         assert before == after
 
     def test_migrate_is_idempotent(self, tmp_config):
-        path = tmp_config({
-            "version": SCHEMA_VERSION,
-            "projects": [{"path": "api", "color": "#111111"}],
-        })
+        path = tmp_config(
+            {
+                "version": SCHEMA_VERSION,
+                "projects": [{"path": "api", "color": "#111111"}],
+            }
+        )
         assert migrate_config_file(path) is False
 
     def test_migrate_file_not_found_raises(self):

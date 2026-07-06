@@ -124,7 +124,9 @@ def test_main_dry_run_dispatch(runner, fake_platform, tmp_config, tmp_path):
 
 
 def test_up_json(runner, tmp_config, monkeypatch):
-    monkeypatch.setattr("multideck.launch.psmux_status", lambda cfg, group=None: ([], [], []))
+    monkeypatch.setattr(
+        "multideck.launch.psmux_status", lambda cfg, group=None: ([], [], [])
+    )
     cfgpath = tmp_config({"projects": [{"path": "myapp"}]})
 
     result = runner.invoke(main, ["--config", cfgpath, "up", "--json"])

@@ -7,6 +7,7 @@ load cycle (upload_server's command modules are imported by cli/__init__ for
 registration; if the config-path leaf lived inside the cli package,
 upload_server would depend back on the package it's imported by).
 """
+
 from __future__ import annotations
 
 import os

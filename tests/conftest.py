@@ -29,16 +29,19 @@ def _isolate_multideck_logs(tmp_path, monkeypatch):
 @pytest.fixture
 def tmp_config(tmp_path):
     """Write a config dict to a temp JSON file and return the path."""
+
     def _write(config_dict):
         p = tmp_path / "multideck.config.json"
         p.write_text(json.dumps(config_dict))
         return str(p)
+
     return _write
 
 
 @pytest.fixture
 def fake_claude_sessions(tmp_path):
     """Create fake Claude session .jsonl files with controlled mtimes."""
+
     def _create(encoded_path, sessions):
         sess_dir = tmp_path / ".claude" / "projects" / encoded_path
         sess_dir.mkdir(parents=True, exist_ok=True)
@@ -47,23 +50,29 @@ def fake_claude_sessions(tmp_path):
             f.write_text('{"type":"message"}\n')
             os.utime(f, (mtime, mtime))
         return sess_dir
+
     return _create
 
 
 @pytest.fixture
 def fake_codex_sessions(tmp_path):
     """Create fake Codex session .jsonl files with CWD metadata."""
+
     def _create(sessions):
         sess_root = tmp_path / ".codex" / "sessions"
         for i, (cwd, uuid, mtime) in enumerate(sessions):
             day_dir = sess_root / "2026" / "06" / str(20 + i)
             day_dir.mkdir(parents=True, exist_ok=True)
-            meta = {"timestamp": "2026-06-20T00:00:00Z", "type": "session_meta",
-                    "payload": {"id": uuid, "cwd": cwd}}
+            meta = {
+                "timestamp": "2026-06-20T00:00:00Z",
+                "type": "session_meta",
+                "payload": {"id": uuid, "cwd": cwd},
+            }
             f = day_dir / f"session-{i}-{uuid}.jsonl"
             f.write_text(json.dumps(meta) + "\n")
             os.utime(f, (mtime, mtime))
         return sess_root
+
     return _create
 
 
@@ -73,9 +82,13 @@ class FakePlatform(Platform):
     run_multideck pieces (see tests/unit/test_platform_contract.py)."""
 
     def __init__(self, monitors=None, windows=None, supports_psmux: bool = False):
-        self._monitors = monitors if monitors is not None else [
-            MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
-        ]
+        self._monitors = (
+            monitors
+            if monitors is not None
+            else [
+                MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
+            ]
+        )
         self._windows = windows if windows is not None else {}
         self._supports_psmux = supports_psmux
         self._next_handle = 1

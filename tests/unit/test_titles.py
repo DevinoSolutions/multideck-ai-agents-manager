@@ -44,11 +44,15 @@ class TestGenerateTitles:
         assert titles == ["api"]
 
     def test_windows_string_array(self):
-        titles = generate_titles(title=None, path="internal/api", windows=["feat", "bugs", "review"])
+        titles = generate_titles(
+            title=None, path="internal/api", windows=["feat", "bugs", "review"]
+        )
         assert titles == ["feat", "bugs", "review"]
 
     def test_windows_string_array_ignores_title(self):
-        titles = generate_titles(title="ignored", path="internal/api", windows=["a", "b"])
+        titles = generate_titles(
+            title="ignored", path="internal/api", windows=["a", "b"]
+        )
         assert titles == ["a", "b"]
 
 
@@ -67,6 +71,7 @@ class TestMdTitlePrefixContract:
     )
     def test_hotkey_imports_same_object(self):
         from multideck import hotkey
+
         assert hotkey.MD_TITLE_PREFIX is MD_TITLE_PREFIX
 
     @pytest.mark.skipif(
@@ -75,5 +80,6 @@ class TestMdTitlePrefixContract:
     )
     def test_producers_agree_with_consumer(self):
         from multideck.hotkey import MD_TITLE_PREFIX as consumer_prefix
+
         name = "my-project"
         assert f"md:{name}" == f"{consumer_prefix}{name}"

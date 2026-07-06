@@ -7,8 +7,17 @@ from pathlib import Path
 from multideck.config import _random_tab_color, default_config
 
 SKIP_DIRS = {
-    ".git", "node_modules", ".svn", ".hg", "bin", "obj",
-    ".next", "dist", "vendor", ".venv", "target",
+    ".git",
+    "node_modules",
+    ".svn",
+    ".hg",
+    "bin",
+    "obj",
+    ".next",
+    "dist",
+    "vendor",
+    ".venv",
+    "target",
 }
 
 
@@ -31,9 +40,12 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict]:
             except PermissionError:
                 continue
 
-    dirs = sorted(repos) if repos else sorted(
-        d for d in root_path.iterdir()
-        if d.is_dir() and d.name not in SKIP_DIRS
+    dirs = (
+        sorted(repos)
+        if repos
+        else sorted(
+            d for d in root_path.iterdir() if d.is_dir() and d.name not in SKIP_DIRS
+        )
     )
 
     leaves = [d.name for d in dirs]

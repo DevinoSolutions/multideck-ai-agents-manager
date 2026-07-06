@@ -3,6 +3,7 @@ printing helpers. No config or subprocess state of its own beyond the two
 platform-guarded helpers (_force_utf8_console: win-only ctypes;
 _print_qr: optional `qrcode` dep) -- both keep their guard in-body.
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -31,7 +32,9 @@ def _banner() -> None:
     click.echo()
     for line in LOGO_LINES:
         click.echo(f"  {style(line, fg='cyan')}")
-    click.echo(f"  {style(f'v{__version__}', dim=True)}  {style('auto-tile your AI workspace', dim=True)}")
+    click.echo(
+        f"  {style(f'v{__version__}', dim=True)}  {style('auto-tile your AI workspace', dim=True)}"
+    )
     click.echo()
 
 
@@ -56,7 +59,12 @@ def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
             pad = cell_w - len(label)
             left = pad // 2
             right = pad - left
-            cells += style("|", dim=True) + " " * left + style(label, fg="cyan") + " " * right
+            cells += (
+                style("|", dim=True)
+                + " " * left
+                + style(label, fg="cyan")
+                + " " * right
+            )
         cells += style("|", dim=True)
         lines.append(f"{indent}{cells}")
     lines.append(f"{indent}{style(border, dim=True)}")
@@ -98,6 +106,7 @@ def _force_utf8_console() -> None:
         return
     with contextlib.suppress(OSError, AttributeError):
         import ctypes
+
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
     with contextlib.suppress(OSError, AttributeError, ValueError):
         sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # reason: guarded above; reconfigure exists on the real TextIOWrapper
@@ -108,8 +117,10 @@ def _print_qr(url: str) -> None:
     try:
         import qrcode
     except ImportError:
-        click.echo(f"  {style('Tip:', dim=True)} {style('pip install qrcode', bold=True)} "
-                   f"{style('to print a scannable QR code here.', dim=True)}")
+        click.echo(
+            f"  {style('Tip:', dim=True)} {style('pip install qrcode', bold=True)} "
+            f"{style('to print a scannable QR code here.', dim=True)}"
+        )
         return
     qr = qrcode.QRCode(border=2)
     qr.add_data(url)
@@ -141,15 +152,19 @@ def _print_names(names: list[str], indent: str = "       ", width: int = 66) -> 
         click.echo(style(line, dim=True))
 
 
-def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> list[str]:
+def _print_session_overview(
+    hostname: str, up: list[dict], down: list[dict]
+) -> list[str]:
     """Render a grouped up/down overview; return the ordered list of pickable groups."""
     dn_order, dn_buckets = _grouped(down)
     up_order, up_buckets = _grouped(up)
 
     click.echo()
-    click.echo(f"  {style('Sessions on', bold=True)} {style(hostname, fg='cyan')}    "
-               f"{style(str(len(up)), fg='green', bold=True)} up  {style('/', dim=True)}  "
-               f"{style(str(len(down)), fg='yellow', bold=True)} down")
+    click.echo(
+        f"  {style('Sessions on', bold=True)} {style(hostname, fg='cyan')}    "
+        f"{style(str(len(up)), fg='green', bold=True)} up  {style('/', dim=True)}  "
+        f"{style(str(len(down)), fg='yellow', bold=True)} down"
+    )
     _divider()
 
     pickable: list[str] = []
@@ -158,16 +173,22 @@ def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> 
         up_n = len(up_buckets.get(g, []))
         total = up_n + len(names)
         if g == "(no group)":
-            click.echo(f"     {style(g, dim=True)}  {style(f'{up_n}/{total}', dim=True)}")
+            click.echo(
+                f"     {style(g, dim=True)}  {style(f'{up_n}/{total}', dim=True)}"
+            )
         else:
             pickable.append(g)
             num = style(str(len(pickable)), fg="cyan", bold=True)
-            click.echo(f"  {num}  {style(g, bold=True)}  {style(f'{up_n}/{total} up', dim=True)}")
+            click.echo(
+                f"  {num}  {style(g, bold=True)}  {style(f'{up_n}/{total} up', dim=True)}"
+            )
         _print_names(names)
 
     for g in up_order:
         if g not in dn_buckets:
             cnt = len(up_buckets[g])
-            click.echo(f"     {style(g, dim=True)}  {style(f'{cnt}/{cnt} ready', fg='green')}")
+            click.echo(
+                f"     {style(g, dim=True)}  {style(f'{cnt}/{cnt} ready', fg='green')}"
+            )
     _divider()
     return pickable

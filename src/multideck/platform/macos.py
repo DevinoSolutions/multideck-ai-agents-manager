@@ -37,7 +37,10 @@ class MacOSPlatform(Platform):
             return []
         result = subprocess.run(
             ["swift", "-e", SWIFT_MONITORS],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         if result.returncode != 0 or not result.stdout.strip():
             return []
@@ -46,17 +49,21 @@ class MacOSPlatform(Platform):
         for m in raw:
             full_h = m["full_h"]
             y_top = full_h - m["y"] - m["h"]
-            monitors.append(MonitorRect(
-                x=m["x"],
-                y=y_top if y_top >= 0 else m["y"],
-                w=m["w"],
-                h=m["h"],
-                is_primary=m["is_primary"],
-                scale_factor=m["scale"],
-            ))
+            monitors.append(
+                MonitorRect(
+                    x=m["x"],
+                    y=y_top if y_top >= 0 else m["y"],
+                    w=m["w"],
+                    h=m["h"],
+                    is_primary=m["is_primary"],
+                    scale_factor=m["scale"],
+                )
+            )
         return monitors
 
-    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> dict | None:
+    def find_window(
+        self, title: str, mode: Literal["exact", "contains"] = "exact"
+    ) -> dict | None:
         if mode not in ("exact", "contains"):
             raise ValueError(f"unknown find_window mode: {mode!r}")
         script = """
@@ -72,7 +79,10 @@ class MacOSPlatform(Platform):
         """
         result = subprocess.run(
             ["osascript", "-e", script],
-            capture_output=True, text=True, timeout=10, check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
         for line in result.stdout.strip().split(", "):
             parts = line.split(":")
@@ -108,12 +118,21 @@ class MacOSPlatform(Platform):
             if opts.ssh_shell:
                 cmd = f"ssh -t {opts.ssh_host} \"{opts.ssh_shell} '{inner}'\""
             else:
-                cmd = f"ssh -t {opts.ssh_host} \"{inner}\""
+                cmd = f'ssh -t {opts.ssh_host} "{inner}"'
         else:
             cmd = f"cd {opts.cwd} && {opts.command}"
 
         if shutil.which("kitty"):
-            args = ["kitty", "--title", opts.title, "--directory", opts.cwd, "sh", "-c", cmd]
+            args = [
+                "kitty",
+                "--title",
+                opts.title,
+                "--directory",
+                opts.cwd,
+                "sh",
+                "-c",
+                cmd,
+            ]
             subprocess.Popen(args)
         elif self._has_app("iTerm"):
             script = f"""
@@ -144,7 +163,13 @@ class MacOSPlatform(Platform):
     @staticmethod
     def _has_app(name: str) -> bool:
         result = subprocess.run(
-            ["mdfind", f"kMDItemKind == 'Application' && kMDItemDisplayName == '{name}'"],
-            capture_output=True, text=True, timeout=5, check=False,
+            [
+                "mdfind",
+                f"kMDItemKind == 'Application' && kMDItemDisplayName == '{name}'",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         return bool(result.stdout.strip())

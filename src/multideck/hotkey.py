@@ -1,4 +1,5 @@
 """Global Alt+V hotkey listener for clipboard image upload to psmux sessions."""
+
 from __future__ import annotations
 
 import contextlib
@@ -34,22 +35,33 @@ kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
 kernel32.GlobalSize.argtypes = [ctypes.c_void_p]
 
 user32.CallNextHookEx.argtypes = [
-    ctypes.c_void_p, ctypes.c_int,
-    ctypes.wintypes.WPARAM, ctypes.wintypes.LPARAM,
+    ctypes.c_void_p,
+    ctypes.c_int,
+    ctypes.wintypes.WPARAM,
+    ctypes.wintypes.LPARAM,
 ]
 user32.CallNextHookEx.restype = ctypes.c_long
 
 user32.SetWindowsHookExW.argtypes = [
-    ctypes.c_int, ctypes.c_void_p,
-    ctypes.c_void_p, ctypes.wintypes.DWORD,
+    ctypes.c_int,
+    ctypes.c_void_p,
+    ctypes.c_void_p,
+    ctypes.wintypes.DWORD,
 ]
 user32.SetWindowsHookExW.restype = ctypes.c_void_p
 
 user32.UnhookWindowsHookEx.argtypes = [ctypes.c_void_p]
 
-kernel32.OpenProcess.argtypes = [ctypes.wintypes.DWORD, ctypes.wintypes.BOOL, ctypes.wintypes.DWORD]
+kernel32.OpenProcess.argtypes = [
+    ctypes.wintypes.DWORD,
+    ctypes.wintypes.BOOL,
+    ctypes.wintypes.DWORD,
+]
 kernel32.OpenProcess.restype = ctypes.wintypes.HANDLE
-kernel32.GetExitCodeProcess.argtypes = [ctypes.wintypes.HANDLE, ctypes.POINTER(ctypes.wintypes.DWORD)]
+kernel32.GetExitCodeProcess.argtypes = [
+    ctypes.wintypes.HANDLE,
+    ctypes.POINTER(ctypes.wintypes.DWORD),
+]
 kernel32.GetExitCodeProcess.restype = ctypes.wintypes.BOOL
 kernel32.CloseHandle.argtypes = [ctypes.wintypes.HANDLE]
 
@@ -127,7 +139,7 @@ def get_clipboard_image() -> bytes | None:
     return _dib_to_bmp(dib_data)
 
 
-_DIB_HEADER_SIZES = frozenset({40, 52, 56, 108, 124})   # BITMAPINFOHEADER..V5
+_DIB_HEADER_SIZES = frozenset({40, 52, 56, 108, 124})  # BITMAPINFOHEADER..V5
 _DIB_BPP = frozenset({1, 4, 8, 16, 24, 32})
 
 
@@ -164,12 +176,12 @@ def _dib_to_bmp(dib: bytearray) -> bytes | None:
         extra += (clr_used or (1 << bpp)) * 4
 
     px_start = header_size + extra
-    if px_start > len(dib):     # pixel offset past the buffer -> malformed
+    if px_start > len(dib):  # pixel offset past the buffer -> malformed
         return None
 
     if bpp == 32 and px_start < len(dib):
         n = len(range(px_start + 3, len(dib), 4))
-        dib[px_start + 3::4] = b"\xff" * n
+        dib[px_start + 3 :: 4] = b"\xff" * n
 
     file_size = 14 + len(dib)
     offset = 14 + px_start
@@ -184,7 +196,7 @@ def _dib_to_bmp(dib: bytearray) -> bytes | None:
 
 def project_from_title(title: str) -> str | None:
     if title.startswith(MD_TITLE_PREFIX):
-        return title[len(MD_TITLE_PREFIX):]
+        return title[len(MD_TITLE_PREFIX) :]
     return None
 
 
@@ -192,19 +204,23 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
     boundary = "----MultideckUpload"
     delim = f"--{boundary}"
     body = (
-        f"{delim}\r\n"
-        f'Content-Disposition: form-data; name="project"\r\n'
-        f"\r\n"
-        f"{project}\r\n"
-        f"{delim}\r\n"
-        f'Content-Disposition: form-data; name="inject"\r\n'
-        f"\r\n"
-        f"1\r\n"
-        f"{delim}\r\n"
-        f'Content-Disposition: form-data; name="file"; filename="clipboard.bmp"\r\n'
-        f"Content-Type: image/bmp\r\n"
-        f"\r\n"
-    ).encode() + image_data + f"\r\n{delim}--\r\n".encode()
+        (
+            f"{delim}\r\n"
+            f'Content-Disposition: form-data; name="project"\r\n'
+            f"\r\n"
+            f"{project}\r\n"
+            f"{delim}\r\n"
+            f'Content-Disposition: form-data; name="inject"\r\n'
+            f"\r\n"
+            f"1\r\n"
+            f"{delim}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="clipboard.bmp"\r\n'
+            f"Content-Type: image/bmp\r\n"
+            f"\r\n"
+        ).encode()
+        + image_data
+        + f"\r\n{delim}--\r\n".encode()
+    )
 
     # ?project= lets the server flash "uploading" in the md:<project> status line
     # the moment the request lands -- before it reads the image bytes -- so the
@@ -270,7 +286,9 @@ def stop_listener() -> bool:
     pid = listener_pid()
     if not pid:
         return False
-    result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=False)
+    result = subprocess.run(
+        ["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=False
+    )
     if result.returncode != 0:
         log.warning("taskkill pid %d failed rc=%d", pid, result.returncode)
         return False
@@ -324,7 +342,9 @@ def _heartbeat_loop(stop_event: threading.Event) -> None:
         stop_event.wait(HEARTBEAT_INTERVAL)
 
 
-def _hook_decide(state: dict[str, bool], server_url: str, nCode: int, wParam: int, lParam: int) -> int:
+def _hook_decide(
+    state: dict[str, bool], server_url: str, nCode: int, wParam: int, lParam: int
+) -> int:
     """Pure decision logic for one keyboard-hook callback. Extracted out of
     the hook callback itself so it's reachable from a unit test without a
     live hook + message loop; `state` carries `alt_held` across calls the
@@ -338,7 +358,11 @@ def _hook_decide(state: dict[str, bool], server_url: str, nCode: int, wParam: in
         state["alt_held"] = wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
         return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
-    if kb.vkCode == VK_V and state["alt_held"] and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+    if (
+        kb.vkCode == VK_V
+        and state["alt_held"]
+        and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN)
+    ):
         title = get_active_window_title()
         project = project_from_title(title)
 
@@ -348,13 +372,17 @@ def _hook_decide(state: dict[str, bool], server_url: str, nCode: int, wParam: in
         if not clipboard_has_image():
             return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
-        threading.Thread(target=_do_upload, args=(server_url, project), daemon=True).start()
+        threading.Thread(
+            target=_do_upload, args=(server_url, project), daemon=True
+        ).start()
         return 1
 
     return user32.CallNextHookEx(None, nCode, wParam, lParam)
 
 
-def _make_hook_proc(state: dict[str, bool], server_url: str) -> Callable[[int, int, int], int]:
+def _make_hook_proc(
+    state: dict[str, bool], server_url: str
+) -> Callable[[int, int, int], int]:
     """Wrap `_hook_decide` so an uncaught exception can never break the hook
     chain. A ctypes WINFUNCTYPE callback can't propagate a Python exception
     across the C boundary -- CPython prints the traceback and returns the
@@ -368,7 +396,9 @@ def _make_hook_proc(state: dict[str, bool], server_url: str) -> Callable[[int, i
             return _hook_decide(state, server_url, nCode, wParam, lParam)
         except Exception:
             log.exception("Alt+V hook callback error")
-            return user32.CallNextHookEx(None, nCode, wParam, lParam)  # chain never broken
+            return user32.CallNextHookEx(
+                None, nCode, wParam, lParam
+            )  # chain never broken
 
     return hook_proc
 
