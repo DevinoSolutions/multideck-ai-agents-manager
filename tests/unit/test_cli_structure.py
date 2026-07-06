@@ -188,7 +188,7 @@ def test_acyclic_imports():
     upload_server's deferred `_find_config`/`find_config` import and cli's
     command-module registration must never form a load cycle."""
     import multideck.cli
-    import multideck.upload_server  # noqa: F401
+    import multideck.upload_server  # noqa: F401  # reason: imported for its load side-effect — this is the acyclic-import probe
 
 
 class TestConfigMenuCharacterization:

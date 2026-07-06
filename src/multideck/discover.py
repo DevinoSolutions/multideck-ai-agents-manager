@@ -282,7 +282,7 @@ def _find_base_dir(paths: list[str]) -> str:
             if first and first != ".":
                 children[first] = children.get(first, 0) + 1
 
-        best = max(children, key=children.get) if children else None  # type: ignore[arg-type]  # new-finding: dict.get returns Optional; keys always present
+        best = max(children, key=children.get) if children else None  # type: ignore[arg-type]  # reason: children is non-empty in this branch and every key exists, so the max-key is never None [P2]
         if best and children[best] >= threshold:
             candidate = os.path.join(candidate, best)
         else:

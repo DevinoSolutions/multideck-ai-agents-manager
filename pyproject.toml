@@ -74,6 +74,17 @@ max-complexity = 37
 max-branches = 40
 max-statements = 194
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+# The declarative half of the "custom rules" (audit §4.3). One rule code (TID251)
+# carries every ban, so per-file-ignores exempt a file from ALL bans at once —
+# acceptable only for one-line seam modules (style.py here, env.py in Phase 5).
+# Path-scoped policies (no sys.exit/sys.platform outside their homes) can't live
+# here for that reason; they're in scripts/lint_rules.py (MD001/MD002) instead.
+# Staged rollout: click.style lands now (the S->style rename already cleared it);
+# typing.Any joins in Phase 3 (with ANN401, under the Any purge); os.environ /
+# os.getenv join in Phase 5 (once multideck.env owns process-env access).
+"click.style" = { msg = "Use multideck.style.style — the single styling seam [LS-A-003]." }
+
 [tool.ruff.lint.per-file-ignores]
 "scripts/**" = ["T201"]  # check.py & tooling print by design
 "tests/**" = [
@@ -81,6 +92,7 @@ max-statements = 194
   "S110",     # tests may assert-swallow in teardown/polling helpers
   "PLW1510",  # harness subprocess.run asserts on observable outcomes (stdout/files/.returncode), not an implicit check=
 ]
+"src/multideck/style.py" = ["TID251"]  # the click.style ban's origin seam (1-line module; residual risk accepted)
 
 [tool.mypy]
 files = ["src"]

@@ -7,7 +7,7 @@ after that re-exports every symbol tests/external code still reach via
 
 from __future__ import annotations
 
-from multideck.cli import (  # noqa: F401 -- import-time command registration
+from multideck.cli import (  # noqa: F401  # reason: side-effect import — runs each module's @main.command registration
     attach,
     config_editor,
     config_io,

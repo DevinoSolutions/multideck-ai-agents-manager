@@ -99,7 +99,7 @@ class TestWindowsCapabilities:
 @pytest.mark.parametrize("platform_cls", [LinuxPlatform, MacOSPlatform])
 def test_find_window_unknown_mode_raises(platform_cls):
     with pytest.raises(ValueError):
-        platform_cls().find_window("t", mode="bogus")  # type: ignore[arg-type]
+        platform_cls().find_window("t", mode="bogus")  # type: ignore[arg-type]  # reason: invalid mode passed on purpose to prove it raises
 
 
 @pytest.mark.skipif(
@@ -109,4 +109,4 @@ def test_find_window_unknown_mode_raises_windows():
     from multideck.platform.windows import WindowsPlatform
 
     with pytest.raises(ValueError):
-        WindowsPlatform().find_window("t", mode="bogus")  # type: ignore[arg-type]
+        WindowsPlatform().find_window("t", mode="bogus")  # type: ignore[arg-type]  # reason: invalid mode passed on purpose to prove it raises
