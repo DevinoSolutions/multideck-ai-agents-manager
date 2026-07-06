@@ -16,13 +16,11 @@ def init_sentry(dsn: str) -> None:
     import atexit
 
     try:
-        import sentry_sdk  # ty: ignore[unresolved-import]  # reason: optional dep, guarded by try/except
-        from sentry_sdk.integrations.logging import (  # ty: ignore[unresolved-import]  # reason: optional dep
-            LoggingIntegration,
-        )
-        from sentry_sdk.integrations.threading import (  # ty: ignore[unresolved-import]  # reason: optional dep
-            ThreadingIntegration,
-        )
+        import logging
+
+        import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        from sentry_sdk.integrations.threading import ThreadingIntegration
     except ImportError:
         return
 
@@ -31,7 +29,7 @@ def init_sentry(dsn: str) -> None:
         traces_sample_rate=0,
         send_default_pii=False,
         integrations=[
-            LoggingIntegration(level=None, event_level="ERROR"),
+            LoggingIntegration(level=None, event_level=logging.ERROR),
             ThreadingIntegration(propagate_hub=True),
         ],
     )

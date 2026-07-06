@@ -11,6 +11,7 @@ config *discovery* entirely, so no test ever searches the real filesystem.
 from __future__ import annotations
 
 import json
+import sys
 
 from multideck import cli
 
@@ -27,7 +28,10 @@ def _both_off(monkeypatch):
     monkeypatch.setattr("multideck.cli.status._probe_port", lambda port: False)
     monkeypatch.setattr("multideck.upload_server.server_pid", lambda port: None)
     monkeypatch.setattr("multideck.cli.status._pid_alive", lambda pid: False)
-    monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: None)
+    if sys.platform == "win32":
+        monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: None)
+    else:
+        monkeypatch.setattr("multideck.cli.status._listener_state", lambda: "off")
 
 
 class TestNoConfig:
@@ -123,8 +127,13 @@ class TestListenerLiveness:
         monkeypatch.setattr(
             "multideck.cli.status._health_check", lambda port: True
         )  # upload healthy
-        monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: 9999)
-        monkeypatch.setattr("multideck.cli.status.heartbeat_fresh", lambda name: False)
+        if sys.platform == "win32":
+            monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: 9999)
+            monkeypatch.setattr(
+                "multideck.cli.status.heartbeat_fresh", lambda name: False
+            )
+        else:
+            monkeypatch.setattr("multideck.cli.status._listener_state", lambda: "stale")
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status"])

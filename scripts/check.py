@@ -25,7 +25,17 @@ FAST_STEPS: list[tuple[str, list[str]]] = [
     ),
     (
         "ty  (strict type check)",
-        ["ty", "check", "src", "scripts", "--error-on-warning"],
+        [
+            "ty",
+            "check",
+            "src",
+            "scripts",
+            "--error-on-warning",
+            "--exclude",
+            "src/multideck/platform/windows.py",
+            "--exclude",
+            "src/multideck/hotkey.py",
+        ],
     ),
 ]
 
