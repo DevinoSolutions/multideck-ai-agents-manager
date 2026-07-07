@@ -33,3 +33,10 @@ coverage.xml
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Never-commit set (CLAUDE.md hard boundaries + local tooling output)
+nul
+vscode_debug.txt
+audit/
+graphify-out/
+.graphify_*
