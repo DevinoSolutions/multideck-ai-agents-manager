@@ -1,0 +1,25 @@
+# Automated dependency-update PRs (version updates). Dependabot ALERTS and
+# security-fix PRs are repo settings, enabled separately. Every PR this files
+# still has to pass the required quality check before it can merge.
+version: 2
+updates:
+  - package-ecosystem: "uv" # parses pyproject.toml + uv.lock together
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions" # keeps the sha-pinned actions current
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "npm" # husky only
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 2

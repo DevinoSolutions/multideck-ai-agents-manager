@@ -444,6 +444,19 @@ regresses pre-1.0, fall back to a scoped 2-file mypy backstop.**
 work (spec §6.5), not an oversight; ruff (lint + format) does cover `tests/`
 today.
 
+**Dependency scanning is a separate advisory workflow, not a quality-gate
+step (added 2026-07-07).** `.github/workflows/dependency-audit.yml` runs a
+pinned `pip-audit==2.10.1` over the exported `uv.lock` closure whenever
+dependencies change and on a weekly schedule (advisories are published
+without commits), and `.github/dependabot.yml` files weekly version-update
+PRs (uv, github-actions, npm — each still gated by the required quality
+check). It is deliberately NOT wired into `scripts/check.py`: the gate must
+stay deterministic and offline-runnable, and advisory-database state is
+external — a new CVE should surface loudly on its own schedule, not
+retroactively turn an unrelated commit red at pre-push. The same reasoning
+keeps the job out of the branch ruleset's required checks initially; promote
+it once its flake rate is known.
+
 ## 3. Known debt
 
 Ordered roughly by how likely a future change is to collide with it.
