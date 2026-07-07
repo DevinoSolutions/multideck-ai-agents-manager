@@ -17,7 +17,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import (
-    HttpUrl,  # noqa: TC002  # reason: pydantic needs HttpUrl at runtime for model validation
+    HttpUrl,  # reason: pydantic needs HttpUrl at runtime for model validation
+    model_validator,
 )
 from pydantic_settings import BaseSettings
 
@@ -26,13 +27,31 @@ class MultideckEnv(BaseSettings):
     """Validated MULTIDECK_* environment variables.
 
     ``extra="forbid"`` means any unknown ``MULTIDECK_*`` var is a hard error
-    (closed schema — same doctrine as the config file).
+    (closed schema — same doctrine as the config file). pydantic-settings only
+    ever reads env keys that map to a declared field, so ``extra="forbid"``
+    alone never sees the rest; the ``_no_unknown_multideck_vars`` validator
+    below closes that hole by scanning ``os.environ`` directly.
     """
 
     model_config = {"env_prefix": "MULTIDECK_", "env_file": ".env", "extra": "forbid"}
 
     sentry_dsn: HttpUrl | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None
+
+    @model_validator(mode="after")
+    def _no_unknown_multideck_vars(self) -> MultideckEnv:
+        """Hard-fail on any MULTIDECK_* env var this schema doesn't declare."""
+        known = {f"MULTIDECK_{name.upper()}" for name in type(self).model_fields}
+        unknown = sorted(
+            key.upper()
+            for key in os.environ
+            if key.upper().startswith("MULTIDECK_") and key.upper() not in known
+        )
+        if unknown:
+            raise ValueError(
+                "Unknown MULTIDECK_* environment variable(s): " + ", ".join(unknown)
+            )
+        return self
 
 
 _cached_env: MultideckEnv | None = None

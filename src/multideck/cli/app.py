@@ -77,9 +77,20 @@ def main(
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config_path
 
+    from pydantic import ValidationError  # heavy subsystem: in-body per policy
+
     from multideck.env import get_env  # heavy subsystem: in-body per policy
 
-    env = get_env()
+    try:
+        env = get_env()
+    except ValidationError as exc:
+        for error in exc.errors():
+            loc = ".".join(str(part) for part in error["loc"]).upper()
+            click.echo(f"MULTIDECK_{loc}: {error['msg']}", err=True)
+        click.echo(
+            "Fix the environment variable(s) above (see .env.example).", err=True
+        )
+        sys.exit(1)
     if env.sentry_dsn:
         from multideck.sentry import init_sentry  # heavy subsystem: in-body per policy
 
