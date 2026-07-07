@@ -4,6 +4,7 @@ isolation with fakes, plus the CLI exit-code and --json contracts."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from multideck import cli
@@ -41,6 +42,20 @@ class TestCheckConfig:
         (result, cfg) = _check_config(Path(path))
         assert result[0] == OK
         assert cfg is not None
+
+
+class TestCheckEnv:
+    def test_invalid_field_fails_naming_the_full_var(self, monkeypatch):
+        monkeypatch.setenv("MULTIDECK_LOG_LEVEL", "BOGUS")
+        status, detail = doctor._check_env()
+        assert status == FAIL
+        assert "MULTIDECK_LOG_LEVEL" in detail
+
+    def test_clean_env_is_ok(self, monkeypatch):
+        for key in list(os.environ):
+            if key.upper().startswith("MULTIDECK_"):
+                monkeypatch.delenv(key, raising=False)
+        assert doctor._check_env()[0] == OK
 
 
 class TestCheckAgentTools:

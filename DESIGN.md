@@ -305,6 +305,22 @@ until `multideck config migrate` (or a config-editor save) persists one.
 This is the accepted cost of keeping `load_config` a pure read; run
 `migrate` once per config to pin colors.
 
+**The dotenv file is `~/.multideck/.env` (`env.ENV_FILE`) — never the
+CWD's `.env`.** multideck is a launcher: it is run from arbitrary project
+directories, and nearly every real project directory carries a `.env` of its
+own. pydantic-settings loads *every* key of a dotenv file (prefixed or not),
+so with the closed schema (`extra="forbid"`) a CWD-relative `env_file`
+hard-failed startup on any foreign project's innocent keys — a day-one field
+incident: running `multideck` inside an eBay project rejected that project's
+`EBAY_*` tokens, and the then-current error formatter rebranded them
+`MULTIDECK_EBAY_*`, names that existed in no file. Hence: the dotenv lives
+in multideck's own home dir (beside logs/state), where every key is
+legitimately multideck's to police; `extra="forbid"` stays; foreign extras
+report under their raw names via `env.validation_error_items` (shared by
+`app.py` and `doctor`), and the startup hint names the file. Anyone
+"restoring" CWD dotenv support for dev convenience will reintroduce the
+incident.
+
 **`up_cmd` (`cli/attach.py`) is the one permitted raw `load_config` call
 site outside `config_io.py`.** Every other guarded call site in `cli/`
 routes through `config_io._load_config_or_exit`, which prints a plain-text
