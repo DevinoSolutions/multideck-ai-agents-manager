@@ -433,13 +433,11 @@ surface singular. The accepted risk is depending on a pre-1.0 checker with
 known false positives (documented in CLAUDE.md's gotchas); revisit this
 decision once ty ships a 1.0 release.
 
-**Known gap: `platform/windows.py` and `hotkey.py` are excluded from ty and
-are therefore type-checked nowhere.** Both files rely on win32 ctypes
-bindings that ty 0.0.56 cannot resolve regardless of which host OS runs the
-check (see the two permanent `--exclude` flags in `scripts/check.py`, each
-now carrying a reason comment). Closing this gap is Session-B work: either a
-ty `python-platform` configuration or a small, scoped 2-file mypy backstop
-covering just these two files.
+**`platform/windows.py` and `hotkey.py` are excluded from the main ty pass
+(win32 ctypes symbols unresolvable under the host-platform view on Linux)
+and checked by a dedicated `ty --python-platform win32` step instead (added
+2026-07-07) — full type coverage on every host; if ty's platform emulation
+regresses pre-1.0, fall back to a scoped 2-file mypy backstop.**
 
 **`tests/` is not yet under ty.** The gate's ty step only checks `src` and
 `scripts` (`ty check src scripts ...`) — `tests/` is staged, tracked future

@@ -32,14 +32,23 @@ FAST_STEPS: list[tuple[str, list[str]]] = [
             "src",
             "scripts",
             "--error-on-warning",
-            # windows.py + hotkey.py: win32 ctypes symbols unresolvable under ty
-            # 0.0.56 on any host; excluded = type-checked NOWHERE until the
-            # Session-B fix (ty python-platform or a 2-file mypy backstop) -
-            # see DESIGN.md known debt.
+            # excluded here; checked by the dedicated win32-platform pass below
             "--exclude",
             "src/multideck/platform/windows.py",
             "--exclude",
             "src/multideck/hotkey.py",
+        ],
+    ),
+    (
+        "ty  (win32 modules, platform view)",
+        [
+            "ty",
+            "check",
+            "src/multideck/platform/windows.py",
+            "src/multideck/hotkey.py",
+            "--python-platform",
+            "win32",
+            "--error-on-warning",
         ],
     ),
 ]
