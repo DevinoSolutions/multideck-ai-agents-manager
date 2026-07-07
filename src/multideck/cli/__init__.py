@@ -14,6 +14,7 @@ from multideck.cli import (  # noqa: F401  # reason: side-effect import — runs
     config_io,
     daemons,
     docs,
+    doctor,
     menu,
     session_picker,
     spawns,

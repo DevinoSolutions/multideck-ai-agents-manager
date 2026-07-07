@@ -166,6 +166,7 @@ Or skip the menu with flags:
 | `multideck --init --base-dir <folder>` | Generate config from a folder of git repos. |
 | `multideck --edit` | Open config in your default editor. |
 | `multideck docs` | Print full config reference (Markdown). |
+| `multideck doctor [--json]` | Diagnose the environment: config, env vars, agent tools on PATH, terminal, monitors, writable dirs, Tailscale, upload port. Exit 1 on any failure. |
 | `multideck sessions` | List active psmux sessions, pick one to attach. |
 | `multideck sessions <name>` | Attach directly to a psmux session by name. |
 | `multideck up [--json] [-g <group>]` | Host side: ensure a persistent psmux session per project. |
