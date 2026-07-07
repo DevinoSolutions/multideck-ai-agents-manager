@@ -68,7 +68,12 @@ FULL_ONLY_STEPS: list[tuple[str, list[str]]] = [
             "tests/unit/",
             "--cov=multideck",
             "--cov-report=term-missing",
-            "--cov-fail-under=57",
+            # 52, not 57: the "Lint + Type Check + Coverage" CI job runs this on
+            # ubuntu-latest, where platform/windows.py + hotkey.py are 0%-coverable
+            # by construction -- measured there was 53.18%, vs 58.48% on a Windows
+            # dev box running the same suite. The floor must hold on the OS that
+            # actually enforces it, not on whichever OS happened to set it.
+            "--cov-fail-under=52",
         ],
     ),
 ]
