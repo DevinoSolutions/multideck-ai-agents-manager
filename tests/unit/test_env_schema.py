@@ -23,8 +23,8 @@ _ENV_EXAMPLE = _ROOT / ".env.example"
 
 
 def _clear_multideck_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Strip every ambient MULTIDECK_* var (including the repo's real .env
-    values, once loaded) so tests start from a known-empty schema."""
+    """Strip every ambient MULTIDECK_* process var so tests start from a
+    known-empty schema (conftest already isolates ENV_FILE to tmp_path)."""
     for key in list(os.environ):
         if key.upper().startswith("MULTIDECK_"):
             monkeypatch.delenv(key, raising=False)
@@ -113,21 +113,70 @@ class TestCliFailsFastOnBadEnv:
         assert "MULTIDECK_TOTALLY_UNKNOWN" in result.output
         assert "Traceback" not in result.output
 
-    def test_unknown_var_in_dotenv_names_it_exactly_once(
+    def test_unknown_var_in_own_env_file_names_it_exactly_once(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """R5-01: a .env extra_forbidden error carries the full MULTIDECK_*
-        key in loc (unlike field errors, which carry the bare field name) —
-        the formatter must not double the prefix."""
+        """R5-01: an ENV_FILE extra_forbidden error carries the full
+        MULTIDECK_* key in loc (unlike field errors, which carry the bare
+        field name) — the formatter must not double the prefix."""
         _clear_multideck_env(monkeypatch)
-        monkeypatch.setattr(env_module, "_cached_env", None)
+        env_module.ENV_FILE.write_text("MULTIDECK_FOO=1\n", encoding="utf-8")
 
-        runner = CliRunner()
-        with runner.isolated_filesystem():
-            Path(".env").write_text("MULTIDECK_FOO=1\n", encoding="utf-8")
-            result = runner.invoke(cli.main, [])
+        result = CliRunner().invoke(cli.main, [])
 
         assert result.exit_code == 1
         assert "MULTIDECK_FOO: " in result.output
         assert "MULTIDECK_MULTIDECK" not in result.output
         assert "Traceback" not in result.output
+
+
+class TestEnvFileIsMultidecksOwn:
+    """Field incident (2026-07-07): multideck is a launcher run from arbitrary
+    project directories. It must read only its own ~/.multideck/.env
+    (env.ENV_FILE) — a CWD .env belongs to whatever project lives there, and
+    with extra="forbid" its innocent keys (eBay tokens, in the original
+    report) hard-failed multideck's startup under a fabricated MULTIDECK_
+    name."""
+
+    def test_foreign_dotenv_in_cwd_is_ignored(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_multideck_env(monkeypatch)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path(".env").write_text(
+                "EBAY_APP_ACCESS_TOKEN=x\nSUPER=y\n", encoding="utf-8"
+            )
+            # --config to a missing path: proves the run got PAST env
+            # validation (config resolution errors, not the env layer) and
+            # keeps the test off any real config on the host machine.
+            result = runner.invoke(cli.main, ["--config", "nope.json"])
+
+        assert "Extra inputs are not permitted" not in result.output
+        assert "EBAY_APP_ACCESS_TOKEN" not in result.output
+        assert "No config found" in result.output
+        assert "Traceback" not in result.output
+
+    def test_extra_key_in_own_env_file_names_raw_key_and_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An unknown entry in ENV_FILE errors under its raw name — no
+        fabricated MULTIDECK_ prefix — and the hint names the file."""
+        _clear_multideck_env(monkeypatch)
+        env_module.ENV_FILE.write_text("EBAY_APP_ACCESS_TOKEN=x\n", encoding="utf-8")
+
+        result = CliRunner().invoke(cli.main, [])
+
+        assert result.exit_code == 1
+        assert "EBAY_APP_ACCESS_TOKEN: " in result.output
+        assert "MULTIDECK_EBAY_APP_ACCESS_TOKEN" not in result.output
+        assert str(env_module.ENV_FILE) in result.output
+
+    def test_known_var_in_own_env_file_is_loaded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _clear_multideck_env(monkeypatch)
+        env_module.ENV_FILE.write_text("MULTIDECK_LOG_LEVEL=DEBUG\n", encoding="utf-8")
+
+        assert env_module.get_env().log_level == "DEBUG"

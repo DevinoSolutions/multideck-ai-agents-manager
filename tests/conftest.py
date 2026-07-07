@@ -4,7 +4,7 @@ import os
 import pytest
 from click.testing import CliRunner
 
-from multideck import agent_state, log
+from multideck import agent_state, env, log
 from multideck.grid import MonitorRect
 from multideck.platform import (
     Platform,
@@ -16,14 +16,16 @@ from multideck.titles import get_leaf_name
 
 
 @pytest.fixture(autouse=True)
-def _isolate_multideck_logs(tmp_path, monkeypatch):
-    """Every test's log/heartbeat/agent-state writes and reads land under
-    tmp_path, never the real ~/.multideck -- autouse so no test can forget it
-    (and so a developer machine's live agent-state records can't leak into
-    status/watch assertions)."""
+def _isolate_multideck_home(tmp_path, monkeypatch):
+    """Every test's log/heartbeat/agent-state/env-file reads and writes land
+    under tmp_path, never the real ~/.multideck -- autouse so no test can
+    forget it (and so a developer machine's live agent-state records or
+    ~/.multideck/.env can't leak into assertions)."""
     monkeypatch.setattr(log, "LOG_DIR", tmp_path / "logs")
     monkeypatch.setattr(log, "HEARTBEAT_DIR", tmp_path / "hb")
     monkeypatch.setattr(agent_state, "STATE_DIR", tmp_path / "agent-state")
+    monkeypatch.setattr(env, "ENV_FILE", tmp_path / "env-file")
+    monkeypatch.setattr(env, "_cached_env", None)
     log.reset_logging()
     yield
     log.reset_logging()

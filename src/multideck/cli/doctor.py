@@ -62,14 +62,13 @@ def _check_config(config_file: Path) -> tuple[CheckResult, MultideckConfig | Non
 def _check_env() -> CheckResult:
     from pydantic import ValidationError  # heavy subsystem: in-body per policy
 
-    from multideck.env import get_env  # heavy subsystem: in-body per policy
+    from multideck import env as env_module  # heavy subsystem: in-body per policy
 
     try:
-        get_env()
+        env_module.get_env()
     except ValidationError as exc:
         names = ", ".join(
-            ".".join(str(part) for part in err["loc"]).upper() or "MULTIDECK_*"
-            for err in exc.errors()
+            name or msg for name, msg in env_module.validation_error_items(exc)
         )
         return (FAIL, f"invalid environment variable(s): {names} (see .env.example)")
     return (OK, "MULTIDECK_* environment validates")
