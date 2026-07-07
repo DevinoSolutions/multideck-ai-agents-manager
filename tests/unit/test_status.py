@@ -158,6 +158,7 @@ class TestJson:
             "upload_server": "on",
             "listener": "off",
             "attention": "off",
+            "agents": [],
         }
 
     def test_degraded_emits_parseable_status_and_exit_3(
@@ -177,4 +178,5 @@ class TestJson:
             "upload_server": "dead",
             "listener": "off",
             "attention": "off",
+            "agents": [],
         }

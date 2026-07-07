@@ -174,8 +174,9 @@ class Renderer(Protocol):
     ) -> None: ...
 
 
-def _md_windows_by_name(plat: Platform) -> dict[str, object]:
-    """One snapshot pass -> {parsed name: handle} for multideck-owned windows."""
+def md_windows_by_name(plat: Platform) -> dict[str, object]:
+    """One snapshot pass -> {parsed name: handle} for multideck-owned windows.
+    Shared by FlashRenderer and the watch TUI's focus action."""
     out: dict[str, object] = {}
     for title, handle in plat.snapshot_windows().items():
         parsed = parse_title(title)
@@ -222,7 +223,7 @@ class FlashRenderer:
         names = [t.view.name for t in transitions if t.view.state in PUSH_STATES]
         if not names:
             return
-        by_name = _md_windows_by_name(self._plat)
+        by_name = md_windows_by_name(self._plat)
         for name in names:
             handle = by_name.get(name)
             if handle is not None:
