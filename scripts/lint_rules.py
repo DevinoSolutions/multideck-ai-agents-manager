@@ -51,6 +51,7 @@ MD002_ALLOW = {
     "src/multideck/upload_server.py": "taskkill vs os.kill process termination",
     "src/multideck/cli/attention_cmd.py": "taskkill vs os.kill process termination",
     "src/multideck/cli/watch.py": "non-blocking keypress polling is per-OS (msvcrt vs select)",
+    "src/multideck/cli/doctor.py": "terminal-emulator candidates are per-OS (wt vs POSIX list)",
     "src/multideck/hotkey.py": "module is Windows-only by construction (raises off-win32)",
     "src/multideck/sessions/codex.py": "FS case-insensitivity for session-path matching",
     "src/multideck/cli/ui.py": "OS-specific editor command + Windows console UTF-8 fix",
