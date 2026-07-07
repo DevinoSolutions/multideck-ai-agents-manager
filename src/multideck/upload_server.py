@@ -1,6 +1,8 @@
 """Tiny upload server for mobile image transfer to psmux sessions."""
+
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import os
@@ -11,7 +13,11 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import TYPE_CHECKING, ClassVar
 from urllib.parse import parse_qs, urlparse
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from multideck.launch import _psmux_session_name
 from multideck.log import get_logger
@@ -44,7 +50,9 @@ def stop_server(port: int) -> bool:
         return False
     try:
         if sys.platform == "win32":
-            result = subprocess.run(["taskkill", "/PID", str(pid), "/F"], capture_output=True)
+            result = subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"], capture_output=True, check=False
+            )
             if result.returncode != 0:
                 log.warning("taskkill pid %d failed rc=%d", pid, result.returncode)
                 return False
@@ -53,10 +61,8 @@ def stop_server(port: int) -> bool:
     except OSError:
         log.warning("failed to stop upload server pid %d", pid)
         return False
-    try:
+    with contextlib.suppress(OSError):
         _pid_path(port).unlink()
-    except OSError:
-        pass
     return True
 
 
@@ -70,9 +76,9 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 # In-session upload feedback: a paste's progress shows in the SAME md:<project>
 # window it landed in, via the psmux (tmux) status line -- never drawn into the
 # agent pane. tmux 3.3 renders these UTF-8 glyphs intact.
-_FB_UP = "↑"    # up arrow   -- uploading
-_FB_OK = "✓"    # check mark -- uploaded
-_FB_NO = "✗"    # ballot x   -- failed
+_FB_UP = "↑"  # up arrow   -- uploading
+_FB_OK = "✓"  # check mark -- uploaded
+_FB_NO = "✗"  # ballot x   -- failed
 
 # Color the flash so state reads at a glance: green while uploading AND on
 # success, red on failure. This Cygwin tmux 3.3.6 does NOT expand inline #[...]
@@ -118,8 +124,13 @@ def _inflight_dec(project: str) -> int:
         return n
 
 
-def _flash(psmux: str | None, project: str, message: str, duration_ms: int,
-           style: str | None = None) -> None:
+def _flash(
+    psmux: str | None,
+    project: str,
+    message: str,
+    duration_ms: int,
+    style: str | None = None,
+) -> None:
     """Best-effort: flash a transient message in the session's psmux status line.
 
     Non-disruptive -- ``display-message`` repaints the status bar, not the agent
@@ -134,9 +145,12 @@ def _flash(psmux: str | None, project: str, message: str, duration_ms: int,
         cmd += ["set", "-g", "message-style", style, ";"]
     cmd += ["display-message", "-d", str(duration_ms), message]
     try:
-        subprocess.run(cmd, capture_output=True, timeout=3)
+        subprocess.run(cmd, capture_output=True, timeout=3, check=False)
     except (OSError, subprocess.SubprocessError) as e:
-        get_logger("upload").warning("status-line flash failed for project=%s: %s", project, e)
+        get_logger("upload").warning(
+            "status-line flash failed for project=%s: %s", project, e
+        )
+
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -222,7 +236,7 @@ pills.forEach(p => p.addEventListener('click', () => {
   input.disabled = false;
   drop.className = 'drop ready';
   label.textContent = 'tap to select file';
-  toast.textContent = ' ';
+  toast.textContent = '\u00a0';
   toast.className = 'toast';
 }));
 
@@ -329,7 +343,7 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 </html>"""
 
 
-def _config_sessions(config_path: str | None) -> list[dict]:
+def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
     """Eligible psmux session names from config -- no psmux calls, so it's fast."""
     config_file = find_config(config_path)
     if not config_file.exists():
@@ -337,7 +351,7 @@ def _config_sessions(config_path: str | None) -> list[dict]:
 
     data = json.loads(config_file.read_text(encoding="utf-8"))
     default_tool = data.get("settings", {}).get("defaultTool", "claude")
-    out: list[dict] = []
+    out: list[dict[str, object]] = []
     for p in data.get("projects", []):
         if not p.get("enabled", True):
             continue
@@ -350,10 +364,15 @@ def _config_sessions(config_path: str | None) -> list[dict]:
 
 
 def _alive(psmux: str, name: str) -> bool:
-    return subprocess.run([psmux, "-L", name, "has-session"], capture_output=True).returncode == 0
+    return (
+        subprocess.run(
+            [psmux, "-L", name, "has-session"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
 
 
-def _discover_sessions(config_path: str | None) -> list[dict]:
+def _discover_sessions(config_path: str | None) -> list[dict[str, object]]:
     """Active psmux sessions from config.
 
     Checks every candidate socket concurrently -- with a large config a serial
@@ -366,16 +385,18 @@ def _discover_sessions(config_path: str | None) -> list[dict]:
     if not candidates or not psmux:
         return []
     with ThreadPoolExecutor(max_workers=16) as pool:
-        flags = list(pool.map(lambda c: _alive(psmux, c["name"]), candidates))
-    return [c for c, ok in zip(candidates, flags) if ok]
+        flags = list(pool.map(lambda c: _alive(psmux, str(c["name"])), candidates))
+    return [c for c, ok in zip(candidates, flags, strict=True) if ok]
 
 
-def _build_html(sessions: list[dict]) -> str:
+def _build_html(sessions: list[dict[str, object]]) -> str:
     pills = []
     for s in sessions:
-        name_esc = html.escape(s["name"])
+        name_esc = html.escape(str(s["name"]))
         pills.append(f'<div class="pill" data-name="{name_esc}">{name_esc}</div>')
-    placeholder = "\n".join(pills) if pills else '<p class="none">no active sessions</p>'
+    placeholder = (
+        "\n".join(pills) if pills else '<p class="none">no active sessions</p>'
+    )
     return _HTML_TEMPLATE.replace("PROJECTS_PLACEHOLDER", placeholder)
 
 
@@ -387,8 +408,8 @@ def _build_html(sessions: list[dict]) -> str:
 # a secure context, so it's a no-op over plain HTTP today and lights up offline
 # support automatically if the server is ever fronted with HTTPS.
 
-_BG_RGBA = (30, 30, 46, 255)        # #1e1e2e  catppuccin base
-_FG_RGBA = (166, 227, 161, 255)     # #a6e3a1  catppuccin green (upload arrow)
+_BG_RGBA = (30, 30, 46, 255)  # #1e1e2e  catppuccin base
+_FG_RGBA = (166, 227, 161, 255)  # #a6e3a1  catppuccin green (upload arrow)
 _TRANSPARENT = (0, 0, 0, 0)
 
 _icon_cache: dict[tuple[int, bool], bytes] = {}
@@ -401,19 +422,25 @@ def _png(width: int, height: int, rgba: bytes) -> bytes:
     import zlib
 
     def chunk(typ: bytes, data: bytes) -> bytes:
-        return (struct.pack(">I", len(data)) + typ + data
-                + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF))
+        return (
+            struct.pack(">I", len(data))
+            + typ
+            + data
+            + struct.pack(">I", zlib.crc32(typ + data) & 0xFFFFFFFF)
+        )
 
     stride = width * 4
     raw = bytearray()
     for y in range(height):
         raw.append(0)  # filter type 0 (none) per scanline
-        raw.extend(rgba[y * stride:(y + 1) * stride])
+        raw.extend(rgba[y * stride : (y + 1) * stride])
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
-    return (b"\x89PNG\r\n\x1a\n"
-            + chunk(b"IHDR", ihdr)
-            + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-            + chunk(b"IEND", b""))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", ihdr)
+        + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def _in_rounded(px: float, py: float, n: int, r: float) -> bool:
@@ -423,9 +450,18 @@ def _in_rounded(px: float, py: float, n: int, r: float) -> bool:
     return dx * dx + dy * dy <= r * r
 
 
-def _in_tri(px, py, a, b, c) -> bool:
-    def sign(p, q, rr):
+def _in_tri(
+    px: float,
+    py: float,
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+) -> bool:
+    def sign(
+        p: tuple[float, float], q: tuple[float, float], rr: tuple[float, float]
+    ) -> float:
         return (px - rr[0]) * (q[1] - rr[1]) - (q[0] - rr[0]) * (py - rr[1])
+
     d1, d2, d3 = sign(a, a, b), sign(b, b, c), sign(c, c, a)
     has_neg = (d1 < 0) or (d2 < 0) or (d3 < 0)
     has_pos = (d1 > 0) or (d2 > 0) or (d3 > 0)
@@ -458,29 +494,46 @@ def render_icon(size: int, rounded: bool) -> bytes:
                 color = _FG_RGBA
             else:
                 color = _BG_RGBA
-            buf[i:i + 4] = bytes(color)
+            buf[i : i + 4] = bytes(color)
     png = _png(size, size, bytes(buf))
     with _icon_lock:
         _icon_cache[key] = png
     return png
 
 
-_MANIFEST = json.dumps({
-    "name": "multideck upload",
-    "short_name": "md upload",
-    "description": "Send images straight into your md: sessions",
-    "start_url": "/",
-    "scope": "/",
-    "display": "standalone",
-    "orientation": "portrait",
-    "background_color": "#1e1e2e",
-    "theme_color": "#1e1e2e",
-    "icons": [
-        {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
-        {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
-        {"src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
-    ],
-}).encode("utf-8")
+_MANIFEST = json.dumps(
+    {
+        "name": "multideck upload",
+        "short_name": "md upload",
+        "description": "Send images straight into your md: sessions",
+        "start_url": "/",
+        "scope": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#1e1e2e",
+        "theme_color": "#1e1e2e",
+        "icons": [
+            {
+                "src": "/icon-192.png",
+                "sizes": "192x192",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "/icon-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "any",
+            },
+            {
+                "src": "/icon-maskable-512.png",
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
+            },
+        ],
+    }
+).encode("utf-8")
 
 # Cache the shell; never the dynamic session list or the upload endpoint.
 _SERVICE_WORKER = b"""\
@@ -507,7 +560,7 @@ self.addEventListener('fetch', e => {
 
 # Static PWA routes: (content-type, lazy bytes factory). Served with a long
 # immutable cache since the icons/manifest/sw rarely change.
-_PWA_ROUTES = {
+_PWA_ROUTES: dict[str, tuple[str, Callable[[], bytes]]] = {
     "/manifest.webmanifest": ("application/manifest+json", lambda: _MANIFEST),
     "/sw.js": ("application/javascript", lambda: _SERVICE_WORKER),
     "/icon-192.png": ("image/png", lambda: render_icon(192, True)),
@@ -528,6 +581,7 @@ _PROFILE_UUID = "9D3B7E10-0002-4A00-9000-000000000002"
 def _mobileconfig(host: str) -> bytes:
     import base64
     import html as _html
+
     icon_b64 = base64.b64encode(render_icon(180, False)).decode("ascii")
     url = _html.escape(f"http://{host}/")
     return f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -562,10 +616,12 @@ def _mobileconfig(host: str) -> bytes:
   <key>PayloadVersion</key><integer>1</integer>
 </dict>
 </plist>
-""".encode("utf-8")
+""".encode()
 
 
-def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], dict[str, tuple[str, bytes]]]:
+def _parse_multipart(
+    handler: BaseHTTPRequestHandler,
+) -> tuple[dict[str, str], dict[str, tuple[str, bytes]]]:
     """Minimal multipart/form-data parser. Returns (fields, files)."""
     content_type = handler.headers.get("Content-Type", "")
     if "boundary=" not in content_type:
@@ -601,8 +657,8 @@ def _parse_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], d
         filename = ""
         for line in header_str.split("\r\n"):
             if "Content-Disposition:" in line:
-                for token in line.split(";"):
-                    token = token.strip()
+                for raw_token in line.split(";"):
+                    token = raw_token.strip()
                     if token.startswith("name="):
                         name = token.split("=", 1)[1].strip('"')
                     elif token.startswith("filename="):
@@ -634,26 +690,30 @@ def _request_focus(project: str) -> None:
     except OSError:
         current = ""
     if psmux and current:
-        try:
-            subprocess.run([psmux, "-L", current, "detach-client"],
-                           capture_output=True, timeout=3)
-        except (OSError, subprocess.SubprocessError):
-            pass
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            subprocess.run(
+                [psmux, "-L", current, "detach-client"],
+                capture_output=True,
+                timeout=3,
+                check=False,
+            )
 
 
 class UploadHandler(BaseHTTPRequestHandler):
     config_path: str | None = None
-    cached_sessions: list[dict] = []
+    cached_sessions: ClassVar[list[dict[str, object]]] = []
     sessions_ts: float = 0
     port: int | None = None
     pid: int | None = None
     started_at: float = 0.0
 
-    def _sessions(self) -> list[dict]:
+    def _sessions(self) -> list[dict[str, object]]:
         now = time.time()
         with _sessions_lock:
             if now - UploadHandler.sessions_ts > 10:
-                UploadHandler.cached_sessions = _discover_sessions(UploadHandler.config_path)
+                UploadHandler.cached_sessions = _discover_sessions(
+                    UploadHandler.config_path
+                )
                 UploadHandler.sessions_ts = now
             return UploadHandler.cached_sessions
 
@@ -666,11 +726,13 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def do_GET(self):
+    def do_GET(self) -> None:
         path = urlparse(self.path).path
         if path == "/" or path == "":
-            self._send_bytes(_build_html(self._sessions()).encode("utf-8"),
-                             "text/html; charset=utf-8")
+            self._send_bytes(
+                _build_html(self._sessions()).encode("utf-8"),
+                "text/html; charset=utf-8",
+            )
         elif path == "/api/sessions":
             self._send_bytes(json.dumps(self._sessions()).encode(), "application/json")
         elif path == "/install.mobileconfig":
@@ -680,7 +742,9 @@ class UploadHandler(BaseHTTPRequestHandler):
             data = _mobileconfig(host)
             self.send_response(200)
             self.send_header("Content-Type", "application/x-apple-aspen-config")
-            self.send_header("Content-Disposition", 'attachment; filename="md-upload.mobileconfig"')
+            self.send_header(
+                "Content-Disposition", 'attachment; filename="md-upload.mobileconfig"'
+            )
             self.send_header("Content-Length", str(len(data)))
             self.end_headers()
             self.wfile.write(data)
@@ -698,20 +762,26 @@ class UploadHandler(BaseHTTPRequestHandler):
                     f"<div>Switched to <b style='color:#a6e3a1'>{safe}</b>.<br>"
                     "<span style='color:#6c7086;font-size:.85rem'>Open your terminal "
                     "(multideck sessions) to continue.</span></div></body>"
-                ).encode("utf-8")
+                ).encode()
                 self._send_bytes(body, "text/html; charset=utf-8")
             else:
                 self.send_error(404)
         elif path == "/health":
-            uptime = time.time() - UploadHandler.started_at if UploadHandler.started_at else 0.0
-            body = json.dumps({
-                "ok": True,
-                "service": "multideck-upload",
-                "port": UploadHandler.port,
-                "pid": UploadHandler.pid,
-                "uptime_s": uptime,
-                "sessions": len(UploadHandler.cached_sessions),
-            }).encode()
+            uptime = (
+                time.time() - UploadHandler.started_at
+                if UploadHandler.started_at
+                else 0.0
+            )
+            body = json.dumps(
+                {
+                    "ok": True,
+                    "service": "multideck-upload",
+                    "port": UploadHandler.port,
+                    "pid": UploadHandler.pid,
+                    "uptime_s": uptime,
+                    "sessions": len(UploadHandler.cached_sessions),
+                }
+            ).encode()
             self._send_bytes(body, "application/json")
         elif path in _PWA_ROUTES:
             content_type, factory = _PWA_ROUTES[path]
@@ -719,7 +789,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def do_POST(self):
+    def do_POST(self) -> None:
         log = get_logger("upload")
         parsed = urlparse(self.path)
         if parsed.path != "/upload":
@@ -740,9 +810,13 @@ class UploadHandler(BaseHTTPRequestHandler):
         if flagged:
             n = _inflight_inc(flagged)
             tail = f" ({n})" if n > 1 else ""
-            _flash(psmux, flagged,
-                   f"multideck  {_FB_UP} uploading image{tail}",
-                   _FLASH_UP_MS, style=_MSG_GREEN)
+            _flash(
+                psmux,
+                flagged,
+                f"multideck  {_FB_UP} uploading image{tail}",
+                _FLASH_UP_MS,
+                style=_MSG_GREEN,
+            )
 
         ok = False
         project = flagged
@@ -764,7 +838,9 @@ class UploadHandler(BaseHTTPRequestHandler):
             inject = fields.get("inject", "1") == "1"
 
             if "file" not in files or not project:
-                self._json_response({"ok": False, "error": "Missing file or project"}, 400)
+                self._json_response(
+                    {"ok": False, "error": "Missing file or project"}, 400
+                )
                 return
             if project not in valid_names:
                 self._json_response({"ok": False, "error": "Unknown project"}, 400)
@@ -788,25 +864,36 @@ class UploadHandler(BaseHTTPRequestHandler):
 
             if inject and psmux:
                 result = subprocess.run(
-                    [psmux, "-L", project, "send-keys", "-t", project,
-                     "--", str(dest)],
+                    [psmux, "-L", project, "send-keys", "-t", project, "--", str(dest)],
                     capture_output=True,
+                    check=False,
                 )
                 injected = result.returncode == 0
             elif inject:
-                log.warning("upload project=%s requested inject but psmux is unavailable", project)
+                log.warning(
+                    "upload project=%s requested inject but psmux is unavailable",
+                    project,
+                )
 
             ok = True
-            self._json_response({
-                "ok": True,
-                "path": str(dest),
-                "injected": injected,
-            })
+            self._json_response(
+                {
+                    "ok": True,
+                    "path": str(dest),
+                    "injected": injected,
+                }
+            )
         finally:
             # INFO outcome line -- project + byte-count + injected + suffix only,
             # NEVER the original filename (personal data; F-hygiene).
-            log.info("upload project=%s ok=%s bytes=%d injected=%s suffix=%s",
-                      project, ok, byte_count, injected, suffix)
+            log.info(
+                "upload project=%s ok=%s bytes=%d injected=%s suffix=%s",
+                project,
+                ok,
+                byte_count,
+                injected,
+                suffix,
+            )
             # Confirm in the same md: status line -- for both the listener (paired
             # with the early "uploading" flash) and mobile uploads.
             remaining = _inflight_dec(flagged) if flagged else 0
@@ -814,15 +901,23 @@ class UploadHandler(BaseHTTPRequestHandler):
             if done:
                 more = f"  ({remaining} more)" if remaining else ""
                 if ok:
-                    _flash(psmux, done,
-                           f"multideck  {_FB_OK} image uploaded{more}",
-                           _FLASH_OK_MS, style=_MSG_GREEN)
+                    _flash(
+                        psmux,
+                        done,
+                        f"multideck  {_FB_OK} image uploaded{more}",
+                        _FLASH_OK_MS,
+                        style=_MSG_GREEN,
+                    )
                 else:
-                    _flash(psmux, done,
-                           f"multideck  {_FB_NO} upload failed{more}",
-                           _FLASH_NO_MS, style=_MSG_RED)
+                    _flash(
+                        psmux,
+                        done,
+                        f"multideck  {_FB_NO} upload failed{more}",
+                        _FLASH_NO_MS,
+                        style=_MSG_RED,
+                    )
 
-    def _json_response(self, data: dict, status: int = 200):
+    def _json_response(self, data: dict[str, object], status: int = 200) -> None:
         body = json.dumps(data).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
@@ -830,9 +925,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def log_message(self, fmt, *args):
-        # Off at the default INFO level -- no noise, no INFO-logging of the
-        # ?project= query string -- but available via DEBUG for triage.
+    def log_message(self, fmt: str, *args: object) -> None:  # ty: ignore[invalid-method-override]  # reason: *args: object is a safe contravariant widening of *args: Any from BaseHTTPRequestHandler
         get_logger("upload").debug(fmt, *args)
 
 
@@ -840,7 +933,13 @@ def _tailscale_ip() -> str | None:
     """Best-effort Tailscale IPv4 address, or None if Tailscale isn't
     installed, isn't running, or doesn't answer in time."""
     try:
-        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(
+            ["tailscale", "ip", "-4"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
         if r.returncode == 0 and r.stdout.strip():
             return r.stdout.strip().splitlines()[0]
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -872,7 +971,9 @@ def _bind_addresses(host: str | None) -> list[str]:
     return addrs
 
 
-def run_server(port: int = 8080, config_path: str | None = None, host: str | None = None) -> None:
+def run_server(
+    port: int = 8080, config_path: str | None = None, host: str | None = None
+) -> None:
     log = get_logger("upload")
     UploadHandler.config_path = config_path
 
@@ -890,7 +991,9 @@ def run_server(port: int = 8080, config_path: str | None = None, host: str | Non
     UploadHandler.port = port
     UploadHandler.pid = os.getpid()
     UploadHandler.started_at = time.time()
-    log.info("listening on %s:%d pid %d", ", ".join(bound_addrs), port, UploadHandler.pid)
+    log.info(
+        "listening on %s:%d pid %d", ", ".join(bound_addrs), port, UploadHandler.pid
+    )
 
     pid_file = _pid_path(port)
     pid_file.parent.mkdir(parents=True, exist_ok=True)
@@ -902,11 +1005,9 @@ def run_server(port: int = 8080, config_path: str | None = None, host: str | Non
         servers[0].serve_forever()
     finally:
         for s in servers[1:]:
-            s.shutdown()       # called from a different thread than its serve_forever -> safe
+            s.shutdown()  # called from a different thread than its serve_forever -> safe
         for s in servers:
-            s.server_close()   # servers[0] exited via KeyboardInterrupt; just closes the socket
-        try:
+            s.server_close()  # servers[0] exited via KeyboardInterrupt; just closes the socket
+        with contextlib.suppress(OSError):
             pid_file.unlink()
-        except OSError:
-            pass
         log.info("stopped")

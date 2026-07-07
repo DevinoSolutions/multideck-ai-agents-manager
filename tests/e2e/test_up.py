@@ -19,7 +19,8 @@ def _write_cfg(tmp_path, projects, settings=None):
 def _run(cfg, *args):
     return subprocess.run(
         [sys.executable, "-m", "multideck", "--config", str(cfg), *args],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -27,12 +28,20 @@ class TestUpJson:
     def test_lists_eligible_only(self, tmp_path):
         for name in ("api", "web", "docs"):
             (tmp_path / name).mkdir()
-        cfg = _write_cfg(tmp_path, [
-            {"path": str(tmp_path / "api"), "tool": "claude"},
-            {"path": str(tmp_path / "web"), "tool": "codex"},
-            {"path": str(tmp_path / "docs"), "tool": "vscode"},          # IDE -> excluded
-            {"path": str(tmp_path / "api"), "tool": "claude", "host": "u@box"},  # remote -> excluded
-        ], settings={"uploadPort": 9091})
+        cfg = _write_cfg(
+            tmp_path,
+            [
+                {"path": str(tmp_path / "api"), "tool": "claude"},
+                {"path": str(tmp_path / "web"), "tool": "codex"},
+                {"path": str(tmp_path / "docs"), "tool": "vscode"},  # IDE -> excluded
+                {
+                    "path": str(tmp_path / "api"),
+                    "tool": "claude",
+                    "host": "u@box",
+                },  # remote -> excluded
+            ],
+            settings={"uploadPort": 9091},
+        )
         r = _run(cfg, "up", "--json")
         assert r.returncode == 0, r.stderr
         data = json.loads(r.stdout.strip().splitlines()[-1])
@@ -54,11 +63,14 @@ class TestUpJson:
     def test_group_filter(self, tmp_path):
         for name in ("a", "b", "c"):
             (tmp_path / name).mkdir()
-        cfg = _write_cfg(tmp_path, [
-            {"path": str(tmp_path / "a"), "tool": "claude", "group": "X"},
-            {"path": str(tmp_path / "b"), "tool": "claude", "group": "Y"},
-            {"path": str(tmp_path / "c"), "tool": "claude", "group": "X"},
-        ])
+        cfg = _write_cfg(
+            tmp_path,
+            [
+                {"path": str(tmp_path / "a"), "tool": "claude", "group": "X"},
+                {"path": str(tmp_path / "b"), "tool": "claude", "group": "Y"},
+                {"path": str(tmp_path / "c"), "tool": "claude", "group": "X"},
+            ],
+        )
         r = _run(cfg, "up", "--json", "-g", "X")
         assert r.returncode == 0, r.stderr
         data = json.loads(r.stdout.strip().splitlines()[-1])
@@ -70,7 +82,8 @@ class TestAttachHelp:
     def test_attach_registered(self):
         r = subprocess.run(
             [sys.executable, "-m", "multideck", "attach", "--help"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert r.returncode == 0
         assert "--no-mux" in r.stdout
@@ -80,7 +93,8 @@ class TestServeEnsure:
     def test_ensure_flag_registered(self):
         r = subprocess.run(
             [sys.executable, "-m", "multideck", "serve", "--help"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         assert r.returncode == 0
         assert "--ensure" in r.stdout
@@ -96,8 +110,18 @@ class TestServeEnsure:
         try:
             # Must NOT block on a foreground server -- a short timeout proves it.
             r = subprocess.run(
-                [sys.executable, "-m", "multideck", "serve", "-p", str(port), "--ensure"],
-                capture_output=True, text=True, timeout=20,
+                [
+                    sys.executable,
+                    "-m",
+                    "multideck",
+                    "serve",
+                    "-p",
+                    str(port),
+                    "--ensure",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=20,
             )
             assert r.returncode == 0, r.stderr
             assert "ensured" in r.stdout.lower()

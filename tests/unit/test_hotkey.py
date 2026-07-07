@@ -2,28 +2,30 @@ import json
 import sys
 import threading
 import time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
-
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows-only")
 
 
 class TestProjectFromTitle:
     def test_extracts_name(self):
-        from multideck.hotkey import project_from_title, MD_TITLE_PREFIX
+        from multideck.hotkey import project_from_title
+
         assert project_from_title("md:marka") == "marka"
         assert project_from_title("md:upup") == "upup"
 
     def test_returns_none_for_non_md(self):
         from multideck.hotkey import project_from_title
+
         assert project_from_title("Windows Terminal") is None
         assert project_from_title("claude") is None
         assert project_from_title("") is None
 
     def test_prefix_value(self):
         from multideck.hotkey import MD_TITLE_PREFIX
+
         assert MD_TITLE_PREFIX == "md:"
 
 
@@ -33,6 +35,7 @@ class TestAltKeyDetection:
         # never the generic VK_MENU. All three must be treated as Alt or Alt+V
         # is never detected (the keystroke falls through to the focused app).
         from multideck.hotkey import _ALT_KEYS, VK_LMENU, VK_MENU, VK_RMENU
+
         assert VK_LMENU == 0xA4
         assert VK_RMENU == 0xA5
         assert VK_LMENU in _ALT_KEYS
@@ -75,6 +78,7 @@ class TestUploadImage:
 
     def test_uploads_image(self):
         from multideck.hotkey import upload_image
+
         url = f"http://127.0.0.1:{self.port}"
         result = upload_image(url, "marka", b"FAKEBMP")
         assert result is True
@@ -95,6 +99,7 @@ class TestUploadImage:
 
     def test_returns_false_on_network_error(self):
         from multideck.hotkey import upload_image
+
         result = upload_image("http://127.0.0.1:1", "marka", b"data")
         assert result is False
 
@@ -105,21 +110,29 @@ class TestDibToBmp:
     @staticmethod
     def _header(width, height, bpp, compression):
         import struct
+
         return struct.pack(
             "<IiiHHIIiiII",
-            40,            # biSize (BITMAPINFOHEADER)
-            width, height,
-            1,             # planes
+            40,  # biSize (BITMAPINFOHEADER)
+            width,
+            height,
+            1,  # planes
             bpp,
             compression,
-            0, 0, 0, 0, 0,  # sizeImage, x/y ppm, clrUsed, clrImportant
+            0,
+            0,
+            0,
+            0,
+            0,  # sizeImage, x/y ppm, clrUsed, clrImportant
         )
 
     def test_bitfields_offset_skips_masks(self):
         # 32bpp BI_BITFIELDS (what GDI / .NET / screenshots produce): 3 color
         # masks sit between the 40-byte header and the pixels.
         import struct
+
         from multideck.hotkey import _dib_to_bmp
+
         header = self._header(2, 2, 32, 3)
         masks = struct.pack("<III", 0x00FF0000, 0x0000FF00, 0x000000FF)
         pixels = bytes([0, 0, 255, 0] * 4)  # opaque-red BGR with alpha=0
@@ -134,7 +147,9 @@ class TestDibToBmp:
 
     def test_rgb32_forces_alpha_opaque(self):
         import struct
+
         from multideck.hotkey import _dib_to_bmp
+
         header = self._header(2, 2, 32, 0)  # BI_RGB, no masks
         pixels = bytes([10, 20, 30, 0] * 4)  # alpha = 0 (transparent -> black)
         bmp = _dib_to_bmp(bytearray(header + pixels))
@@ -146,16 +161,19 @@ class TestDibToBmp:
 
     def test_rgb24_untouched(self):
         import struct
+
         from multideck.hotkey import _dib_to_bmp
+
         header = self._header(2, 2, 24, 0)
         pixels = bytes([1, 2, 3] * 4)
         bmp = _dib_to_bmp(bytearray(header + pixels))
         bf_off_bits = struct.unpack_from("<I", bmp, 10)[0]
         assert bf_off_bits == 14 + 40
-        assert bmp[14 + 40:] == pixels  # 24bpp pixels passed through verbatim
+        assert bmp[14 + 40 :] == pixels  # 24bpp pixels passed through verbatim
 
     def test_too_small_returns_none(self):
         from multideck.hotkey import _dib_to_bmp
+
         assert _dib_to_bmp(bytearray(b"\x00" * 10)) is None
 
     def test_huge_header_size_returns_none(self):
@@ -163,6 +181,7 @@ class TestDibToBmp:
         # so the offset.to_bytes(4, "little") below crashes with
         # OverflowError on a clipboard payload we don't control.
         from multideck.hotkey import _dib_to_bmp
+
         header = bytearray(self._header(2, 2, 32, 0))
         header[0:4] = b"\xff\xff\xff\xff"  # biSize
         pixels = bytes([0, 0, 0, 0] * 4)
@@ -172,6 +191,7 @@ class TestDibToBmp:
         # Same OverflowError, reached via clrUsed instead of biSize: bpp<=8
         # multiplies clr_used straight into the offset with no bound.
         from multideck.hotkey import _dib_to_bmp
+
         header = bytearray(self._header(2, 2, 8, 0))
         header[32:36] = b"\xff\xff\xff\xff"  # clrUsed
         pixels = bytes([0] * 16)
@@ -183,11 +203,13 @@ class TestListenerLifecycle:
 
     def test_pid_none_when_no_file(self, tmp_path, monkeypatch):
         from multideck import hotkey
+
         monkeypatch.setattr(hotkey, "_PID_PATH", tmp_path / "hotkey.pid")
         assert hotkey.listener_pid() is None
 
     def test_pid_returns_live_pid(self, tmp_path, monkeypatch):
         from multideck import hotkey
+
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
@@ -196,6 +218,7 @@ class TestListenerLifecycle:
 
     def test_pid_clears_stale_file(self, tmp_path, monkeypatch):
         from multideck import hotkey
+
         p = tmp_path / "hotkey.pid"
         p.write_text("999999")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
@@ -205,7 +228,9 @@ class TestListenerLifecycle:
 
     def test_stop_kills_and_removes(self, tmp_path, monkeypatch):
         import subprocess
+
         from multideck import hotkey
+
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
@@ -226,6 +251,7 @@ class TestListenerLifecycle:
 
     def test_stop_noop_when_not_running(self, tmp_path, monkeypatch):
         from multideck import hotkey
+
         monkeypatch.setattr(hotkey, "_PID_PATH", tmp_path / "hotkey.pid")
         assert hotkey.stop_listener() is False
 
@@ -233,7 +259,9 @@ class TestListenerLifecycle:
         # F-IC-006 (honest half): a failed kill returns False and leaves the
         # pid file in place so `status`/a retry can still find the process.
         import subprocess
+
         from multideck import hotkey
+
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
@@ -248,7 +276,9 @@ class TestListenerLifecycle:
 
     def test_write_then_clear_pid(self, tmp_path, monkeypatch):
         import os
+
         from multideck import hotkey
+
         p = tmp_path / "hotkey.pid"
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
         hotkey._write_pid()
@@ -265,6 +295,7 @@ class TestDoUploadLogging:
 
     def test_logs_info_with_project_and_result(self, monkeypatch, caplog):
         from multideck import hotkey
+
         monkeypatch.setattr(hotkey, "get_clipboard_image", lambda: b"FAKEBMP")
         monkeypatch.setattr(hotkey, "upload_image", lambda url, project, data: True)
 
@@ -276,6 +307,7 @@ class TestDoUploadLogging:
 
     def test_logs_ok_false_on_failed_upload(self, monkeypatch, caplog):
         from multideck import hotkey
+
         monkeypatch.setattr(hotkey, "get_clipboard_image", lambda: b"FAKEBMP")
         monkeypatch.setattr(hotkey, "upload_image", lambda url, project, data: False)
 
@@ -286,6 +318,7 @@ class TestDoUploadLogging:
 
     def test_no_image_is_a_silent_noop(self, monkeypatch, caplog):
         from multideck import hotkey
+
         monkeypatch.setattr(hotkey, "get_clipboard_image", lambda: None)
         called = []
         monkeypatch.setattr(hotkey, "upload_image", lambda *a: called.append(a))
@@ -296,11 +329,14 @@ class TestDoUploadLogging:
         assert called == []
         assert "project=marka" not in caplog.text
 
-    def test_unexpected_error_is_caught_and_logged_not_raised(self, monkeypatch, caplog):
+    def test_unexpected_error_is_caught_and_logged_not_raised(
+        self, monkeypatch, caplog
+    ):
         from multideck import hotkey
 
         def _boom():
             raise OverflowError("byte must be in range(0, 256)")
+
         monkeypatch.setattr(hotkey, "get_clipboard_image", _boom)
 
         with caplog.at_level("INFO", logger="multideck.hotkey"):
@@ -317,12 +353,15 @@ class TestHeartbeatWiring:
 
     def test_heartbeat_loop_writes_and_stops_on_event(self, monkeypatch):
         from multideck import hotkey
+
         calls = []
-        monkeypatch.setattr(hotkey, "write_heartbeat", lambda name: calls.append(name))
+        monkeypatch.setattr(hotkey, "write_heartbeat", calls.append)
         monkeypatch.setattr(hotkey, "HEARTBEAT_INTERVAL", 0.01)  # don't wait a real 10s
 
         stop_event = threading.Event()
-        t = threading.Thread(target=hotkey._heartbeat_loop, args=(stop_event,), daemon=True)
+        t = threading.Thread(
+            target=hotkey._heartbeat_loop, args=(stop_event,), daemon=True
+        )
         t.start()
         time.sleep(0.1)
         stop_event.set()
@@ -337,15 +376,18 @@ class TestMaybeStartHotkey:
 
     def test_returns_existing_without_spawning(self, monkeypatch):
         from multideck import cli, hotkey
+
         monkeypatch.setattr(hotkey, "listener_pid", lambda: 1234)
         spawned = []
-        monkeypatch.setattr("multideck.launch.spawn_detached",
-                            lambda *a, **k: spawned.append(a))
+        monkeypatch.setattr(
+            "multideck.launch.spawn_detached", lambda *a, **k: spawned.append(a)
+        )
         assert cli._maybe_start_hotkey("http://x:8034") == 1234
         assert spawned == []  # an already-running listener isn't duplicated
 
     def test_spawns_when_none_running(self, monkeypatch):
         from multideck import cli, hotkey
+
         state = {"pid": None}
         monkeypatch.setattr(hotkey, "listener_pid", lambda: state["pid"])
 
@@ -358,13 +400,16 @@ class TestMaybeStartHotkey:
 
 class TestHookStructsAndConstants:
     def test_kbdllhookstruct_size(self):
-        from multideck.hotkey import KBDLLHOOKSTRUCT
         import ctypes
+
+        from multideck.hotkey import KBDLLHOOKSTRUCT
+
         size = ctypes.sizeof(KBDLLHOOKSTRUCT)
         assert size > 0
 
     def test_constants(self):
-        from multideck.hotkey import VK_V, VK_MENU, CF_DIB, WH_KEYBOARD_LL
+        from multideck.hotkey import CF_DIB, VK_MENU, VK_V, WH_KEYBOARD_LL
+
         assert VK_V == 0x56
         assert VK_MENU == 0x12
         assert CF_DIB == 8
@@ -372,6 +417,7 @@ class TestHookStructsAndConstants:
 
     def test_hookproc_type(self):
         from multideck.hotkey import HOOKPROC
+
         assert HOOKPROC is not None
 
 
@@ -383,12 +429,16 @@ class TestHookProc:
     @staticmethod
     def _kb(vk_code):
         from multideck.hotkey import KBDLLHOOKSTRUCT
-        return KBDLLHOOKSTRUCT(vkCode=vk_code, scanCode=0, flags=0, time=0, dwExtraInfo=None)
+
+        return KBDLLHOOKSTRUCT(
+            vkCode=vk_code, scanCode=0, flags=0, time=0, dwExtraInfo=None
+        )
 
     def test_decide_eats_altv_in_md_window(self, monkeypatch):
         import ctypes
+
         from multideck import hotkey
-        from multideck.hotkey import _hook_decide, VK_V, WM_KEYDOWN, HC_ACTION
+        from multideck.hotkey import HC_ACTION, VK_V, WM_KEYDOWN, _hook_decide
 
         kb = self._kb(VK_V)
         lparam = ctypes.cast(ctypes.pointer(kb), ctypes.c_void_p).value
@@ -443,5 +493,7 @@ class TestHookProc:
 
     def test_run_hotkey_signature_has_no_session_names(self):
         import inspect
+
         from multideck.hotkey import run_hotkey
+
         assert set(inspect.signature(run_hotkey).parameters) == {"server_url"}

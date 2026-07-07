@@ -3,6 +3,7 @@ no-subcommand interactive dispatch. Kept alone in this module (importing
 nothing from sibling command modules at top level) so every command module
 can `from multideck.cli.app import main` without a cycle -- see E6.md S2.1.
 """
+
 from __future__ import annotations
 
 import sys
@@ -23,13 +24,38 @@ from multideck.paths import find_config
 @click.option("--dry-run", is_flag=True, hidden=True)
 @click.option("-g", "--group", default=None, help="Launch only projects in this group")
 @click.option("--init", "do_init", is_flag=True, help="Re-scan and regenerate config")
-@click.option("--base-dir", default=None, type=click.Path(), help="Folder to scan with --init")
-@click.option("--config", "config_path", default=None, type=click.Path(), help="Path to config file")
+@click.option(
+    "--base-dir", default=None, type=click.Path(), help="Folder to scan with --init"
+)
+@click.option(
+    "--config",
+    "config_path",
+    default=None,
+    type=click.Path(),
+    help="Path to config file",
+)
 @click.option("--force", is_flag=True, help="With --init, overwrite existing config")
-@click.option("--edit", "do_edit", is_flag=True, help="Open config in your default editor")
-@click.option("--attach-to", "attach_host", default=None, help="Attach to remote psmux sessions (host or user@host)")
-@click.option("--attach-port", default=8033, hidden=True, help="(deprecated) port is now read from the host config")
-@click.option("--no-mux", "attach_no_mux", is_flag=True, help="With --attach-to: one plain SSH window per project (no psmux/tmux)")
+@click.option(
+    "--edit", "do_edit", is_flag=True, help="Open config in your default editor"
+)
+@click.option(
+    "--attach-to",
+    "attach_host",
+    default=None,
+    help="Attach to remote psmux sessions (host or user@host)",
+)
+@click.option(
+    "--attach-port",
+    default=8033,
+    hidden=True,
+    help="(deprecated) port is now read from the host config",
+)
+@click.option(
+    "--no-mux",
+    "attach_no_mux",
+    is_flag=True,
+    help="With --attach-to: one plain SSH window per project (no psmux/tmux)",
+)
 @click.version_option(__version__)
 @click.pass_context
 def main(
@@ -50,6 +76,26 @@ def main(
     """Open every project in its own terminal and auto-tile across all monitors."""
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config_path
+
+    from pydantic import ValidationError  # heavy subsystem: in-body per policy
+
+    from multideck.env import get_env  # heavy subsystem: in-body per policy
+
+    try:
+        env = get_env()
+    except ValidationError as exc:
+        for error in exc.errors():
+            loc = ".".join(str(part) for part in error["loc"]).upper()
+            prefix = f"MULTIDECK_{loc}: " if loc else ""
+            click.echo(f"{prefix}{error['msg']}", err=True)
+        click.echo(
+            "Fix the environment variable(s) above (see .env.example).", err=True
+        )
+        sys.exit(1)
+    if env.sentry_dsn:
+        from multideck.sentry import init_sentry  # heavy subsystem: in-body per policy
+
+        init_sentry(str(env.sentry_dsn))
 
     if ctx.invoked_subcommand is not None:
         return
@@ -76,7 +122,9 @@ def main(
 
     if do_edit:
         if not config_file.exists():
-            click.echo(f"No config at {config_file}. Run multideck first to generate one.")
+            click.echo(
+                f"No config at {config_file}. Run multideck first to generate one."
+            )
             sys.exit(1)
         _open_in_editor(config_file)
         return
@@ -91,11 +139,15 @@ def main(
             if success:
                 click.echo(f"Wrote config to {config_file}")
             else:
-                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
+                click.echo(
+                    f"{config_file} exists -- use --force to overwrite.", err=True
+                )
                 sys.exit(1)
         else:
             if config_file.exists() and not force:
-                click.echo(f"{config_file} exists -- use --force to overwrite.", err=True)
+                click.echo(
+                    f"{config_file} exists -- use --force to overwrite.", err=True
+                )
                 sys.exit(1)
             _run_discovery(config_file)
         return
@@ -139,16 +191,24 @@ def main(
                 continue
             if menu.get("reload"):
                 cfg = _load_config_or_exit(config_file)
-            retile_all = menu["retile_all"]
-            group = menu.get("group")
+            retile_all = bool(menu["retile_all"])
+            group_choice = menu.get("group")
+            group = group_choice if isinstance(group_choice, str) else None
             break
 
-    from multideck.launch import run_multideck, RunOpts  # heavy subsystem: in-body per policy
-    rc = run_multideck(cfg, RunOpts(
-        retile_all=retile_all,
-        dry_run=dry_run,
-        group=group,
-        config_path=str(config_file),
-    ))
+    from multideck.launch import (  # heavy subsystem: in-body per policy
+        RunOpts,
+        run_multideck,
+    )
+
+    rc = run_multideck(
+        cfg,
+        RunOpts(
+            retile_all=retile_all,
+            dry_run=dry_run,
+            group=group,
+            config_path=str(config_file),
+        ),
+    )
     if rc:
         sys.exit(rc)

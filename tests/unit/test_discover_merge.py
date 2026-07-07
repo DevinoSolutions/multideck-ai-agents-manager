@@ -17,22 +17,41 @@ class TestThreeWayMerge:
         import multideck.discover as discover_mod
 
         monkeypatch.setattr(
-            discover_mod, "_discover_codex_projects",
-            lambda home=None: [{"path": p, "tool": "codex", "session_count": 1, "last_active": codex_active}],
+            discover_mod,
+            "_discover_codex_projects",
+            lambda home=None: [
+                {
+                    "path": p,
+                    "tool": "codex",
+                    "session_count": 1,
+                    "last_active": codex_active,
+                }
+            ],
         )
         monkeypatch.setattr(
-            discover_mod, "_discover_vscode_projects",
-            lambda: [{"path": p, "tool": "vscode", "session_count": 1, "last_active": vscode_active}],
+            discover_mod,
+            "_discover_vscode_projects",
+            lambda: [
+                {
+                    "path": p,
+                    "tool": "vscode",
+                    "session_count": 1,
+                    "last_active": vscode_active,
+                }
+            ],
         )
         monkeypatch.setattr(
-            discover_mod, "_claude_sessions_for_path",
+            discover_mod,
+            "_claude_sessions_for_path",
             lambda path, home=None: {"session_count": 1, "last_active": claude_active},
         )
 
     def test_claude_wins_when_genuinely_newest(self, monkeypatch, tmp_path):
         """GREEN, positive: claude is the newest of all three -> guards E7 from
         regressing the correct claude-preference case."""
-        self._seed(monkeypatch, tmp_path, codex_active=250, vscode_active=90, claude_active=300)
+        self._seed(
+            monkeypatch, tmp_path, codex_active=250, vscode_active=90, claude_active=300
+        )
 
         projects, _ = discover_projects(home=tmp_path)
 
@@ -49,7 +68,9 @@ class TestThreeWayMerge:
         candidate through one max-keyed comparison (R9) -- this is now the
         one authoritative pin for the three-way merge (no separate
         test_merge_three_sources_keeps_max_last_active; would duplicate)."""
-        self._seed(monkeypatch, tmp_path, codex_active=250, vscode_active=90, claude_active=150)
+        self._seed(
+            monkeypatch, tmp_path, codex_active=250, vscode_active=90, claude_active=150
+        )
 
         projects, _ = discover_projects(home=tmp_path)
 

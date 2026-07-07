@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import TYPE_CHECKING
 
-from multideck.sessions.claude import get_claude_session_ids, build_claude_resume
-from multideck.sessions.codex import get_codex_session_ids, build_codex_resume
+from multideck.sessions.claude import build_claude_resume, get_claude_session_ids
+from multideck.sessions.codex import build_codex_resume, get_codex_session_ids
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)
 class AgentTool:
     """Per-tool capabilities of a CLI agent (claude, codex, ...)."""
+
     session_ids: Callable[[str, int], list[str | None]] | None = None
     resume_command: Callable[[str, str | None], str] | None = None
     happy: bool = False  # can be wrapped with `happy` for mobile access
@@ -20,10 +24,14 @@ class AgentTool:
 
 
 AGENT_TOOLS: dict[str, AgentTool] = {
-    "claude": AgentTool(session_ids=get_claude_session_ids,
-                        resume_command=build_claude_resume, happy=True),
-    "codex": AgentTool(session_ids=get_codex_session_ids,
-                       resume_command=build_codex_resume, happy=True),
+    "claude": AgentTool(
+        session_ids=get_claude_session_ids,
+        resume_command=build_claude_resume,
+        happy=True,
+    ),
+    "codex": AgentTool(
+        session_ids=get_codex_session_ids, resume_command=build_codex_resume, happy=True
+    ),
 }
 
 

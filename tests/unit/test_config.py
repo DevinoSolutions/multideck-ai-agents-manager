@@ -1,8 +1,9 @@
-import json
 from pathlib import Path
 
 import pytest
-from multideck.config import ConfigError, load_config, MultideckConfig, ProjectConfig
+
+from multideck.config import ConfigError, MultideckConfig, load_config
+from multideck.init_config import generate_config, scan_for_projects
 
 
 class TestLoadConfig:
@@ -14,22 +15,32 @@ class TestLoadConfig:
         assert cfg.projects[0].path == "api"
 
     def test_full_config(self, tmp_config):
-        path = tmp_config({
-            "baseDir": "C:/code",
-            "layout": {"columns": 3, "rows": 2},
-            "settings": {
-                "defaultTool": "codex",
-                "settleSeconds": 5,
-                "launchDelayMs": 200,
-                "ssh": {"shell": "zsh -lc"},
-                "tools": {"claude": "claude --continue", "codex": "codex --yolo"},
-            },
-            "projects": [
-                {"path": "api", "group": "backend", "color": "#ff0000",
-                 "tool": "claude", "title": "my-api", "enabled": True,
-                 "host": None, "remotePath": None, "windows": 3},
-            ],
-        })
+        path = tmp_config(
+            {
+                "baseDir": "C:/code",
+                "layout": {"columns": 3, "rows": 2},
+                "settings": {
+                    "defaultTool": "codex",
+                    "settleSeconds": 5,
+                    "launchDelayMs": 200,
+                    "ssh": {"shell": "zsh -lc"},
+                    "tools": {"claude": "claude --continue", "codex": "codex --yolo"},
+                },
+                "projects": [
+                    {
+                        "path": "api",
+                        "group": "backend",
+                        "color": "#ff0000",
+                        "tool": "claude",
+                        "title": "my-api",
+                        "enabled": True,
+                        "host": None,
+                        "remotePath": None,
+                        "windows": 3,
+                    },
+                ],
+            }
+        )
         cfg = load_config(path)
         assert cfg.base_dir == "C:/code"
         assert cfg.layout.columns == 3
@@ -102,22 +113,26 @@ class TestLoadConfig:
         assert cfg.settings.happy is False
 
     def test_happy_enabled_globally(self, tmp_config):
-        path = tmp_config({
-            "settings": {"happy": True},
-            "projects": [{"path": "x"}],
-        })
+        path = tmp_config(
+            {
+                "settings": {"happy": True},
+                "projects": [{"path": "x"}],
+            }
+        )
         cfg = load_config(path)
         assert cfg.settings.happy is True
 
     def test_happy_per_project(self, tmp_config):
-        path = tmp_config({
-            "settings": {"happy": False},
-            "projects": [
-                {"path": "a", "happy": True},
-                {"path": "b"},
-                {"path": "c", "happy": False},
-            ],
-        })
+        path = tmp_config(
+            {
+                "settings": {"happy": False},
+                "projects": [
+                    {"path": "a", "happy": True},
+                    {"path": "b"},
+                    {"path": "c", "happy": False},
+                ],
+            }
+        )
         cfg = load_config(path)
         assert cfg.projects[0].happy is True
         assert cfg.projects[1].happy is None
@@ -129,10 +144,12 @@ class TestLoadConfig:
         assert cfg.settings.psmux is False
 
     def test_psmux_enabled(self, tmp_config):
-        path = tmp_config({
-            "settings": {"psmux": True},
-            "projects": [{"path": "x"}],
-        })
+        path = tmp_config(
+            {
+                "settings": {"psmux": True},
+                "projects": [{"path": "x"}],
+            }
+        )
         cfg = load_config(path)
         assert cfg.settings.psmux is True
 
@@ -152,10 +169,12 @@ class TestLoadConfig:
         # F-D6-004: unknown settings keys are still dropped from the parsed
         # Settings object (there's nowhere to put them), but now surface a
         # stderr warning (R10) instead of vanishing silently.
-        path = tmp_config({
-            "settings": {"bogusKey": 1, "defaultTool": "codex"},
-            "projects": [{"path": "api"}],
-        })
+        path = tmp_config(
+            {
+                "settings": {"bogusKey": 1, "defaultTool": "codex"},
+                "projects": [{"path": "api"}],
+            }
+        )
         cfg = load_config(path)
         assert not hasattr(cfg.settings, "bogusKey")
         assert cfg.settings.default_tool == "codex"
@@ -164,21 +183,25 @@ class TestLoadConfig:
     def test_load_config_wrong_typed_columns_raises(self, tmp_config):
         # F-D6-005: wrong-typed layout.columns now raises a clean ConfigError
         # (was a raw TypeError out of max(1, "2")).
-        path = tmp_config({
-            "layout": {"columns": "2"},
-            "projects": [{"path": "api"}],
-        })
-        with pytest.raises(ConfigError, match="layout.columns must be an integer"):
+        path = tmp_config(
+            {
+                "layout": {"columns": "2"},
+                "projects": [{"path": "api"}],
+            }
+        )
+        with pytest.raises(ConfigError, match=r"layout\.columns must be an integer"):
             load_config(path)
 
     def test_load_config_bool_columns_raises(self, tmp_config):
         # bool is an int subclass in Python -- _require_type must reject it
         # for an int-only field rather than silently accepting True/False.
-        path = tmp_config({
-            "layout": {"columns": True},
-            "projects": [{"path": "api"}],
-        })
-        with pytest.raises(ConfigError, match="layout.columns must be an integer"):
+        path = tmp_config(
+            {
+                "layout": {"columns": True},
+                "projects": [{"path": "api"}],
+            }
+        )
+        with pytest.raises(ConfigError, match=r"layout\.columns must be an integer"):
             load_config(path)
 
     def test_missing_version_defaults_zero_and_warns(self, capsys, tmp_config):
@@ -198,10 +221,12 @@ class TestLoadConfig:
 
 class TestPathResolution:
     def test_resolve_relative(self, tmp_config):
-        path = tmp_config({
-            "baseDir": "/home/user/code",
-            "projects": [{"path": "api"}],
-        })
+        path = tmp_config(
+            {
+                "baseDir": "/home/user/code",
+                "projects": [{"path": "api"}],
+            }
+        )
         cfg = load_config(path)
         assert cfg.projects[0].path == "api"
 
@@ -209,9 +234,6 @@ class TestPathResolution:
         path = tmp_config({"projects": [{"path": "/absolute/path"}]})
         cfg = load_config(path)
         assert cfg.projects[0].path == "/absolute/path"
-
-
-from multideck.init_config import scan_for_projects, generate_config
 
 
 class TestScanForProjects:
@@ -231,13 +253,13 @@ class TestScanForProjects:
     def test_adds_group_from_parent_folder(self, tmp_path):
         (tmp_path / "backend" / "api" / ".git").mkdir(parents=True)
         repos = scan_for_projects(str(tmp_path))
-        proj = [r for r in repos if r["path"] == "backend/api"][0]
+        proj = next(r for r in repos if r["path"] == "backend/api")
         assert proj["group"] == "backend"
 
     def test_no_group_for_top_level(self, tmp_path):
         (tmp_path / "api" / ".git").mkdir(parents=True)
         repos = scan_for_projects(str(tmp_path))
-        proj = [r for r in repos if r["path"] == "api"][0]
+        proj = next(r for r in repos if r["path"] == "api")
         assert "group" not in proj
 
     def test_duplicate_leaf_gets_unique_title(self, tmp_path):

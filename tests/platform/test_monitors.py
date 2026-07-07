@@ -1,4 +1,3 @@
-import sys
 import pytest
 
 pytestmark = pytest.mark.platform
@@ -7,6 +6,7 @@ pytestmark = pytest.mark.platform
 @pytest.fixture
 def platform():
     from multideck.platform import get_platform
+
     return get_platform()
 
 

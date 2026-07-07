@@ -4,12 +4,17 @@ import ctypes
 import ctypes.wintypes
 import subprocess
 from ctypes import POINTER, WINFUNCTYPE, byref, create_unicode_buffer, windll
-from typing import Any, Literal
-
+from typing import Literal
 
 from multideck.grid import MonitorRect, Rect
 from multideck.log import get_logger
-from multideck.platform import Platform, PsmuxWindowOpts, TerminalLaunchOpts, VSCodeLaunchOpts, find_psmux
+from multideck.platform import (
+    Platform,
+    PsmuxWindowOpts,
+    TerminalLaunchOpts,
+    VSCodeLaunchOpts,
+    find_psmux,
+)
 
 user32 = windll.user32
 shcore = windll.shcore
@@ -19,18 +24,22 @@ class WindowsPlatform(Platform):
     def set_dpi_aware(self) -> None:
         try:
             user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
-            return
         except (OSError, AttributeError):
             pass
+        else:
+            return
         try:
             shcore.SetProcessDpiAwareness(2)
-            return
         except (OSError, AttributeError):
             pass
+        else:
+            return
         try:
             user32.SetProcessDPIAware()
         except (OSError, AttributeError):
-            get_logger("platform").warning("could not set DPI awareness; tiling may be misaligned")
+            get_logger("platform").warning(
+                "could not set DPI awareness; tiling may be misaligned"
+            )
 
     def list_monitors(self) -> list[MonitorRect]:
         monitors: list[MonitorRect] = []
@@ -47,11 +56,14 @@ class WindowsPlatform(Platform):
             ]
 
         MONITORENUMPROC = WINFUNCTYPE(
-            ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
-            POINTER(ctypes.wintypes.RECT), ctypes.c_void_p,
+            ctypes.c_int,
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            POINTER(ctypes.wintypes.RECT),
+            ctypes.c_void_p,
         )
 
-        def callback(hmon, hdc, lprect, lparam):
+        def callback(hmon: int, hdc: int, lprect: object, lparam: int) -> int:
             info = MONITORINFOEXW()
             info.cbSize = ctypes.sizeof(MONITORINFOEXW)
             user32.GetMonitorInfoW(hmon, byref(info))
@@ -65,29 +77,35 @@ class WindowsPlatform(Platform):
                 shcore.GetDpiForMonitor(hmon, 0, byref(dpi_x), byref(dpi_y))
                 scale = dpi_x.value / 96.0
             except (OSError, AttributeError):
-                get_logger("platform").warning("DPI query failed for a monitor; assuming scale 1.0")
+                get_logger("platform").warning(
+                    "DPI query failed for a monitor; assuming scale 1.0"
+                )
 
-            monitors.append(MonitorRect(
-                x=wa.left,
-                y=wa.top,
-                w=wa.right - wa.left,
-                h=wa.bottom - wa.top,
-                is_primary=is_primary,
-                scale_factor=scale,
-            ))
+            monitors.append(
+                MonitorRect(
+                    x=wa.left,
+                    y=wa.top,
+                    w=wa.right - wa.left,
+                    h=wa.bottom - wa.top,
+                    is_primary=is_primary,
+                    scale_factor=scale,
+                )
+            )
             return 1
 
         user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(callback), 0)
         return monitors
 
-    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> int | None:
+    def find_window(
+        self, title: str, mode: Literal["exact", "contains"] = "exact"
+    ) -> int | None:
         if mode not in ("exact", "contains"):
             raise ValueError(f"unknown find_window mode: {mode!r}")
         result: int | None = None
 
         WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
-        def callback(hwnd, _):
+        def callback(hwnd: int, _: int) -> bool:
             nonlocal result
             if not user32.IsWindowVisible(hwnd):
                 return True
@@ -105,11 +123,13 @@ class WindowsPlatform(Platform):
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return result
 
-    def snapshot_windows(self) -> dict[str, int]:
-        titles: dict[str, int] = {}
+    def snapshot_windows(self) -> dict[str, object]:
+        # dict is invariant, so the ABC's dict[str, object] contract can't be
+        # overridden with dict[str, int]; the handle is an opaque HWND anyway.
+        titles: dict[str, object] = {}
         WNDENUMPROC = WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
-        def callback(hwnd, _):
+        def callback(hwnd: int, _: int) -> bool:
             if not user32.IsWindowVisible(hwnd):
                 return True
             buf = create_unicode_buffer(512)
@@ -121,7 +141,7 @@ class WindowsPlatform(Platform):
         user32.EnumWindows(WNDENUMPROC(callback), 0)
         return titles
 
-    def move_window(self, handle: Any, rect: Rect) -> None:
+    def move_window(self, handle: object, rect: Rect) -> None:
         # A minimized window still enumerates and MoveWindow silently updates
         # its restored placement, but it stays in the taskbar -- so a re-tile
         # appears to skip it. Restore first so every window lands on screen.
@@ -132,9 +152,13 @@ class WindowsPlatform(Platform):
 
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
         args = [
-            "wt", "-w", "new",
-            "-d", opts.cwd,
-            "--title", opts.title,
+            "wt",
+            "-w",
+            "new",
+            "-d",
+            opts.cwd,
+            "--title",
+            opts.title,
         ]
         if opts.color:
             args.extend(["--tabColor", opts.color])
@@ -143,10 +167,7 @@ class WindowsPlatform(Platform):
         if opts.ssh_host:
             remote_dir = opts.ssh_remote_dir or opts.cwd
             inner = f"cd {remote_dir} && {opts.command}"
-            if opts.ssh_shell:
-                remote = f"{opts.ssh_shell} '{inner}'"
-            else:
-                remote = inner
+            remote = f"{opts.ssh_shell} '{inner}'" if opts.ssh_shell else inner
             # Pass ssh + args as separate argv elements so the remote command
             # is a single, cleanly-quoted token. Building one `ssh ... "..."`
             # string and handing it to `cmd /k` double-nests the quotes, which
@@ -171,45 +192,87 @@ class WindowsPlatform(Platform):
         if not windows:
             return
 
-        checks = [(w, subprocess.Popen([psmux, "-L", w.window_name, "has-session"],
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-                   for w in windows]
+        checks = [
+            (
+                w,
+                subprocess.Popen(
+                    [psmux, "-L", w.window_name, "has-session"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                ),
+            )
+            for w in windows
+        ]
         to_create = [w for w, p in checks if p.wait() != 0]
 
         if not to_create:
             return
 
-        kills = [subprocess.Popen([psmux, "-L", w.window_name, "kill-server"],
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                 for w in to_create]
+        kills = [
+            subprocess.Popen(
+                [psmux, "-L", w.window_name, "kill-server"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for w in to_create
+        ]
         for p in kills:
             p.wait()
 
-        creates = [subprocess.Popen(
-                       [psmux, "-L", w.window_name, "new-session", "-d",
-                        "-s", w.window_name, "-c", w.cwd],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                   for w in to_create]
+        creates = [
+            subprocess.Popen(
+                [
+                    psmux,
+                    "-L",
+                    w.window_name,
+                    "new-session",
+                    "-d",
+                    "-s",
+                    w.window_name,
+                    "-c",
+                    w.cwd,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            for w in to_create
+        ]
         for p in creates:
             if p.wait() != 0:
                 raise subprocess.CalledProcessError(p.returncode, p.args)
 
         for w in to_create:
             subprocess.Popen(
-                [psmux, "-L", w.window_name, "send-keys",
-                 "-t", w.window_name, f"cmd /c {w.command}", "Enter"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                [
+                    psmux,
+                    "-L",
+                    w.window_name,
+                    "send-keys",
+                    "-t",
+                    w.window_name,
+                    f"cmd /c {w.command}",
+                    "Enter",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
 
-    def attach_psmux(self, session_name: str, title: str,
-                     color: str | None = None,
-                     config_path: str | None = None) -> None:
+    def attach_psmux(
+        self,
+        session_name: str,
+        title: str,
+        color: str | None = None,
+        config_path: str | None = None,
+    ) -> None:
         psmux = find_psmux()
         if not psmux:
             return
         args = [
-            "wt", "-w", "new",
-            "--title", title,
+            "wt",
+            "-w",
+            "new",
+            "--title",
+            title,
         ]
         if color:
             args.extend(["--tabColor", color])
@@ -222,5 +285,3 @@ class WindowsPlatform(Platform):
 
     def supports_hotkey(self) -> bool:
         return True
-
-

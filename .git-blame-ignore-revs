@@ -1,0 +1,6 @@
+# Revisions git blame should skip: mechanical, whole-tree reformats with no
+# authorship value. Enable locally once (GitHub applies this file automatically):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: apply ruff format repo-wide (Phase 1, quality-gates)
+6d8a65106f1f8e02e89ca224c2a7edd93b4969d9

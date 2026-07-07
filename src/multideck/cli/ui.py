@@ -3,17 +3,22 @@ printing helpers. No config or subprocess state of its own beyond the two
 platform-guarded helpers (_force_utf8_console: win-only ctypes;
 _print_qr: optional `qrcode` dep) -- both keep their guard in-body.
 """
+
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import sys
-from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from multideck import __version__
 from multideck.style import style
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 LOGO_LINES = [
     r"           _ _   _    _        _   ",
@@ -27,7 +32,9 @@ def _banner() -> None:
     click.echo()
     for line in LOGO_LINES:
         click.echo(f"  {style(line, fg='cyan')}")
-    click.echo(f"  {style(f'v{__version__}', dim=True)}  {style('auto-tile your AI workspace', dim=True)}")
+    click.echo(
+        f"  {style(f'v{__version__}', dim=True)}  {style('auto-tile your AI workspace', dim=True)}"
+    )
     click.echo()
 
 
@@ -52,7 +59,12 @@ def _grid_preview(cols: int, rows: int, indent: str = "  ") -> list[str]:
             pad = cell_w - len(label)
             left = pad // 2
             right = pad - left
-            cells += style("|", dim=True) + " " * left + style(label, fg="cyan") + " " * right
+            cells += (
+                style("|", dim=True)
+                + " " * left
+                + style(label, fg="cyan")
+                + " " * right
+            )
         cells += style("|", dim=True)
         lines.append(f"{indent}{cells}")
     lines.append(f"{indent}{style(border, dim=True)}")
@@ -66,8 +78,9 @@ def _open_in_editor(path: Path) -> None:
     elif sys.platform == "darwin":
         subprocess.Popen(["open", path_str])
     else:
-        editor = os.environ.get("EDITOR", "xdg-open")
-        subprocess.Popen([editor, path_str])
+        from multideck.env import editor_command  # heavy subsystem: in-body per policy
+
+        subprocess.Popen([editor_command(), path_str])
 
 
 def _confirm_change(message: str) -> None:
@@ -77,9 +90,13 @@ def _confirm_change(message: str) -> None:
     click.echo()
 
 
-def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
+def _prompt_or_back(
+    label: str, default: str = "", *, show_default: bool = True
+) -> str | None:
     hint = style("  (b to go back)", dim=True)
-    value = click.prompt(f"  {label}{hint}", default=default, **kwargs).strip()
+    value: str = click.prompt(
+        f"  {label}{hint}", default=default, show_default=show_default
+    ).strip()
     if value.lower() == "b":
         return None
     return value
@@ -87,27 +104,30 @@ def _prompt_or_back(label: str, default: str = "", **kwargs) -> str | None:
 
 def _force_utf8_console() -> None:
     """Make stdout render UTF-8 (block chars for the QR, box glyphs) on Windows
-    consoles that default to a legacy code page. Best-effort, never raises."""
+    consoles that default to a legacy code page. Best-effort: the expected
+    OS/attribute errors (redirected stdout, missing console) are suppressed so a
+    cosmetic failure never crashes the CLI; an unexpected error still surfaces."""
     if sys.platform != "win32":
         return
-    try:
+    with contextlib.suppress(OSError, AttributeError):
         import ctypes
+
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
-    except Exception:
-        pass
-    try:
-        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]  # guarded by try/except; reconfigure exists on the real TextIOWrapper
-    except Exception:
-        pass
+    with contextlib.suppress(OSError, AttributeError, ValueError):
+        reconfigure = getattr(sys.stdout, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8")
 
 
 def _print_qr(url: str) -> None:
     """Print a scannable QR for the URL if the qrcode lib is available."""
     try:
-        import qrcode
+        import qrcode  # ty: ignore[unresolved-import]  # reason: optional dep, guarded by try/except (see pyproject qrcode note)
     except ImportError:
-        click.echo(f"  {style('Tip:', dim=True)} {style('pip install qrcode', bold=True)} "
-                   f"{style('to print a scannable QR code here.', dim=True)}")
+        click.echo(
+            f"  {style('Tip:', dim=True)} {style('pip install qrcode', bold=True)} "
+            f"{style('to print a scannable QR code here.', dim=True)}"
+        )
         return
     qr = qrcode.QRCode(border=2)
     qr.add_data(url)
@@ -115,16 +135,20 @@ def _print_qr(url: str) -> None:
     qr.print_ascii(invert=True)
 
 
-def _grouped(entries: list[dict]) -> tuple[list[str], dict[str, list[str]]]:
+def _grouped(
+    entries: list[dict[str, object]],
+) -> tuple[list[str], dict[str, list[str]]]:
     """Bucket session entries by project group, preserving first-seen order."""
     order: list[str] = []
     buckets: dict[str, list[str]] = {}
     for e in entries:
-        g = e.get("group") or "(no group)"
+        group = e.get("group")
+        g = group if isinstance(group, str) and group else "(no group)"
         if g not in buckets:
             buckets[g] = []
             order.append(g)
-        buckets[g].append(e["name"])
+        raw_name = e["name"]
+        buckets[g].append(raw_name if isinstance(raw_name, str) else "")
     return order, buckets
 
 
@@ -139,15 +163,19 @@ def _print_names(names: list[str], indent: str = "       ", width: int = 66) -> 
         click.echo(style(line, dim=True))
 
 
-def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> list[str]:
+def _print_session_overview(
+    hostname: str, up: list[dict[str, object]], down: list[dict[str, object]]
+) -> list[str]:
     """Render a grouped up/down overview; return the ordered list of pickable groups."""
     dn_order, dn_buckets = _grouped(down)
     up_order, up_buckets = _grouped(up)
 
     click.echo()
-    click.echo(f"  {style('Sessions on', bold=True)} {style(hostname, fg='cyan')}    "
-               f"{style(str(len(up)), fg='green', bold=True)} up  {style('/', dim=True)}  "
-               f"{style(str(len(down)), fg='yellow', bold=True)} down")
+    click.echo(
+        f"  {style('Sessions on', bold=True)} {style(hostname, fg='cyan')}    "
+        f"{style(str(len(up)), fg='green', bold=True)} up  {style('/', dim=True)}  "
+        f"{style(str(len(down)), fg='yellow', bold=True)} down"
+    )
     _divider()
 
     pickable: list[str] = []
@@ -156,16 +184,22 @@ def _print_session_overview(hostname: str, up: list[dict], down: list[dict]) -> 
         up_n = len(up_buckets.get(g, []))
         total = up_n + len(names)
         if g == "(no group)":
-            click.echo(f"     {style(g, dim=True)}  {style(f'{up_n}/{total}', dim=True)}")
+            click.echo(
+                f"     {style(g, dim=True)}  {style(f'{up_n}/{total}', dim=True)}"
+            )
         else:
             pickable.append(g)
             num = style(str(len(pickable)), fg="cyan", bold=True)
-            click.echo(f"  {num}  {style(g, bold=True)}  {style(f'{up_n}/{total} up', dim=True)}")
+            click.echo(
+                f"  {num}  {style(g, bold=True)}  {style(f'{up_n}/{total} up', dim=True)}"
+            )
         _print_names(names)
 
     for g in up_order:
         if g not in dn_buckets:
             cnt = len(up_buckets[g])
-            click.echo(f"     {style(g, dim=True)}  {style(f'{cnt}/{cnt} ready', fg='green')}")
+            click.echo(
+                f"     {style(g, dim=True)}  {style(f'{cnt}/{cnt} ready', fg='green')}"
+            )
     _divider()
     return pickable

@@ -1,6 +1,7 @@
 """The `multideck docs` command: a 190-line pure-string Markdown generator
 for the full config reference. No I/O beyond stdout via click.echo.
 """
+
 from __future__ import annotations
 
 import click
@@ -9,32 +10,70 @@ from multideck import __version__
 from multideck.cli.app import main
 from multideck.config import LayoutConfig, Settings
 
-
 _PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("path", "string", "*(required)*", "Absolute, or relative to `baseDir`."),
     ("group", "string", "none", "Tag for group launches (`-g`)."),
-    ("tool", "string", "`defaultTool`", "`claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool."),
+    (
+        "tool",
+        "string",
+        "`defaultTool`",
+        "`claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool.",
+    ),
     ("color", "string", "random", "Terminal tab color (`#rrggbb`)."),
     ("title", "string", "folder name", "Window title for matching."),
     ("enabled", "boolean", "`true`", "Set `false` to skip without deleting."),
     ("happy", "boolean", "inherit", "Override global Happy setting for this project."),
     ("host", "string", "none", "SSH target for remote projects."),
     ("remotePath", "string", "`path`", "Remote directory when different from `path`."),
-    ("windows", "int or list", "none", "`int` or `[\"name1\", \"name2\"]` for multi-window sessions."),
+    (
+        "windows",
+        "int or list",
+        "none",
+        '`int` or `["name1", "name2"]` for multi-window sessions.',
+    ),
 ]
 
 
 _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
-    ("defaultTool", "string", "`\"claude\"`", "AI tool launched in each project unless overridden."),
-    ("settleSeconds", "int", "`3`", "Seconds to wait for windows to appear before tiling."),
+    (
+        "defaultTool",
+        "string",
+        '`"claude"`',
+        "AI tool launched in each project unless overridden.",
+    ),
+    (
+        "settleSeconds",
+        "int",
+        "`3`",
+        "Seconds to wait for windows to appear before tiling.",
+    ),
     ("launchDelayMs", "int", "`400`", "Delay between launching each terminal (ms)."),
-    ("happy", "boolean", "`false`", "Enable [Happy](https://github.com/slopus/happy) to access sessions from mobile/web."),
-    ("psmux", "boolean", "`false`", "Run CLI agents in psmux sessions (Windows). Attach from SSH with `psmux attach -t <name>`."),
-    ("uploadServer", "boolean", "`false`", "Auto-start upload server for mobile image transfer when psmux launches."),
+    (
+        "happy",
+        "boolean",
+        "`false`",
+        "Enable [Happy](https://github.com/slopus/happy) to access sessions from mobile/web.",
+    ),
+    (
+        "psmux",
+        "boolean",
+        "`false`",
+        "Run CLI agents in psmux sessions (Windows). Attach from SSH with `psmux attach -t <name>`.",
+    ),
+    (
+        "uploadServer",
+        "boolean",
+        "`false`",
+        "Auto-start upload server for mobile image transfer when psmux launches.",
+    ),
     ("uploadPort", "int", "`8033`", "Port for the upload server."),
-    ("tools", "object", "`{\"claude\": ..., \"codex\": ..., \"cursor-agent\": ..., \"agy\": ...}`",
-     "Map of tool names to shell commands. Add custom tools here."),
-    ("ssh.shell", "string", "`\"bash -lc\"`", "Shell wrapper for remote SSH commands."),
+    (
+        "tools",
+        "object",
+        '`{"claude": ..., "codex": ..., "cursor-agent": ..., "agy": ...}`',
+        "Map of tool names to shell commands. Add custom tools here.",
+    ),
+    ("ssh.shell", "string", '`"bash -lc"`', "Shell wrapper for remote SSH commands."),
 ]
 
 
@@ -68,16 +107,22 @@ def _generate_docs() -> str:
     w("")
     w("| Field | Type | Default | Description |")
     w("| --- | --- | --- | --- |")
-    w("| `baseDir` | string | none | Root folder. Project paths are relative to this. |")
-    w(f"| `layout.columns` | int | `{defaults_layout.columns}` | Windows side by side per screen. |")
-    w(f"| `layout.rows` | int | `{defaults_layout.rows}` | Windows stacked per screen. |")
+    w(
+        "| `baseDir` | string | none | Root folder. Project paths are relative to this. |"
+    )
+    w(
+        f"| `layout.columns` | int | `{defaults_layout.columns}` | Windows side by side per screen. |"
+    )
+    w(
+        f"| `layout.rows` | int | `{defaults_layout.rows}` | Windows stacked per screen. |"
+    )
     w("| `projects` | array | *(required)* | List of project entries (see below). |")
     w("| `settings` | object | see below | Global settings. |")
     w("")
 
     w("## Settings")
     w("")
-    w("All fields under `\"settings\"` in config.json:")
+    w('All fields under `"settings"` in config.json:')
     w("")
     w("| Field | Type | Default | Description |")
     w("| --- | --- | --- | --- |")
@@ -87,7 +132,7 @@ def _generate_docs() -> str:
 
     w("## Project fields")
     w("")
-    w("Each entry in the `\"projects\"` array:")
+    w('Each entry in the `"projects"` array:')
     w("")
     w("| Field | Type | Default | Description |")
     w("| --- | --- | --- | --- |")
@@ -122,13 +167,17 @@ def _generate_docs() -> str:
 
     w("## Multi-window sessions")
     w("")
-    w("Open the same project in multiple windows, each resuming a different conversation:")
+    w(
+        "Open the same project in multiple windows, each resuming a different conversation:"
+    )
     w("")
     w("```json")
     w('{ "path": "api", "windows": 3 }')
     w("```")
     w("")
-    w("Opens 3 windows (`api`, `api-2`, `api-3`), each resuming the Nth most recent session.")
+    w(
+        "Opens 3 windows (`api`, `api-2`, `api-3`), each resuming the Nth most recent session."
+    )
     w("")
 
     w("## Remote projects (SSH)")
@@ -142,8 +191,12 @@ def _generate_docs() -> str:
 
     w("## Happy (mobile/web access)")
     w("")
-    w("Enable [Happy](https://github.com/slopus/happy) to monitor and control your AI sessions")
-    w("from your phone or any browser. Happy wraps supported agents (claude, codex) and relays")
+    w(
+        "Enable [Happy](https://github.com/slopus/happy) to monitor and control your AI sessions"
+    )
+    w(
+        "from your phone or any browser. Happy wraps supported agents (claude, codex) and relays"
+    )
     w("encrypted session data to the Happy mobile/web app.")
     w("")
     w("```json")
@@ -175,7 +228,7 @@ def _generate_docs() -> str:
     w("}")
     w("```")
     w("")
-    w("Then use `\"tool\": \"aider\"` on any project, or set it as `defaultTool`.")
+    w('Then use `"tool": "aider"` on any project, or set it as `defaultTool`.')
     w("")
 
     w("## CLI commands")
@@ -187,24 +240,40 @@ def _generate_docs() -> str:
     w("| `multideck --retile-all` | Re-tile every matching window. |")
     w("| `multideck -g <name>` | Launch only projects in a group. |")
     w("| `multideck --init` | Re-scan sessions and regenerate config. |")
-    w("| `multideck --init --base-dir <dir>` | Generate config from a folder of repos. |")
+    w(
+        "| `multideck --init --base-dir <dir>` | Generate config from a folder of repos. |"
+    )
     w("| `multideck --edit` | Open config in your default editor. |")
     w("| `multideck docs` | Print this reference (pipe to file for AI context). |")
     w("| `multideck up` | (Host side) ensure a persistent psmux session per project. |")
-    w("| `multideck up --json` | Print session status (up/down/projects) as JSON, change nothing. |")
+    w(
+        "| `multideck up --json` | Print session status (up/down/projects) as JSON, change nothing. |"
+    )
     w("| `multideck up -g <group>` | Bring up sessions for only one project group. |")
-    w("| `multideck attach [host]` | From another PC: bring host sessions up over SSH, tile locally, Alt+V hotkey. |")
-    w("| `multideck attach <host> -g <group>` | Attach to only one project group on the host. |")
-    w("| `multideck attach <host> --no-mux` | Attach with a direct SSH window per project (no psmux/tmux). |")
-    w("| `multideck --attach-to <host>` | (deprecated alias for `multideck attach <host>`). |")
-    w("| `multideck status` | Show which psmux sessions and the upload server are running. |")
+    w(
+        "| `multideck attach [host]` | From another PC: bring host sessions up over SSH, tile locally, Alt+V hotkey. |"
+    )
+    w(
+        "| `multideck attach <host> -g <group>` | Attach to only one project group on the host. |"
+    )
+    w(
+        "| `multideck attach <host> --no-mux` | Attach with a direct SSH window per project (no psmux/tmux). |"
+    )
+    w(
+        "| `multideck --attach-to <host>` | (deprecated alias for `multideck attach <host>`). |"
+    )
+    w(
+        "| `multideck status` | Show which psmux sessions and the upload server are running. |"
+    )
     w("| `multideck down` | Shut down all running psmux sessions. |")
     w("| `multideck down -g <group>` | Shut down only one group's sessions. |")
     w("| `multideck down <name> [<name>...]` | Shut down specific sessions by name. |")
     w("| `multideck down --all` | Stop every session and the upload server. |")
     w("| `multideck serve` | Start upload server for mobile image transfer. |")
     w("| `multideck serve -p 9090` | Use a custom port (default 8033). |")
-    w("| `multideck hotkey` | Listen for Alt+V to upload clipboard images (standalone). |")
+    w(
+        "| `multideck hotkey` | Listen for Alt+V to upload clipboard images (standalone). |"
+    )
     w("| `multideck sessions` | List active psmux sessions, pick one to attach. |")
     w("| `multideck sessions <name>` | Attach directly to a psmux session by name. |")
     w("| `multideck config show` | Display current config. |")

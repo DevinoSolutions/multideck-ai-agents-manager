@@ -4,6 +4,7 @@ import threading
 import time
 from http.client import HTTPConnection
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -11,8 +12,6 @@ from multideck.upload_server import (
     UploadHandler,
     _build_html,
     _parse_multipart,
-    run_server,
-    _UPLOAD_DIR,
 )
 
 
@@ -41,27 +40,27 @@ class TestBuildHtml:
 class TestParseMultipart:
     def _make_handler(self, body: bytes, boundary: str):
         class FakeHandler:
-            headers = {
+            headers: ClassVar[dict[str, str]] = {
                 "Content-Type": f"multipart/form-data; boundary={boundary}",
                 "Content-Length": str(len(body)),
             }
             rfile = io.BytesIO(body)
+
         return FakeHandler()
 
     def test_parses_field_and_file(self):
-        boundary = "----TestBoundary"
         body = (
-            f"------TestBoundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------TestBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="test.png"\r\n'
-            f"Content-Type: image/png\r\n"
-            f"\r\n"
-            f"PNGDATA\r\n"
-            f"------TestBoundary--\r\n"
-        ).encode()
+            b"------TestBoundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------TestBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="test.png"\r\n'
+            b"Content-Type: image/png\r\n"
+            b"\r\n"
+            b"PNGDATA\r\n"
+            b"------TestBoundary--\r\n"
+        )
 
         handler = self._make_handler(body, "----TestBoundary")
         fields, files = _parse_multipart(handler)
@@ -74,7 +73,10 @@ class TestParseMultipart:
     def test_parse_multipart_missing_boundary_returns_empty(self):
         # F-D3-006: Content-Type with no boundary= is treated as "no body".
         class FakeHandler:
-            headers = {"Content-Type": "multipart/form-data", "Content-Length": "0"}
+            headers: ClassVar[dict[str, str]] = {
+                "Content-Type": "multipart/form-data",
+                "Content-Length": "0",
+            }
             rfile = io.BytesIO(b"")
 
         assert _parse_multipart(FakeHandler()) == ({}, {})
@@ -84,7 +86,10 @@ class TestParseMultipart:
         # ValueError from int() inside the parser; it's now treated as "no
         # body" instead of crashing the request-handling thread.
         class FakeHandler:
-            headers = {"Content-Type": "multipart/form-data; boundary=X", "Content-Length": "abc"}
+            headers: ClassVar[dict[str, str]] = {
+                "Content-Type": "multipart/form-data; boundary=X",
+                "Content-Length": "abc",
+            }
             rfile = io.BytesIO(b"")
 
         assert _parse_multipart(FakeHandler()) == ({}, {})
@@ -94,6 +99,7 @@ class TestUploadServerIntegration:
     @pytest.fixture(autouse=True)
     def _server(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
         # Keep these tests hermetic: no real psmux send-keys / status-line flash.
         monkeypatch.setattr(mod, "find_psmux", lambda: None)
@@ -107,6 +113,7 @@ class TestUploadServerIntegration:
         UploadHandler.sessions_ts = time.time() + 9999
 
         from http.server import HTTPServer
+
         self.server = HTTPServer(("127.0.0.1", 0), UploadHandler)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -136,29 +143,33 @@ class TestUploadServerIntegration:
         assert data[0]["name"] == "marka"
 
     def test_upload_saves_file(self):
-        boundary = "----WebKitFormBoundary"
         body = (
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="inject"\r\n'
-            f"\r\n"
-            f"0\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="screenshot.png"\r\n'
-            f"Content-Type: image/png\r\n"
-            f"\r\n"
-            f"FAKEPNG\r\n"
-            f"------WebKitFormBoundary--\r\n"
-        ).encode()
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="inject"\r\n'
+            b"\r\n"
+            b"0\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="screenshot.png"\r\n'
+            b"Content-Type: image/png\r\n"
+            b"\r\n"
+            b"FAKEPNG\r\n"
+            b"------WebKitFormBoundary--\r\n"
+        )
 
         conn = self._conn()
-        conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": f"multipart/form-data; boundary=----WebKitFormBoundary",
-            "Content-Length": str(len(body)),
-        })
+        conn.request(
+            "POST",
+            "/upload",
+            body=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundary",
+                "Content-Length": str(len(body)),
+            },
+        )
         resp = conn.getresponse()
         data = json.loads(resp.read())
 
@@ -184,106 +195,122 @@ class TestUploadServerIntegration:
     def test_upload_logs_outcome_without_filename(self, caplog):
         # F-hygiene: the outcome log must carry the project + byte-count +
         # injected flag, but never the original filename (personal data).
-        boundary = "----WebKitFormBoundary"
         body = (
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="inject"\r\n'
-            f"\r\n"
-            f"0\r\n"
-            f"------WebKitFormBoundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="my_diagnosis.png"\r\n'
-            f"Content-Type: image/png\r\n"
-            f"\r\n"
-            f"FAKEPNG\r\n"
-            f"------WebKitFormBoundary--\r\n"
-        ).encode()
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="inject"\r\n'
+            b"\r\n"
+            b"0\r\n"
+            b"------WebKitFormBoundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="my_diagnosis.png"\r\n'
+            b"Content-Type: image/png\r\n"
+            b"\r\n"
+            b"FAKEPNG\r\n"
+            b"------WebKitFormBoundary--\r\n"
+        )
 
         with caplog.at_level("INFO", logger="multideck.upload"):
             conn = self._conn()
-            conn.request("POST", "/upload", body=body, headers={
-                "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundary",
-                "Content-Length": str(len(body)),
-            })
+            conn.request(
+                "POST",
+                "/upload",
+                body=body,
+                headers={
+                    "Content-Type": "multipart/form-data; boundary=----WebKitFormBoundary",
+                    "Content-Length": str(len(body)),
+                },
+            )
             resp = conn.getresponse()
             data = json.loads(resp.read())
             assert data["ok"] is True
 
             assert self._wait_log(caplog, "upload project=marka")
-        assert "bytes=7" in caplog.text     # len(b"FAKEPNG")
+        assert "bytes=7" in caplog.text  # len(b"FAKEPNG")
         assert "injected=False" in caplog.text
         assert "my_diagnosis.png" not in caplog.text
         assert "my_diagnosis" not in caplog.text
 
     def test_upload_missing_project(self):
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
-            f"\r\n"
-            f"data\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            b"\r\n"
+            b"data\r\n"
+            b"------Boundary--\r\n"
+        )
 
         conn = self._conn()
-        conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": f"multipart/form-data; boundary=----Boundary",
-            "Content-Length": str(len(body)),
-        })
+        conn.request(
+            "POST",
+            "/upload",
+            body=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----Boundary",
+                "Content-Length": str(len(body)),
+            },
+        )
         resp = conn.getresponse()
         data = json.loads(resp.read())
         assert data["ok"] is False
 
     def test_upload_rejects_unknown_project(self):
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"evil-project\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
-            f"\r\n"
-            f"data\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"evil-project\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            b"\r\n"
+            b"data\r\n"
+            b"------Boundary--\r\n"
+        )
 
         conn = self._conn()
-        conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": "multipart/form-data; boundary=----Boundary",
-            "Content-Length": str(len(body)),
-        })
+        conn.request(
+            "POST",
+            "/upload",
+            body=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----Boundary",
+                "Content-Length": str(len(body)),
+            },
+        )
         resp = conn.getresponse()
         data = json.loads(resp.read())
         assert data["ok"] is False
         assert "Unknown project" in data["error"]
 
     def test_upload_strips_path_traversal(self):
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="inject"\r\n'
-            f"\r\n"
-            f"0\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="../../etc/passwd"\r\n'
-            f"\r\n"
-            f"malicious\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="inject"\r\n'
+            b"\r\n"
+            b"0\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="../../etc/passwd"\r\n'
+            b"\r\n"
+            b"malicious\r\n"
+            b"------Boundary--\r\n"
+        )
 
         conn = self._conn()
-        conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": "multipart/form-data; boundary=----Boundary",
-            "Content-Length": str(len(body)),
-        })
+        conn.request(
+            "POST",
+            "/upload",
+            body=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----Boundary",
+                "Content-Length": str(len(body)),
+            },
+        )
         resp = conn.getresponse()
         data = json.loads(resp.read())
         assert data["ok"] is True
@@ -301,27 +328,32 @@ class TestUploadServerIntegration:
         # F-D3-002: a body over the cap is rejected before it's fully read
         # into memory, so a malicious/oversized upload can't exhaust RAM.
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "MAX_UPLOAD_BYTES", 10)
 
-        boundary = "----Boundary"
         body = (
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="project"\r\n'
-            f"\r\n"
-            f"marka\r\n"
-            f"------Boundary\r\n"
-            f'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
-            f"\r\n"
-            f"well past ten bytes of file data\r\n"
-            f"------Boundary--\r\n"
-        ).encode()
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="project"\r\n'
+            b"\r\n"
+            b"marka\r\n"
+            b"------Boundary\r\n"
+            b'Content-Disposition: form-data; name="file"; filename="x.png"\r\n'
+            b"\r\n"
+            b"well past ten bytes of file data\r\n"
+            b"------Boundary--\r\n"
+        )
         assert len(body) > 10  # sanity: genuinely exceeds the lowered cap
 
         conn = self._conn()
-        conn.request("POST", "/upload", body=body, headers={
-            "Content-Type": "multipart/form-data; boundary=----Boundary",
-            "Content-Length": str(len(body)),
-        })
+        conn.request(
+            "POST",
+            "/upload",
+            body=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----Boundary",
+                "Content-Length": str(len(body)),
+            },
+        )
         resp = conn.getresponse()
         resp.read()
         assert resp.status == 413
@@ -331,10 +363,15 @@ class TestUploadServerIntegration:
         # reaching do_POST used to propagate an uncaught ValueError (dropped
         # connection); it now gets a clean 400 before any body is read.
         conn = self._conn()
-        conn.request("POST", "/upload", body=b"irrelevant", headers={
-            "Content-Type": "multipart/form-data; boundary=----Boundary",
-            "Content-Length": "abc",
-        })
+        conn.request(
+            "POST",
+            "/upload",
+            body=b"irrelevant",
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----Boundary",
+                "Content-Length": "abc",
+            },
+        )
         resp = conn.getresponse()
         resp.read()
         assert resp.status == 400
@@ -347,6 +384,7 @@ class TestHealth:
     @pytest.fixture(autouse=True)
     def _server(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
         monkeypatch.setattr(mod, "find_psmux", lambda: None)
 
@@ -361,6 +399,7 @@ class TestHealth:
         UploadHandler.started_at = time.time() - 5
 
         from http.server import HTTPServer
+
         self.server = HTTPServer(("127.0.0.1", 0), UploadHandler)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -388,6 +427,7 @@ class TestInSessionFeedback:
     @pytest.fixture(autouse=True)
     def _server(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
         monkeypatch.setattr(mod, "find_psmux", lambda: "psmux")
         monkeypatch.setattr(mod, "_inflight", {})
@@ -396,10 +436,12 @@ class TestInSessionFeedback:
 
         def _rec(args, **kwargs):
             self.calls.append(list(args))
+
             class R:
                 returncode = 0
                 stdout = b""
                 stderr = b""
+
             return R()
 
         monkeypatch.setattr(mod.subprocess, "run", _rec)
@@ -409,6 +451,7 @@ class TestInSessionFeedback:
         UploadHandler.sessions_ts = time.time() + 9999
 
         from http.server import HTTPServer
+
         self.server = HTTPServer(("127.0.0.1", 0), UploadHandler)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -429,10 +472,15 @@ class TestInSessionFeedback:
             f"------B--\r\n"
         ).encode()
         conn = HTTPConnection("127.0.0.1", self.port, timeout=5)
-        conn.request("POST", path, body=body, headers={
-            "Content-Type": "multipart/form-data; boundary=----B",
-            "Content-Length": str(len(body)),
-        })
+        conn.request(
+            "POST",
+            path,
+            body=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=----B",
+                "Content-Length": str(len(body)),
+            },
+        )
         return json.loads(conn.getresponse().read())
 
     def _flashes(self) -> list[str]:
@@ -454,15 +502,19 @@ class TestInSessionFeedback:
         assert any("uploading image" in f for f in self._flashes())
         # the early flash targets the right session socket (a message-style
         # tint may sit between the socket flag and display-message)
-        assert any("-L marka" in f and "display-message" in f and "uploading" in f
-                   for f in self._flashes())
+        assert any(
+            "-L marka" in f and "display-message" in f and "uploading" in f
+            for f in self._flashes()
+        )
         # result flash lands just after the response
         assert self._wait_flash("image uploaded")
 
     def test_no_query_skips_early_flash_but_confirms(self):
         assert self._post("/upload", project_field="marka")["ok"] is True
-        assert self._wait_flash("image uploaded")               # still confirmed
-        assert not any("uploading image" in f for f in self._flashes())  # no early flash
+        assert self._wait_flash("image uploaded")  # still confirmed
+        assert not any(
+            "uploading image" in f for f in self._flashes()
+        )  # no early flash
 
     def test_failure_flashes_when_flagged_upload_rejected(self):
         # query flags marka (valid early flash) but the body names an unknown
@@ -473,6 +525,7 @@ class TestInSessionFeedback:
 
     def test_inflight_count_clears_after_upload(self):
         import multideck.upload_server as mod
+
         self._post("/upload?project=marka")
         self._wait_flash("image uploaded")
         assert mod._inflight.get("marka", 0) == 0
@@ -485,11 +538,13 @@ class TestStopServer:
     def test_no_pid_file_returns_false(self, tmp_path, monkeypatch):
         # Pin: this invariant is unchanged by the taskkill-rc behavior below.
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_pid_path", lambda port: tmp_path / "nonexistent.pid")
         assert mod.stop_server(9999) is False
 
     def test_keeps_pid_file_when_taskkill_fails(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
+
         pid_file = tmp_path / "upload_server-9999.pid"
         pid_file.write_text("4321")
         monkeypatch.setattr(mod, "_pid_path", lambda port: pid_file)
@@ -497,6 +552,7 @@ class TestStopServer:
 
         class _Result:
             returncode = 1
+
         monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _Result())
 
         assert mod.stop_server(9999) is False
@@ -504,6 +560,7 @@ class TestStopServer:
 
     def test_removes_pid_file_when_taskkill_succeeds(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
+
         pid_file = tmp_path / "upload_server-9999.pid"
         pid_file.write_text("4321")
         monkeypatch.setattr(mod, "_pid_path", lambda port: pid_file)
@@ -511,6 +568,7 @@ class TestStopServer:
 
         class _Result:
             returncode = 0
+
         monkeypatch.setattr(mod.subprocess, "run", lambda *a, **k: _Result())
 
         assert mod.stop_server(9999) is True
@@ -524,24 +582,30 @@ class TestBindAddresses:
 
     def test_auto_bind_loopback_only_when_no_tailscale(self, monkeypatch):
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_tailscale_ip", lambda: None)
         assert mod._bind_addresses(None) == ["127.0.0.1"]
         assert "0.0.0.0" not in mod._bind_addresses(None)
 
     def test_auto_bind_includes_tailscale(self, monkeypatch):
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_tailscale_ip", lambda: "100.64.1.2")
         assert mod._bind_addresses(None) == ["127.0.0.1", "100.64.1.2"]
 
     def test_explicit_host_honored(self):
         import multideck.upload_server as mod
+
         # The --host escape hatch is honored verbatim, including 0.0.0.0.
         assert mod._bind_addresses("0.0.0.0") == ["0.0.0.0"]
 
     def test_run_server_binds_expected(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
+
         monkeypatch.setattr(mod, "_tailscale_ip", lambda: None)
-        monkeypatch.setattr(mod, "_pid_path", lambda port: tmp_path / f"upload-{port}.pid")
+        monkeypatch.setattr(
+            mod, "_pid_path", lambda port: tmp_path / f"upload-{port}.pid"
+        )
 
         constructed = []
 

@@ -14,8 +14,8 @@ runs:
         chmod 600 ~/.ssh/authorized_keys
         sudo sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config
         sudo service ssh start
-        echo "MULTIDECK_TEST_SSH_PORT=2222" >> "$GITHUB_ENV"
-        echo "MULTIDECK_TEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
+        echo "MDTEST_SSH_PORT=2222" >> "$GITHUB_ENV"
+        echo "MDTEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_test -p 2222 localhost whoami
 
     - name: macOS - Setup OpenSSH
@@ -32,8 +32,8 @@ runs:
         sudo launchctl stop com.openssh.sshd 2>/dev/null || true
         sudo launchctl start com.openssh.sshd 2>/dev/null || true
         sleep 2
-        echo "MULTIDECK_TEST_SSH_PORT=22" >> "$GITHUB_ENV"
-        echo "MULTIDECK_TEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
+        echo "MDTEST_SSH_PORT=22" >> "$GITHUB_ENV"
+        echo "MDTEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
         ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.ssh/id_test localhost whoami || echo "SSH smoke-check failed (non-fatal in CI)"
 
     - name: Windows - Setup OpenSSH
@@ -51,5 +51,5 @@ runs:
         Add-Content -Path $adminKeyFile -Value $pub
         icacls $adminKeyFile /inheritance:r /grant "SYSTEM:(R)" /grant "BUILTIN\Administrators:(R)"
         Restart-Service sshd
-        echo "MULTIDECK_TEST_SSH_PORT=22" >> $env:GITHUB_ENV
-        echo "MULTIDECK_TEST_SSH_KEY=$sshDir\id_test" >> $env:GITHUB_ENV
+        echo "MDTEST_SSH_PORT=22" >> $env:GITHUB_ENV
+        echo "MDTEST_SSH_KEY=$sshDir\id_test" >> $env:GITHUB_ENV

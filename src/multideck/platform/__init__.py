@@ -1,15 +1,14 @@
 from __future__ import annotations
 
 import functools
-import os
 import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Literal
 
-from multideck.grid import Rect, MonitorRect
+if TYPE_CHECKING:
+    from multideck.grid import MonitorRect, Rect
 
 
 @functools.lru_cache(maxsize=1)
@@ -18,7 +17,11 @@ def find_psmux() -> str | None:
     if found:
         return found
     if sys.platform == "win32":
-        local = Path(os.environ.get("LOCALAPPDATA", "")) / "psmux" / "psmux.exe"
+        from multideck.env import (
+            localappdata_dir,
+        )  # heavy subsystem: in-body per policy
+
+        local = localappdata_dir() / "psmux" / "psmux.exe"
         if local.is_file():
             return str(local)
     return None
@@ -57,10 +60,12 @@ class Platform(ABC):
     def list_monitors(self) -> list[MonitorRect]: ...
 
     @abstractmethod
-    def find_window(self, title: str, mode: Literal["exact", "contains"] = "exact") -> Any | None: ...
+    def find_window(
+        self, title: str, mode: Literal["exact", "contains"] = "exact"
+    ) -> object | None: ...
 
     @abstractmethod
-    def move_window(self, handle: Any, rect: Rect) -> None: ...
+    def move_window(self, handle: object, rect: Rect) -> None: ...
 
     @abstractmethod
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None: ...
@@ -68,16 +73,20 @@ class Platform(ABC):
     @abstractmethod
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None: ...
 
-    def snapshot_windows(self) -> dict[str, Any]:
+    def snapshot_windows(self) -> dict[str, object]:
         """Return {title: handle} for all visible windows in a single pass."""
         return {}
 
     def launch_psmux_session(self, windows: list[PsmuxWindowOpts]) -> None:
         raise NotImplementedError("psmux is only supported on Windows")
 
-    def attach_psmux(self, session_name: str, title: str,
-                     color: str | None = None,
-                     config_path: str | None = None) -> None:
+    def attach_psmux(
+        self,
+        session_name: str,
+        title: str,
+        color: str | None = None,
+        config_path: str | None = None,
+    ) -> None:
         raise NotImplementedError("psmux is only supported on Windows")
 
     def supports_psmux(self) -> bool:
@@ -92,10 +101,12 @@ class Platform(ABC):
 def get_platform() -> Platform:
     if sys.platform == "win32":
         from multideck.platform.windows import WindowsPlatform
+
         return WindowsPlatform()
-    elif sys.platform == "darwin":
+    if sys.platform == "darwin":
         from multideck.platform.macos import MacOSPlatform
+
         return MacOSPlatform()
-    else:
-        from multideck.platform.linux import LinuxPlatform
-        return LinuxPlatform()
+    from multideck.platform.linux import LinuxPlatform
+
+    return LinuxPlatform()

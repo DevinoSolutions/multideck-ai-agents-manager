@@ -5,30 +5,30 @@ Cross-platform: FakePlatform (tests/conftest.py) stands in for a real
 Platform, so this exercises launch.py's `-> int` return-code contract without
 touching any OS-specific window/monitor API.
 """
+
 from __future__ import annotations
 
 import time
 
 import pytest
 
-from tests.conftest import FakePlatform
-
 from multideck.config import MultideckConfig, ProjectConfig, Settings
 from multideck.grid import MonitorRect, Rect, compute_grid
 from multideck.launch import (
     RunOpts,
-    _LaunchResult,
-    _Target,
     _dispatch_cli_agent_project,
     _dispatch_ide_project,
     _launch_projects,
+    _LaunchResult,
     _prepare_grid,
     _select_projects,
     _start_psmux_and_upload,
+    _Target,
     _tile_targets,
     run_multideck,
 )
 from multideck.platform import PsmuxWindowOpts
+from tests.conftest import FakePlatform
 
 
 class TestNoMonitors:
@@ -71,10 +71,14 @@ class TestRunMultideckCharacterization:
     the CLI) and asserts on the fake_platform double's call record -- never
     on full-output equality (style/spacing may drift)."""
 
-    def test_happy_local_cli_agent_launches_then_tiles(self, fake_platform, tmp_path, fake_sleep):
+    def test_happy_local_cli_agent_launches_then_tiles(
+        self, fake_platform, tmp_path, fake_sleep
+    ):
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
         )
 
         rc = run_multideck(cfg, RunOpts())
@@ -85,10 +89,14 @@ class TestRunMultideckCharacterization:
         assert len(fake_platform.moved) == 1
         assert fake_platform.moved[0][1] == Rect(x=0, y=0, w=960, h=1080)
 
-    def test_dry_run_launches_and_moves_nothing(self, fake_platform, tmp_path, fake_sleep, capsys):
+    def test_dry_run_launches_and_moves_nothing(
+        self, fake_platform, tmp_path, fake_sleep, capsys
+    ):
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
         )
 
         rc = run_multideck(cfg, RunOpts(dry_run=True))
@@ -102,7 +110,9 @@ class TestRunMultideckCharacterization:
     def test_ide_project_launches_vscode(self, fake_platform, tmp_path, fake_sleep):
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="code")],
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
         )
 
         rc = run_multideck(cfg, RunOpts())
@@ -116,7 +126,9 @@ class TestRunMultideckCharacterization:
         monkeypatch.setattr("multideck.launch.get_platform", lambda: fp)
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude", psmux=True),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude", psmux=True
+            ),
         )
 
         rc = run_multideck(cfg, RunOpts())
@@ -126,10 +138,14 @@ class TestRunMultideckCharacterization:
         assert len(fp.attached_psmux) == 1
         assert fp.launched_terminals == []
 
-    def test_empty_group_returns_zero(self, fake_platform, tmp_path, fake_sleep, capsys):
+    def test_empty_group_returns_zero(
+        self, fake_platform, tmp_path, fake_sleep, capsys
+    ):
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
         )
 
         rc = run_multideck(cfg, RunOpts(group="nope"))
@@ -143,7 +159,9 @@ class TestRunMultideckCharacterization:
         monkeypatch.setattr("multideck.launch.get_platform", lambda: fp)
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
         )
 
         rc = run_multideck(cfg, RunOpts(retile_all=True))
@@ -159,7 +177,9 @@ class TestTileTargets:
     def test_moves_present_and_reports_missing(self, fake_sleep, capsys):
         fp = FakePlatform(windows={"present": 42})
         slots = compute_grid(
-            [MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)], 2, 1
+            [MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)],
+            2,
+            1,
         )
         targets = [
             _Target(name="present", key="present", mode="exact", is_new=True),
@@ -200,7 +220,9 @@ class TestStartPsmuxAndUpload:
         fp = FakePlatform(supports_psmux=True)
         windows = [PsmuxWindowOpts(window_name="a", cwd="/tmp/a", command="claude")]
         cfg = MultideckConfig(projects=[])
-        result = _LaunchResult(targets=[], psmux_windows=windows, psmux_colors={"a": None})
+        result = _LaunchResult(
+            targets=[], psmux_windows=windows, psmux_colors={"a": None}
+        )
 
         _start_psmux_and_upload(fp, cfg, RunOpts(dry_run=True), result)
 
@@ -218,12 +240,16 @@ class TestLaunchProjects:
         projects = [ProjectConfig(path=str(tmp_path), tool="claude", title="proj")]
         cfg = MultideckConfig(
             projects=projects,
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude", psmux=True),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude", psmux=True
+            ),
         )
 
         result = _launch_projects(fp, cfg, RunOpts(), projects, None)
 
-        assert result.targets == [_Target(name="proj", key="proj", mode="exact", is_new=True)]
+        assert result.targets == [
+            _Target(name="proj", key="proj", mode="exact", is_new=True)
+        ]
         assert len(result.psmux_windows) == 1
         assert result.psmux_windows[0].window_name == "proj"
 
@@ -232,7 +258,9 @@ class TestLaunchProjects:
         projects = [ProjectConfig(path=str(tmp_path), tool="code")]
         cfg = MultideckConfig(
             projects=projects,
-            settings=Settings(tools={"claude": "claude --continue"}, default_tool="claude"),
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
         )
 
         result = _launch_projects(fp, cfg, RunOpts(), projects, None)
@@ -272,10 +300,12 @@ class TestSelectProjects:
     """Direct unit tests for the extracted project-selection phase (R4, Step 6)."""
 
     def test_filters_group(self):
-        cfg = MultideckConfig(projects=[
-            ProjectConfig(path="/a", group="a"),
-            ProjectConfig(path="/b", group="b"),
-        ])
+        cfg = MultideckConfig(
+            projects=[
+                ProjectConfig(path="/a", group="a"),
+                ProjectConfig(path="/b", group="b"),
+            ]
+        )
 
         result = _select_projects(cfg, RunOpts(group="a"))
 
@@ -306,7 +336,15 @@ class TestDispatchIdeProject:
         targets: list[_Target] = []
 
         delta = _dispatch_ide_project(
-            fp, cfg, RunOpts(), proj, "code", False, None, lambda key, mode: False, targets,
+            fp,
+            cfg,
+            RunOpts(),
+            proj,
+            "code",
+            False,
+            None,
+            lambda key, mode: False,
+            targets,
         )
 
         assert delta == 1
@@ -323,7 +361,15 @@ class TestDispatchIdeProject:
         targets: list[_Target] = []
 
         delta = _dispatch_ide_project(
-            fp, cfg, RunOpts(), proj, "code", False, None, lambda key, mode: True, targets,
+            fp,
+            cfg,
+            RunOpts(),
+            proj,
+            "code",
+            False,
+            None,
+            lambda key, mode: True,
+            targets,
         )
 
         assert delta == 0
@@ -341,15 +387,27 @@ class TestDispatchCliAgentProject:
     def test_launches_terminal_and_returns_delta(self, tmp_path, fake_sleep):
         fp = FakePlatform()
         proj = ProjectConfig(path=str(tmp_path), tool="claude", title="proj")
-        cfg = MultideckConfig(projects=[proj], settings=Settings(tools={"claude": "claude --continue"}))
+        cfg = MultideckConfig(
+            projects=[proj], settings=Settings(tools={"claude": "claude --continue"})
+        )
         targets: list[_Target] = []
         psmux_windows: list[PsmuxWindowOpts] = []
         psmux_colors: dict[str, str | None] = {}
 
         delta = _dispatch_cli_agent_project(
-            fp, cfg, RunOpts(), proj, "claude", False, None,
-            cfg.settings.tools, False, lambda key, mode: False,
-            targets, psmux_windows, psmux_colors,
+            fp,
+            cfg,
+            RunOpts(),
+            proj,
+            "claude",
+            False,
+            None,
+            cfg.settings.tools,
+            False,
+            lambda key, mode: False,
+            targets,
+            psmux_windows,
+            psmux_colors,
         )
 
         assert delta == 1
@@ -370,9 +428,19 @@ class TestDispatchCliAgentProject:
         psmux_colors: dict[str, str | None] = {}
 
         delta = _dispatch_cli_agent_project(
-            fp, cfg, RunOpts(), proj, "claude", False, None,
-            cfg.settings.tools, True, lambda key, mode: False,
-            targets, psmux_windows, psmux_colors,
+            fp,
+            cfg,
+            RunOpts(),
+            proj,
+            "claude",
+            False,
+            None,
+            cfg.settings.tools,
+            True,
+            lambda key, mode: False,
+            targets,
+            psmux_windows,
+            psmux_colors,
         )
 
         assert delta == 1
@@ -380,15 +448,29 @@ class TestDispatchCliAgentProject:
         assert len(psmux_windows) == 1
         assert psmux_windows[0].window_name == "proj"
 
-    def test_unknown_tool_skips_and_returns_delta_zero(self, tmp_path, fake_sleep, capsys):
+    def test_unknown_tool_skips_and_returns_delta_zero(
+        self, tmp_path, fake_sleep, capsys
+    ):
         proj = ProjectConfig(path=str(tmp_path), tool="ghost-tool", title="proj")
-        cfg = MultideckConfig(projects=[proj], settings=Settings(tools={"claude": "claude --continue"}))
+        cfg = MultideckConfig(
+            projects=[proj], settings=Settings(tools={"claude": "claude --continue"})
+        )
         targets: list[_Target] = []
 
         delta = _dispatch_cli_agent_project(
-            FakePlatform(), cfg, RunOpts(), proj, "ghost-tool", False, None,
-            cfg.settings.tools, False, lambda key, mode: False,
-            targets, [], {},
+            FakePlatform(),
+            cfg,
+            RunOpts(),
+            proj,
+            "ghost-tool",
+            False,
+            None,
+            cfg.settings.tools,
+            False,
+            lambda key, mode: False,
+            targets,
+            [],
+            {},
         )
 
         assert delta == 0

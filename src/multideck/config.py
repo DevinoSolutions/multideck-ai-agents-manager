@@ -3,10 +3,14 @@ from __future__ import annotations
 import colorsys
 import json
 import random
-import sys
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import click
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 SCHEMA_VERSION = 1
 
@@ -69,33 +73,103 @@ class MultideckConfig:
     version: int = SCHEMA_VERSION
 
 
-def _parse_ssh(raw: dict | None) -> SSHConfig:
-    if not raw:
-        return SSHConfig()
-    return SSHConfig(shell=raw.get("shell", "bash -lc"))
+# --- typed JSON-object accessors -------------------------------------------
+# json.loads yields an untyped object graph; these narrow a raw
+# ``dict[str, object]`` value to the concrete type each Settings/Project field
+# expects, falling back to the default when the JSON type is wrong. This is the
+# "object + isinstance narrowing" boundary (audit §6.4) -- no ``Any``, no
+# ``cast`` -- and it makes a mistyped field degrade to its default instead of
+# crashing deep in the launch path.
 
 
-def _parse_settings(raw: dict | None) -> Settings:
+def _load_json_object(text: str) -> dict[str, object]:
+    """Parse ``text`` as a JSON object, or raise ConfigError. The single JSON
+    entry point shared by load_config and migrate_config_file."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ConfigError(f"Config is not valid JSON: {e}") from e
+    if not isinstance(data, dict):
+        raise ConfigError("Config must be a JSON object")
+    return data
+
+
+def _obj(raw: dict[str, object], key: str) -> dict[str, object]:
+    value = raw.get(key)
+    return value if isinstance(value, dict) else {}  # ty: ignore[invalid-return-type]  # reason: isinstance narrows; ty 0.0.56 invariance gap
+
+
+def _str(raw: dict[str, object], key: str, default: str) -> str:
+    value = raw.get(key, default)
+    return value if isinstance(value, str) else default
+
+
+def _str_or_none(raw: dict[str, object], key: str) -> str | None:
+    value = raw.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _int(raw: dict[str, object], key: str, default: int) -> int:
+    value = raw.get(key, default)
+    # bool is an int subclass; a JSON boolean is not a valid integer field.
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return value
+
+
+def _bool(raw: dict[str, object], key: str, default: bool) -> bool:
+    value = raw.get(key, default)
+    return value if isinstance(value, bool) else default
+
+
+def _bool_or_none(raw: dict[str, object], key: str) -> bool | None:
+    value = raw.get(key)
+    return value if isinstance(value, bool) else None
+
+
+def _tools(raw: dict[str, object], default: dict[str, str]) -> dict[str, str]:
+    value = raw.get("tools")
+    if not isinstance(value, dict):
+        return dict(default)
+    return {str(k): v for k, v in value.items() if isinstance(v, str)}
+
+
+def _windows(raw: dict[str, object]) -> int | list[str] | None:
+    value = raw.get("windows")
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return None
+
+
+def _parse_ssh(raw: dict[str, object]) -> SSHConfig:
+    return SSHConfig(shell=_str(raw, "shell", "bash -lc"))
+
+
+def _parse_settings(raw: dict[str, object] | None) -> Settings:
     if not raw:
         return Settings()
     return Settings(
-        default_tool=raw.get("defaultTool", "claude"),
-        settle_seconds=raw.get("settleSeconds", 3),
-        launch_delay_ms=raw.get("launchDelayMs", 400),
-        happy=raw.get("happy", False),
-        psmux=raw.get("psmux", False),
-        upload_server=raw.get("uploadServer", False),
-        upload_port=raw.get("uploadPort", 8033),
-        ssh=_parse_ssh(raw.get("ssh")),
-        tools=raw.get("tools", dict(DEFAULT_TOOLS)),
+        default_tool=_str(raw, "defaultTool", "claude"),
+        settle_seconds=_int(raw, "settleSeconds", 3),
+        launch_delay_ms=_int(raw, "launchDelayMs", 400),
+        happy=_bool(raw, "happy", False),
+        psmux=_bool(raw, "psmux", False),
+        upload_server=_bool(raw, "uploadServer", False),
+        upload_port=_int(raw, "uploadPort", 8033),
+        ssh=_parse_ssh(_obj(raw, "ssh")),
+        tools=_tools(raw, DEFAULT_TOOLS),
     )
 
 
-def layout_to_dict(layout: LayoutConfig) -> dict:
+def layout_to_dict(layout: LayoutConfig) -> dict[str, int]:
     return {"columns": layout.columns, "rows": layout.rows}
 
 
-def settings_to_dict(settings: Settings) -> dict:
+def settings_to_dict(settings: Settings) -> dict[str, object]:
     """Inverse of _parse_settings -- the single serializer every config
     generator (init_config, discover) delegates to via default_config, so
     the emitted envelope can never drift from what the loader parses (R9)."""
@@ -112,7 +186,9 @@ def settings_to_dict(settings: Settings) -> dict:
     }
 
 
-def default_config(projects: list[dict], base_dir: str | None = None) -> dict:
+def default_config(
+    projects: list[dict[str, object]], base_dir: str | None = None
+) -> dict[str, object]:
     """The one envelope factory. init_config.generate_config and
     discover.projects_to_config both delegate here for version/layout/
     settings so the three generators can't hand-build divergent defaults."""
@@ -125,20 +201,20 @@ def default_config(projects: list[dict], base_dir: str | None = None) -> dict:
     }
 
 
-def _parse_project(raw: dict) -> ProjectConfig:
+def _parse_project(raw: dict[str, object]) -> ProjectConfig:
     if "path" not in raw:
         raise ConfigError("Each project must have a 'path' field")
     return ProjectConfig(
-        path=raw["path"],
-        group=raw.get("group"),
-        color=raw.get("color"),
-        tool=raw.get("tool"),
-        title=raw.get("title"),
-        enabled=raw.get("enabled", True),
-        happy=raw.get("happy"),
-        host=raw.get("host"),
-        remote_path=raw.get("remotePath"),
-        windows=raw.get("windows"),
+        path=_str(raw, "path", ""),
+        group=_str_or_none(raw, "group"),
+        color=_str_or_none(raw, "color"),
+        tool=_str_or_none(raw, "tool"),
+        title=_str_or_none(raw, "title"),
+        enabled=_bool(raw, "enabled", True),
+        happy=_bool_or_none(raw, "happy"),
+        host=_str_or_none(raw, "host"),
+        remote_path=_str_or_none(raw, "remotePath"),
+        windows=_windows(raw),
     )
 
 
@@ -148,7 +224,7 @@ def _random_tab_color(used: set[str]) -> str:
         s = random.uniform(0.55, 0.95)
         light = random.uniform(0.40, 0.65)
         r, g, b = colorsys.hls_to_rgb(h, light, s)
-        color = f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+        color = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
         if color not in used:
             return color
     return f"#{random.randint(0, 0xFFFFFF):06x}"
@@ -165,9 +241,13 @@ def _backfill_colors(projects: list[ProjectConfig]) -> bool:
     return changed
 
 
-_TYPE_LABELS = {
-    int: "an integer", str: "a string", bool: "a boolean",
-    float: "a number", dict: "an object", list: "an array",
+_TYPE_LABELS: dict[type, str] = {
+    int: "an integer",
+    str: "a string",
+    bool: "a boolean",
+    float: "a number",
+    dict: "an object",
+    list: "an array",
 }
 
 
@@ -175,7 +255,9 @@ def _describe_type(t: type) -> str:
     return _TYPE_LABELS.get(t, t.__name__)
 
 
-def _require_type(raw: dict, key: str, types: type | tuple[type, ...], label: str) -> None:
+def _require_type(
+    raw: dict[str, object], key: str, types: type | tuple[type, ...], label: str
+) -> None:
     """Raise ConfigError if raw[key] is present but not an instance of `types`.
 
     bool is rejected for int-only fields (bool is an int subclass in Python)
@@ -197,30 +279,45 @@ def _require_type(raw: dict, key: str, types: type | tuple[type, ...], label: st
 _ALLOWED_TOP_KEYS = {"version", "baseDir", "layout", "settings", "projects"}
 _ALLOWED_LAYOUT_KEYS = {"columns", "rows"}
 _ALLOWED_SETTINGS_KEYS = {
-    "defaultTool", "settleSeconds", "launchDelayMs", "happy", "psmux",
-    "uploadServer", "uploadPort", "ssh", "tools",
+    "defaultTool",
+    "settleSeconds",
+    "launchDelayMs",
+    "happy",
+    "psmux",
+    "uploadServer",
+    "uploadPort",
+    "ssh",
+    "tools",
 }
 _ALLOWED_SSH_KEYS = {"shell"}
 _ALLOWED_PROJECT_KEYS = {
-    "path", "group", "color", "tool", "title", "enabled", "happy",
-    "host", "remotePath", "windows",
+    "path",
+    "group",
+    "color",
+    "tool",
+    "title",
+    "enabled",
+    "happy",
+    "host",
+    "remotePath",
+    "windows",
 }
 
 
-def _warn_unknown_keys(raw: dict, allowed: set[str], path: str) -> None:
+def _warn_unknown_keys(raw: dict[str, object], allowed: set[str], path: str) -> None:
     for key in sorted(set(raw) - allowed):
         field_path = f"{path}.{key}" if path else key
-        print(f"Warning: unknown config key: {field_path}", file=sys.stderr)
+        click.echo(f"Warning: unknown config key: {field_path}", err=True)
 
 
-def _parse_layout(raw: dict) -> LayoutConfig:
-    layout_raw = raw.get("layout", {})
+def _parse_layout(raw: dict[str, object]) -> LayoutConfig:
+    layout_raw = _obj(raw, "layout")
     _warn_unknown_keys(layout_raw, _ALLOWED_LAYOUT_KEYS, "layout")
     _require_type(layout_raw, "columns", int, "layout.columns")
     _require_type(layout_raw, "rows", int, "layout.rows")
     return LayoutConfig(
-        columns=max(1, layout_raw.get("columns", 2)),
-        rows=max(1, layout_raw.get("rows", 1)),
+        columns=max(1, _int(layout_raw, "columns", 2)),
+        rows=max(1, _int(layout_raw, "rows", 1)),
     )
 
 
@@ -229,61 +326,61 @@ def load_config(path: str) -> MultideckConfig:
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
-    text = config_path.read_text(encoding="utf-8")
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ConfigError(f"Config is not valid JSON: {e}") from e
+    raw = _load_json_object(config_path.read_text(encoding="utf-8"))
 
-    if "projects" not in raw or not isinstance(raw["projects"], list):
+    projects_raw = raw.get("projects")
+    if not isinstance(projects_raw, list):
         raise ConfigError("Config must have a 'projects' array")
 
     _require_type(raw, "version", int, "version")
-    version = raw.get("version", 0)
+    version = _int(raw, "version", 0)
     if version < SCHEMA_VERSION:
-        print(
+        click.echo(
             f"Warning: config schema v{version} < v{SCHEMA_VERSION}; run: multideck config migrate",
-            file=sys.stderr,
+            err=True,
         )
     _warn_unknown_keys(raw, _ALLOWED_TOP_KEYS, "")
 
     layout = _parse_layout(raw)
 
-    settings_raw = raw.get("settings") or {}
+    settings_raw = _obj(raw, "settings")
     _warn_unknown_keys(settings_raw, _ALLOWED_SETTINGS_KEYS, "settings")
-    _warn_unknown_keys(settings_raw.get("ssh") or {}, _ALLOWED_SSH_KEYS, "settings.ssh")
+    _warn_unknown_keys(_obj(settings_raw, "ssh"), _ALLOWED_SSH_KEYS, "settings.ssh")
 
-    for i, p in enumerate(raw["projects"]):
-        _warn_unknown_keys(p, _ALLOWED_PROJECT_KEYS, f"projects[{i}]")
-
-    projects = [_parse_project(p) for p in raw["projects"]]
+    projects: list[ProjectConfig] = []
+    for i, p in enumerate(projects_raw):
+        p_obj = p if isinstance(p, dict) else {}
+        _warn_unknown_keys(p_obj, _ALLOWED_PROJECT_KEYS, f"projects[{i}]")  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+        projects.append(_parse_project(p_obj))  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
     _backfill_colors(projects)
 
     return MultideckConfig(
         projects=projects,
-        base_dir=raw.get("baseDir"),
+        base_dir=_str_or_none(raw, "baseDir"),
         layout=layout,
         settings=_parse_settings(settings_raw),
         version=version,
     )
 
 
-def _migrate_0_to_1(raw: dict) -> dict:
+def _migrate_0_to_1(raw: dict[str, object]) -> dict[str, object]:
     raw = dict(raw)
     raw["version"] = 1
     return raw
 
 
-_MIGRATIONS: dict[int, Callable[[dict], dict]] = {0: _migrate_0_to_1}
+_MIGRATIONS: dict[int, Callable[[dict[str, object]], dict[str, object]]] = {
+    0: _migrate_0_to_1
+}
 
 
-def migrate_raw(raw: dict) -> dict:
+def migrate_raw(raw: dict[str, object]) -> dict[str, object]:
     """Apply pending schema migrations to a raw config dict, returning the
     migrated dict. Pure -- does not touch disk; migrate_config_file does."""
-    version = raw.get("version", 0)
+    version = _int(raw, "version", 0)
     while version < SCHEMA_VERSION:
         raw = _MIGRATIONS[version](raw)
-        version = raw["version"]
+        version = _int(raw, "version", 0)
     return raw
 
 
@@ -296,20 +393,20 @@ def migrate_config_file(path: str) -> bool:
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
-    text = config_path.read_text(encoding="utf-8")
-    try:
-        raw = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ConfigError(f"Config is not valid JSON: {e}") from e
+    raw = _load_json_object(config_path.read_text(encoding="utf-8"))
 
-    original_version = raw.get("version", 0)
+    original_version = _int(raw, "version", 0)
     raw = migrate_raw(raw)
-    version_changed = raw.get("version", 0) != original_version
+    version_changed = _int(raw, "version", 0) != original_version
 
-    projects = [_parse_project(p) for p in raw.get("projects", [])]
+    projects_raw = raw.get("projects")
+    projects_list = projects_raw if isinstance(projects_raw, list) else []
+    projects = [_parse_project(p if isinstance(p, dict) else {}) for p in projects_list]  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
     colors_changed = _backfill_colors(projects)
     for i, p in enumerate(projects):
-        raw["projects"][i]["color"] = p.color
+        entry = projects_list[i]
+        if isinstance(entry, dict):
+            entry["color"] = p.color  # ty: ignore[invalid-assignment]  # reason: isinstance guard; ty 0.0.56 invariance gap
 
     if not version_changed and not colors_changed:
         return False

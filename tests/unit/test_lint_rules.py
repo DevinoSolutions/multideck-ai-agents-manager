@@ -1,0 +1,138 @@
+"""Unit tests for scripts/lint_rules.py — the MD001-MD004 custom lint layer.
+
+Each rule is proven with a violating snippet (fires) and a conforming snippet
+(silent), plus scope checks (which path prefixes each rule applies to). The
+module lives under scripts/ (not an importable package), so it is loaded by
+file path via importlib rather than a normal import.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+_LINT_RULES = Path(__file__).resolve().parents[2] / "scripts" / "lint_rules.py"
+_spec = importlib.util.spec_from_file_location("lint_rules", _LINT_RULES)
+assert _spec is not None and _spec.loader is not None  # a loadable module guard
+lint_rules = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(lint_rules)
+
+
+def _codes(rel, source):
+    """The finding codes check_source emits for one (relpath, source) pair."""
+    return [f.code for f in lint_rules.check_source(rel, source)]
+
+
+# ---- MD001: no sys.exit / raise SystemExit outside src/multideck/cli/ --------
+
+
+def test_md001_flags_sys_exit_in_subsystem():
+    assert _codes("src/multideck/launch.py", "import sys\nsys.exit(1)\n") == ["MD001"]
+
+
+def test_md001_flags_raise_systemexit_in_subsystem():
+    assert _codes("src/multideck/launch.py", "raise SystemExit(2)\n") == ["MD001"]
+
+
+def test_md001_allows_sys_exit_inside_cli():
+    assert _codes("src/multideck/cli/status.py", "import sys\nsys.exit(1)\n") == []
+
+
+def test_md001_does_not_apply_outside_src():
+    # scripts/ legitimately calls sys.exit (check.py, lint_rules.py both do).
+    assert "MD001" not in _codes("scripts/tool.py", "import sys\nsys.exit(1)\n")
+
+
+# ---- MD002: no sys.platform outside platform/ unless allowlisted -------------
+
+_SYS_PLATFORM = 'import sys\nif sys.platform == "win32":\n    pass\n'
+
+
+def test_md002_flags_sys_platform_in_unlisted_src():
+    assert _codes("src/multideck/newthing.py", _SYS_PLATFORM) == ["MD002"]
+
+
+def test_md002_allows_sys_platform_in_platform_package():
+    assert _codes("src/multideck/platform/windows.py", _SYS_PLATFORM) == []
+
+
+def test_md002_allows_an_allowlisted_file():
+    assert _codes("src/multideck/paths.py", _SYS_PLATFORM) == []
+
+
+# ---- MD003: no "md:" literal outside titles.py / cli/attach.py ---------------
+
+
+def test_md003_flags_md_string_literal():
+    assert _codes("src/multideck/hotkey.py", 'x = "md:foo"\n') == ["MD003"]
+
+
+def test_md003_flags_md_fstring_literal_exactly_once():
+    src = 'name = "p"\nx = f"md:{name}"\n'
+    assert _codes("src/multideck/hotkey.py", src) == ["MD003"]
+
+
+def test_md003_allows_the_titles_module():
+    assert _codes("src/multideck/titles.py", 'PREFIX = "md:"\n') == []
+
+
+def test_md003_allows_the_attach_module():
+    assert _codes("src/multideck/cli/attach.py", 'x = "md:foo"\n') == []
+
+
+def test_md003_ignores_md_not_at_string_start():
+    assert _codes("src/multideck/hotkey.py", 'x = "a md: b"\n') == []
+
+
+# ---- MD004: suppression comments must carry a reason: ------------------------
+
+
+def test_md004_flags_naked_type_ignore():
+    assert _codes("src/multideck/x.py", "y = 1  # type: ignore[arg-type]\n") == [
+        "MD004"
+    ]
+
+
+def test_md004_flags_naked_noqa():
+    assert _codes("src/multideck/x.py", "import os  # noqa: F401\n") == ["MD004"]
+
+
+def test_md004_flags_naked_ty_ignore():
+    assert _codes("src/multideck/x.py", "y = 1  # ty: ignore[foo]\n") == ["MD004"]
+
+
+def test_md004_accepts_type_ignore_with_reason():
+    src = "y = 1  # type: ignore[arg-type]  # reason: narrowed above\n"
+    assert _codes("src/multideck/x.py", src) == []
+
+
+def test_md004_accepts_noqa_with_reason():
+    src = "import os  # noqa: F401  # reason: re-exported on purpose\n"
+    assert _codes("src/multideck/x.py", src) == []
+
+
+def test_md004_ignores_prose_that_merely_mentions_noqa():
+    assert _codes("src/multideck/x.py", "# we cannot use noqa in this spot\n") == []
+
+
+def test_md004_ignores_marker_inside_a_string_literal():
+    # "# type: ignore" here is a STRING token, not a COMMENT — no false positive.
+    assert _codes("src/multideck/x.py", 's = "# type: ignore"\n') == []
+
+
+def test_md004_applies_to_tests_and_scripts_too():
+    assert _codes("tests/unit/test_x.py", "y = 1  # noqa: E501\n") == ["MD004"]
+    assert _codes("scripts/tool.py", "y = 1  # noqa: E501\n") == ["MD004"]
+
+
+# ---- scoping: MD001/002/003 are src-only; MD004 spans src+scripts+tests ------
+
+
+def test_ast_rules_do_not_run_outside_src_multideck():
+    # sys.exit + sys.platform + an "md:" literal in a test file → none of MD001-3.
+    src = 'import sys\nsys.exit(1)\nif sys.platform:\n    x = "md:z"\n'
+    assert _codes("tests/unit/test_x.py", src) == []
+
+
+def test_syntax_error_surfaces_as_md000():
+    assert _codes("src/multideck/broken.py", "def (:\n") == ["MD000"]

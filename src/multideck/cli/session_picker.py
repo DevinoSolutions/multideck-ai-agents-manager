@@ -2,8 +2,10 @@
 looping attach-and-return picker (`_run_sessions_picker`). Named
 session_picker (not "sessions") to avoid confusion with multideck.sessions.
 """
+
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import time
@@ -13,7 +15,12 @@ from pathlib import Path
 import click
 
 from multideck.cli.app import main
-from multideck.cli.config_io import _load_raw_config
+from multideck.cli.config_io import (
+    _as_dict,
+    _as_str,
+    _load_raw_config,
+    _project_dicts,
+)
 from multideck.cli.spawns import _running_upload_port, _tailnet_host
 from multideck.cli.ui import _banner, _divider, _menu_item
 from multideck.paths import find_config
@@ -28,24 +35,30 @@ def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
         try:
             r = subprocess.run(
                 [psmux, "-L", name, "display-message", "-p", "#{pane_current_path}"],
-                capture_output=True, text=True, timeout=3,
-                encoding="utf-8", errors="replace")
+                capture_output=True,
+                text=True,
+                timeout=3,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
         except (OSError, subprocess.SubprocessError):
             return ""
         return (r.stdout or "").strip()
 
     with ThreadPoolExecutor(max_workers=16) as pool:
-        return dict(zip(names, pool.map(cwd, names)))
+        return dict(zip(names, pool.map(cwd, names), strict=True))
 
 
 def _status_label(state: str | None) -> str:
     from multideck import agent_state  # heavy subsystem: in-body per policy
+
     return {
         agent_state.WORKING: style("working...", fg="yellow", bold=True),
         agent_state.DONE: style("done", fg="green", bold=True),
         agent_state.NEEDS_INPUT: style("needs input", fg="red", bold=True),
         agent_state.ERROR: style("error", fg="red", bold=True),
-    }.get(state, "")  # type: ignore[arg-type]  # F-D1-005: state is None-safe (.get returns default)
+    }.get(state, "")
 
 
 def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
@@ -54,13 +67,20 @@ def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
     notify, ...) -- ground truth, not terminal scraping. A staleness guard keeps
     a session killed mid-turn from showing 'working...' forever."""
     from multideck import agent_state  # heavy subsystem: in-body per policy
+
     stale = {agent_state.WORKING: 1800, agent_state.NEEDS_INPUT: 3600}
     out: dict[str, str] = {}
     for sock, cwd in cwds.items():
         rec = agent_state.state_for(cwd) if cwd else None
-        state = rec.get("state") if rec else None
-        if rec and state in stale and (time.time() - rec.get("ts", 0)) > stale[state]:
-            state = None
+        raw_state = rec.get("state") if rec else None
+        state = raw_state if isinstance(raw_state, str) else None
+        if rec is not None and state is not None and state in stale:
+            ts = rec.get("ts", 0)
+            ts_num = (
+                ts if isinstance(ts, (int, float)) and not isinstance(ts, bool) else 0
+            )
+            if (time.time() - ts_num) > stale[state]:
+                state = None
         out[sock] = _status_label(state)
     return out
 
@@ -77,10 +97,8 @@ def _consume_focus_target() -> str | None:
         t = _FOCUS_TARGET_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         return None
-    try:
+    with contextlib.suppress(OSError):
         _FOCUS_TARGET_FILE.unlink()
-    except OSError:
-        pass
     return t or None
 
 
@@ -105,41 +123,58 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
     /focus detaches this picker's client, the attach returns, and the loop jumps
     straight to the requested project."""
 
-    from multideck.launch import _psmux_session_name  # heavy subsystem: in-body per policy
+    from multideck.launch import (
+        _psmux_session_name,  # heavy subsystem: in-body per policy
+    )
     from multideck.platform import find_psmux  # heavy subsystem: in-body per policy
 
     psmux = find_psmux()
     if not psmux:
-        click.echo(f"  {style('x', fg='red')} psmux not found on PATH. Install: choco install psmux")
+        click.echo(
+            f"  {style('x', fg='red')} psmux not found on PATH. Install: choco install psmux"
+        )
         return
 
     data = _load_raw_config(config_file)
+    default_tool = _as_str(_as_dict(data.get("settings")).get("defaultTool"), "claude")
     sessions: list[str] = []
-    for p in data.get("projects", []):
+    for p in _project_dicts(data):
         if not p.get("enabled", True):
             continue
-        tool = p.get("tool", data.get("settings", {}).get("defaultTool", "claude"))
+        tool = p.get("tool", default_tool)
         if tool in ("code", "vscode", "cursor"):
             continue
-        proj_name = p.get("title") or Path(p["path"]).name
+        title = p.get("title")
+        proj_name = (
+            title
+            if isinstance(title, str) and title
+            else Path(_as_str(p.get("path"))).name
+        )
         sock = _psmux_session_name(proj_name)
-        if subprocess.run([psmux, "-L", sock, "has-session"], capture_output=True).returncode == 0:
+        if (
+            subprocess.run(
+                [psmux, "-L", sock, "has-session"], capture_output=True, check=False
+            ).returncode
+            == 0
+        ):
             sessions.append(sock)
 
     if not sessions:
         click.echo(f"  {style('x', fg='red')} No active psmux sessions.")
-        click.echo(f"  {style('Run', dim=True)} {style('multideck up', bold=True)} {style('or', dim=True)} "
-                   f"{style('multideck --go', bold=True)} {style('first.', dim=True)}")
+        click.echo(
+            f"  {style('Run', dim=True)} {style('multideck up', bold=True)} {style('or', dim=True)} "
+            f"{style('multideck --go', bold=True)} {style('first.', dim=True)}"
+        )
         return
 
-    def _reset_terminal():
+    def _reset_terminal() -> None:
         if sys.platform == "win32":
-            subprocess.run(["cmd", "/c", "cls"], shell=False)
+            subprocess.run(["cmd", "/c", "cls"], shell=False, check=False)
         else:
-            subprocess.run(["stty", "sane"], capture_output=True)
-            subprocess.run(["tput", "reset"], capture_output=True)
+            subprocess.run(["stty", "sane"], capture_output=True, check=False)
+            subprocess.run(["tput", "reset"], capture_output=True, check=False)
 
-    def _attach(target):
+    def _attach(target: str) -> None:
         # Record the attachment so /focus can detach us to trigger a switch.
         _set_picker_attached(target)
         try:
@@ -168,11 +203,15 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
 
         click.clear()
         _banner()
-        click.echo(f"  {style('psmux sessions', bold=True)}  {style('(synced with desktop)', dim=True)}")
+        click.echo(
+            f"  {style('psmux sessions', bold=True)}  {style('(synced with desktop)', dim=True)}"
+        )
         _divider()
         click.echo()
         if upload_url:
-            click.echo(f"  {style('WebApp To Upload Images', bold=True)}  {style(upload_url, fg='cyan', bold=True)}")
+            click.echo(
+                f"  {style('WebApp To Upload Images', bold=True)}  {style(upload_url, fg='cyan', bold=True)}"
+            )
             click.echo()
         statuses = _session_statuses(_session_cwds(psmux, sessions))
         for i, sess in enumerate(sessions, 1):
@@ -183,10 +222,16 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         _menu_item("q", "Back", key_fg="yellow")
         click.echo()
 
-        choice = click.prompt(
-            f"  {style('attach to', fg='cyan')}",
-            default="1", show_default=False, prompt_suffix=" ",
-        ).strip().lower()
+        choice = (
+            click.prompt(
+                f"  {style('attach to', fg='cyan')}",
+                default="1",
+                show_default=False,
+                prompt_suffix=" ",
+            )
+            .strip()
+            .lower()
+        )
 
         if choice == "q":
             return

@@ -3,6 +3,7 @@ import shutil
 import subprocess
 import sys
 import time
+
 import pytest
 
 pytestmark = pytest.mark.platform
@@ -11,6 +12,7 @@ pytestmark = pytest.mark.platform
 @pytest.fixture
 def platform():
     from multideck.platform import get_platform
+
     return get_platform()
 
 
@@ -20,7 +22,8 @@ def _has_gui():
     if sys.platform == "darwin":
         r = subprocess.run(
             ["osascript", "-e", 'tell application "System Events" to count processes'],
-            capture_output=True, timeout=10,
+            capture_output=True,
+            timeout=10,
         )
         return r.returncode == 0
     return bool(os.environ.get("DISPLAY"))
@@ -39,8 +42,13 @@ class TestFindWindow:
         elif sys.platform == "darwin":
             try:
                 r = subprocess.run(
-                    ["osascript", "-e", 'tell application "TextEdit" to make new document'],
-                    capture_output=True, timeout=10,
+                    [
+                        "osascript",
+                        "-e",
+                        'tell application "TextEdit" to make new document',
+                    ],
+                    capture_output=True,
+                    timeout=10,
                 )
             except subprocess.TimeoutExpired:
                 pytest.skip("TextEdit timed out in headless CI")
@@ -48,12 +56,24 @@ class TestFindWindow:
                 pytest.skip("TextEdit unavailable in headless CI")
             time.sleep(2)
             yield "Untitled"
-            subprocess.run(["osascript", "-e", 'tell application "TextEdit" to quit'], check=False)
+            subprocess.run(
+                ["osascript", "-e", 'tell application "TextEdit" to quit'], check=False
+            )
         else:
             if not shutil.which("xterm"):
                 pytest.skip("xterm not installed")
             proc = subprocess.Popen(
-                ["xterm", "-T", "test-multideck-find", "-fa", "Monospace", "-fs", "10", "-e", "sleep 30"],
+                [
+                    "xterm",
+                    "-T",
+                    "test-multideck-find",
+                    "-fa",
+                    "Monospace",
+                    "-fs",
+                    "10",
+                    "-e",
+                    "sleep 30",
+                ],
                 stderr=subprocess.DEVNULL,
             )
             time.sleep(3)

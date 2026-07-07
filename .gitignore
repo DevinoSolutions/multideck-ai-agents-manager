@@ -20,6 +20,12 @@ desktop.ini
 .vscode/
 *.log
 
+# Environment variables (copy .env.example → .env and edit)
+.env
+
+# Node (husky hooks)
+node_modules/
+
 # Test / type / lint caches and local virtualenvs
 .venv/
 .coverage
@@ -27,3 +33,10 @@ coverage.xml
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+
+# Never-commit set (CLAUDE.md hard boundaries + local tooling output)
+nul
+vscode_debug.txt
+audit/
+graphify-out/
+.graphify_*

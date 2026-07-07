@@ -3,6 +3,7 @@ was independently defined twice (LS-A-003, duplication). Call sites use
 `style` directly; the repo-wide S -> style rename (E10) retired the earlier
 transitional `S` alias.
 """
+
 from __future__ import annotations
 
 import click

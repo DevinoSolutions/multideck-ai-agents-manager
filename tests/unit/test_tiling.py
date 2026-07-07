@@ -10,6 +10,7 @@ same assertions hold pre-conversion (find_window / inline retry) and post
 (snapshot_windows / multideck.tiling.place_windows). That is the whole
 point: a behavior pin that survives the refactor is the drift tripwire.
 """
+
 from __future__ import annotations
 
 import time
@@ -40,9 +41,13 @@ class _FakeTilePlat:
     def __init__(self, windows=None, monitors=None):
         self._sequence = windows if isinstance(windows, list) else [windows or {}]
         self._snap_calls = 0
-        self._monitors = monitors if monitors is not None else [
-            MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
-        ]
+        self._monitors = (
+            monitors
+            if monitors is not None
+            else [
+                MonitorRect(x=0, y=0, w=1920, h=1080, is_primary=True, scale_factor=1.0)
+            ]
+        )
         self.moved: list[tuple] = []
 
     def set_dpi_aware(self) -> None:
@@ -146,11 +151,23 @@ class TestRunMultideckTilingPin:
 
         fake_platform.launch_terminal = _launch_terminal
 
-        config_path = tmp_config({
-            "layout": {"columns": 2, "rows": 1},
-            "settings": {"tools": {"claude": "claude --continue"}, "defaultTool": "claude"},
-            "projects": [{"path": str(tmp_path), "tool": "claude", "title": "proj", "color": "#336699"}],
-        })
+        config_path = tmp_config(
+            {
+                "layout": {"columns": 2, "rows": 1},
+                "settings": {
+                    "tools": {"claude": "claude --continue"},
+                    "defaultTool": "claude",
+                },
+                "projects": [
+                    {
+                        "path": str(tmp_path),
+                        "tool": "claude",
+                        "title": "proj",
+                        "color": "#336699",
+                    }
+                ],
+            }
+        )
         cfg = load_config(config_path)
 
         rc = run_multideck(cfg, RunOpts())
@@ -196,7 +213,9 @@ class TestPlaceWindows:
         placements = [Placement(key="ghost", mode="exact", slot=_slot())]
 
         with caplog.at_level("WARNING", logger="multideck.launch"):
-            placed, missing = place_windows(fp, placements, on_missing=missing_cb.append)
+            placed, missing = place_windows(
+                fp, placements, on_missing=missing_cb.append
+            )
 
         assert placed == []
         assert missing == placements

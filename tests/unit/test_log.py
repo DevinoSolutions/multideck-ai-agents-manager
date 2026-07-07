@@ -3,6 +3,7 @@
 Cross-platform (stdlib only) -- must run clean on the Linux/macOS/Windows CI
 legs, not just Windows.
 """
+
 from __future__ import annotations
 
 import logging
@@ -38,6 +39,7 @@ class TestGetLogger:
     def test_mkdir_failure_falls_back_to_null_handler(self, monkeypatch):
         def _raise(*a, **k):
             raise OSError("read-only filesystem")
+
         monkeypatch.setattr(Path, "mkdir", _raise)
 
         logger = log.get_logger("upload")

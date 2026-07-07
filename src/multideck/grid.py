@@ -49,12 +49,14 @@ def compute_grid(monitors: list[MonitorRect], cols: int, rows: int) -> list[Tile
         row_edges = [m.y + round(r * m.h / c_rows) for r in range(c_rows + 1)]
         for r in range(c_rows):
             for c in range(c_cols):
-                slots.append(TileSlot(
-                    x=col_edges[c],
-                    y=row_edges[r],
-                    w=col_edges[c + 1] - col_edges[c],
-                    h=row_edges[r + 1] - row_edges[r],
-                    monitor_index=i,
-                    label=f"r{r + 1}c{c + 1}",
-                ))
+                slots.append(
+                    TileSlot(
+                        x=col_edges[c],
+                        y=row_edges[r],
+                        w=col_edges[c + 1] - col_edges[c],
+                        h=row_edges[r + 1] - row_edges[r],
+                        monitor_index=i,
+                        label=f"r{r + 1}c{c + 1}",
+                    )
+                )
     return slots

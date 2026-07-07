@@ -76,14 +76,18 @@ def test_default_launch_psmux_session_raises(platform_cls):
         platform_cls().launch_psmux_session([])
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="WindowsPlatform binds windll at import")
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="WindowsPlatform binds windll at import"
+)
 class TestWindowsCapabilities:
     def test_supports_psmux_true(self):
         from multideck.platform.windows import WindowsPlatform
+
         assert WindowsPlatform().supports_psmux() is True
 
     def test_supports_hotkey_true(self):
         from multideck.platform.windows import WindowsPlatform
+
         assert WindowsPlatform().supports_hotkey() is True
 
 
@@ -91,14 +95,18 @@ class TestWindowsCapabilities:
 # mode is a Literal["exact", "contains"]; a typo'd mode must fail loudly
 # instead of silently reporting "not found".
 
+
 @pytest.mark.parametrize("platform_cls", [LinuxPlatform, MacOSPlatform])
 def test_find_window_unknown_mode_raises(platform_cls):
     with pytest.raises(ValueError):
-        platform_cls().find_window("t", mode="bogus")  # type: ignore[arg-type]
+        platform_cls().find_window("t", mode="bogus")  # type: ignore[arg-type]  # reason: invalid mode passed on purpose to prove it raises
 
 
-@pytest.mark.skipif(sys.platform != "win32", reason="WindowsPlatform binds windll at import")
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="WindowsPlatform binds windll at import"
+)
 def test_find_window_unknown_mode_raises_windows():
     from multideck.platform.windows import WindowsPlatform
+
     with pytest.raises(ValueError):
-        WindowsPlatform().find_window("t", mode="bogus")  # type: ignore[arg-type]
+        WindowsPlatform().find_window("t", mode="bogus")  # type: ignore[arg-type]  # reason: invalid mode passed on purpose to prove it raises

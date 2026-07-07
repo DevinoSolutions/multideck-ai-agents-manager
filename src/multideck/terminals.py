@@ -4,7 +4,6 @@ import functools
 import shutil
 import sys
 
-
 UNIX_TERMINAL_PRIORITY = [
     "kitty",
     "alacritty",
