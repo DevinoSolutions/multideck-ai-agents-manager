@@ -23,6 +23,7 @@ packages = ["src/multideck"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "--strict-markers"
 markers = [
     "platform: platform integration tests (require virtual displays)",
     "e2e: end-to-end tests (full pipeline)",

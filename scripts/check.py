@@ -31,6 +31,10 @@ FAST_STEPS: list[tuple[str, list[str]]] = [
             "src",
             "scripts",
             "--error-on-warning",
+            # windows.py + hotkey.py: win32 ctypes symbols unresolvable under ty
+            # 0.0.56 on any host; excluded = type-checked NOWHERE until the
+            # Session-B fix (ty python-platform or a 2-file mypy backstop) -
+            # see DESIGN.md known debt.
             "--exclude",
             "src/multideck/platform/windows.py",
             "--exclude",
@@ -54,6 +58,7 @@ FULL_ONLY_STEPS: list[tuple[str, list[str]]] = [
             "tests/unit/",
             "--cov=multideck",
             "--cov-report=term-missing",
+            "--cov-fail-under=57",
         ],
     ),
 ]
