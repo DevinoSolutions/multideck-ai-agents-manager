@@ -86,7 +86,8 @@ def main(
     except ValidationError as exc:
         for error in exc.errors():
             loc = ".".join(str(part) for part in error["loc"]).upper()
-            click.echo(f"MULTIDECK_{loc}: {error['msg']}", err=True)
+            prefix = f"MULTIDECK_{loc}: " if loc else ""
+            click.echo(f"{prefix}{error['msg']}", err=True)
         click.echo(
             "Fix the environment variable(s) above (see .env.example).", err=True
         )

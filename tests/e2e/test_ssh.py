@@ -40,11 +40,11 @@ def _path_without_ssh(tmp_bin: str | None = None):
 
 @pytest.fixture
 def ssh_available():
-    port = os.environ.get("MULTIDECK_TEST_SSH_PORT")
-    key = os.environ.get("MULTIDECK_TEST_SSH_KEY")
+    port = os.environ.get("MDTEST_SSH_PORT")
+    key = os.environ.get("MDTEST_SSH_KEY")
     if not port or not key:
         pytest.skip(
-            "SSH test server not configured (set MULTIDECK_TEST_SSH_PORT and MULTIDECK_TEST_SSH_KEY)"
+            "SSH test server not configured (set MDTEST_SSH_PORT and MDTEST_SSH_KEY)"
         )
     return {"port": port, "key": key}
 
