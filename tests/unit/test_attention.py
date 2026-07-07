@@ -8,6 +8,9 @@ time, no platform, no daemon.
 from __future__ import annotations
 
 import json
+import sys
+import types
+import urllib.error
 
 import pytest
 
@@ -219,3 +222,223 @@ class TestDebounce:
 
         assert engine.should_fire("/b", "needs-input") is True
         assert engine.should_fire("/a", "error") is True
+
+
+# --- Renderers ----------------------------------------------------------------
+
+
+def _view(name: str, cwd: str, state: str) -> attention.SessionView:
+    return attention.SessionView(name=name, cwd=cwd, state=state, ts=999.0, age_s=1.0)
+
+
+def _trans(view: attention.SessionView, prev: str | None) -> attention.Transition:
+    return attention.Transition(view=view, prev_state=prev)
+
+
+class TestBadgeRenderer:
+    def _fake(self, windows):
+        from tests.conftest import FakePlatform
+
+        return FakePlatform(windows=windows, supports_attention=True)
+
+    def test_badges_attention_states_and_leaves_foreign_windows(self):
+        fp = self._fake({"md:api": 1, "Notepad": 2})
+        r = attention.BadgeRenderer(fp)
+
+        r.render([_view("api", "/a", "needs-input")], [])
+
+        assert fp.titles_set == [(1, "md:[!] api")]
+
+    def test_idempotent_when_title_already_correct(self):
+        fp = self._fake({"md:[!] api": 1})
+        r = attention.BadgeRenderer(fp)
+
+        r.render([_view("api", "/a", "needs-input")], [])
+        r.render([_view("api", "/a", "needs-input")], [])
+
+        assert fp.titles_set == []
+
+    def test_unbadges_when_state_goes_quiet(self):
+        fp = self._fake({"md:[!] api": 1})
+        r = attention.BadgeRenderer(fp)
+
+        r.render([_view("api", "/a", "working")], [])
+
+        assert fp.titles_set == [(1, "md:api")]
+
+    def test_ignores_md_windows_with_no_session(self):
+        fp = self._fake({"md:api-2": 5})
+        r = attention.BadgeRenderer(fp)
+
+        r.render([_view("api", "/a", "error")], [])
+
+        assert fp.titles_set == []
+
+
+class TestFlashRenderer:
+    def _fake(self, windows):
+        from tests.conftest import FakePlatform
+
+        return FakePlatform(windows=windows, supports_attention=True)
+
+    def test_flashes_on_needs_input_transition(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.FlashRenderer(fp)
+        v = _view("api", "/a", "needs-input")
+
+        r.render([v], [_trans(v, "working")])
+
+        assert fp.flashed == [1]
+
+    def test_no_flash_without_transition(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.FlashRenderer(fp)
+
+        r.render([_view("api", "/a", "needs-input")], [])
+
+        assert fp.flashed == []
+
+    def test_no_flash_for_quiet_transitions(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.FlashRenderer(fp)
+        v = _view("api", "/a", "done")
+
+        r.render([v], [_trans(v, "working")])
+
+        assert fp.flashed == []
+
+
+class TestToastRenderer:
+    def test_missing_winotify_logs_tip_once(self, monkeypatch, caplog):
+        monkeypatch.setitem(sys.modules, "winotify", None)  # import -> ImportError
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.ToastRenderer(engine)
+        v = _view("api", "/a", "needs-input")
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="multideck.attention"):
+            r.render([v], [_trans(v, "working")])
+            r.render([v], [_trans(v, "working")])
+
+        assert caplog.text.count("winotify") == 1
+        assert "multideck[toast]" in caplog.text
+
+    def test_fires_toast_via_fake_winotify(self, monkeypatch):
+        calls: list[dict] = []
+
+        class _FakeNotification:
+            def __init__(self, app_id, title, msg):
+                calls.append({"app_id": app_id, "title": title, "msg": msg})
+
+            def show(self):
+                calls[-1]["shown"] = True
+
+        fake_mod = types.ModuleType("winotify")
+        fake_mod.Notification = _FakeNotification
+        monkeypatch.setitem(sys.modules, "winotify", fake_mod)
+
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.ToastRenderer(engine)
+        v = _view("api", "/a", "needs-input")
+
+        r.render([v], [_trans(v, "working")])
+
+        assert calls == [
+            {
+                "app_id": "multideck",
+                "title": "multideck: api",
+                "msg": "needs-input — waiting on you",
+                "shown": True,
+            }
+        ]
+
+    def test_debounced_within_window(self, monkeypatch):
+        calls: list[str] = []
+
+        class _FakeNotification:
+            def __init__(self, app_id, title, msg):
+                calls.append(title)
+
+            def show(self):
+                pass
+
+        fake_mod = types.ModuleType("winotify")
+        fake_mod.Notification = _FakeNotification
+        monkeypatch.setitem(sys.modules, "winotify", fake_mod)
+
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.ToastRenderer(engine)
+        v = _view("api", "/a", "needs-input")
+
+        r.render([v], [_trans(v, "working")])
+        r.render([v], [_trans(v, "working")])
+
+        assert len(calls) == 1
+
+
+class TestNtfyRenderer:
+    def test_posts_transition_to_topic(self, monkeypatch):
+        seen: list = []
+
+        class _FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            seen.append((req.full_url, req.data, req.get_method()))
+            return _FakeResp()
+
+        monkeypatch.setattr(attention.urllib.request, "urlopen", fake_urlopen)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.NtfyRenderer(engine, "https://ntfy.example.com/topic")
+        v = _view("api", "/a", "error")
+
+        r.render([v], [_trans(v, "working")])
+
+        assert seen == [("https://ntfy.example.com/topic", b"api: error", "POST")]
+
+    def test_failure_logs_warning_and_survives(self, monkeypatch, caplog):
+        def fake_urlopen(req, timeout=None):
+            raise urllib.error.URLError("unreachable")
+
+        monkeypatch.setattr(attention.urllib.request, "urlopen", fake_urlopen)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.NtfyRenderer(engine, "https://ntfy.example.com/topic")
+        v = _view("api", "/a", "needs-input")
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="multideck.attention"):
+            r.render([v], [_trans(v, "working")])
+
+        assert "ntfy push failed" in caplog.text
+
+
+class TestRunAttentionLoop:
+    def test_ticks_render_heartbeat_and_sleep_between(self, state_dir):
+        _write_record(state_dir, "/a", agent_state.WORKING, 999.0)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        rendered: list[int] = []
+        ticked: list[int] = []
+        slept: list[float] = []
+
+        class _Recorder:
+            def render(self, views, transitions):
+                rendered.append(len(views))
+
+        attention.run_attention_loop(
+            engine,
+            [_Recorder()],
+            poll_interval=2.0,
+            max_ticks=2,
+            sleep=slept.append,
+            on_tick=lambda views: ticked.append(len(views)),
+        )
+
+        assert rendered == [1, 1]
+        assert ticked == [1, 1]
+        assert slept == [2.0]  # sleeps BETWEEN ticks, not after the last

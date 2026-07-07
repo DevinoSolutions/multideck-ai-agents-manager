@@ -154,7 +154,11 @@ class TestJson:
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
 
         assert result.exit_code == 0
-        assert json.loads(result.stdout) == {"upload_server": "on", "listener": "off"}
+        assert json.loads(result.stdout) == {
+            "upload_server": "on",
+            "listener": "off",
+            "attention": "off",
+        }
 
     def test_degraded_emits_parseable_status_and_exit_3(
         self, runner, tmp_config, monkeypatch
@@ -169,4 +173,8 @@ class TestJson:
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
 
         assert result.exit_code == 3
-        assert json.loads(result.stdout) == {"upload_server": "dead", "listener": "off"}
+        assert json.loads(result.stdout) == {
+            "upload_server": "dead",
+            "listener": "off",
+            "attention": "off",
+        }

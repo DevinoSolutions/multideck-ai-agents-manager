@@ -150,6 +150,42 @@ class WindowsPlatform(Platform):
         user32.MoveWindow(handle, rect.x, rect.y, rect.w, rect.h, True)
         user32.MoveWindow(handle, rect.x, rect.y, rect.w, rect.h, True)
 
+    def supports_attention_signals(self) -> bool:
+        return True
+
+    def set_window_title(self, handle: object, title: str) -> bool:
+        return bool(user32.SetWindowTextW(handle, title))
+
+    def flash_window(self, handle: object) -> bool:
+        FLASHW_ALL = 0x00000003
+        FLASHW_TIMERNOFG = 0x0000000C  # keep flashing until the window is focused
+
+        class FLASHWINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", ctypes.wintypes.UINT),
+                ("hwnd", ctypes.c_void_p),
+                ("dwFlags", ctypes.wintypes.DWORD),
+                ("uCount", ctypes.wintypes.UINT),
+                ("dwTimeout", ctypes.wintypes.DWORD),
+            ]
+
+        info = FLASHWINFO(
+            cbSize=ctypes.sizeof(FLASHWINFO),
+            hwnd=handle,
+            dwFlags=FLASHW_ALL | FLASHW_TIMERNOFG,
+            uCount=0,
+            dwTimeout=0,
+        )
+        # Returns the window's PREVIOUS flash state, not success -- no signal
+        # worth propagating beyond "the call was made".
+        user32.FlashWindowEx(byref(info))
+        return True
+
+    def focus_window(self, handle: object) -> bool:
+        if user32.IsIconic(handle):
+            user32.ShowWindow(handle, 9)  # SW_RESTORE
+        return bool(user32.SetForegroundWindow(handle))
+
     def launch_terminal(self, opts: TerminalLaunchOpts) -> None:
         args = [
             "wt",

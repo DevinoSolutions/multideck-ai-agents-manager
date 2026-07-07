@@ -97,6 +97,22 @@ class Platform(ABC):
         """True if this platform can run the Alt+V clipboard-image listener."""
         return False
 
+    def supports_attention_signals(self) -> bool:
+        """True if this platform can badge titles / flash / focus windows."""
+        return False
+
+    def set_window_title(self, handle: object, title: str) -> bool:
+        """Rewrite a window's title in place. False = unsupported or failed."""
+        return False
+
+    def flash_window(self, handle: object) -> bool:
+        """Flash the window's taskbar presence to request the user's attention."""
+        return False
+
+    def focus_window(self, handle: object) -> bool:
+        """Restore (if minimized) and bring the window to the foreground."""
+        return False
+
 
 def get_platform() -> Platform:
     if sys.platform == "win32":
