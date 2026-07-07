@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
@@ -21,6 +22,9 @@ from multideck.cli.spawns import _pid_alive
 from multideck.paths import find_config
 from multideck.style import style
 from multideck.titles import get_leaf_name
+
+if TYPE_CHECKING:
+    from multideck.config import MultideckConfig
 
 _PID_PATH = Path.home() / ".multideck" / "attention.pid"
 
@@ -76,11 +80,11 @@ def stop_daemon() -> bool:
     return killed and not _pid_alive(pid)
 
 
-def _name_pairs(config_file: Path) -> list[tuple[str, str]]:
-    """(display name, resolved path) for every enabled project."""
+def name_pairs_from_config(cfg: MultideckConfig) -> list[tuple[str, str]]:
+    """(display name, resolved path) for every enabled project — the input
+    to attention.name_map_from_projects. Shared with status/watch."""
     from multideck.launch import _resolve_path  # heavy subsystem: in-body per policy
 
-    cfg = _load_config_or_exit(config_file)
     pairs: list[tuple[str, str]] = []
     for proj in cfg.projects:
         if not proj.enabled:
@@ -88,6 +92,10 @@ def _name_pairs(config_file: Path) -> list[tuple[str, str]]:
         resolved = _resolve_path(proj.path, cfg.base_dir) or proj.path
         pairs.append((proj.title or get_leaf_name(proj.path), resolved))
     return pairs
+
+
+def _name_pairs(config_file: Path) -> list[tuple[str, str]]:
+    return name_pairs_from_config(_load_config_or_exit(config_file))
 
 
 @main.command("attention")

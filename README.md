@@ -170,7 +170,9 @@ Or skip the menu with flags:
 | `multideck sessions <name>` | Attach directly to a psmux session by name. |
 | `multideck up [--json] [-g <group>]` | Host side: ensure a persistent psmux session per project. |
 | `multideck attach <host>` | From another PC: bring host sessions up over SSH, tile locally, Alt+V uploads. |
-| `multideck status [--json]` | Session + daemon health. Exit codes: 0 healthy, 1 config error, 3 degraded. |
+| `multideck watch` | Live table of every agent session, most-urgent first; press a row number to focus that window. |
+| `multideck attention [-d] [--stop]` | Attention daemon: badges window titles with agent state, flashes the taskbar on needs-input/error, optional toast/ntfy push (`settings.attention`). |
+| `multideck status [--json]` | Session + daemon health (incl. an `agents` state list in `--json`). Exit codes: 0 healthy, 1 config error, 3 degraded. |
 | `multideck down [--all] [--server]` | Stop sessions; `--all`/`--server` also stop the upload server (and listener). |
 | `multideck serve [--host <addr>]` | Run the mobile upload server (see below). |
 | `multideck mobile` | Phone URL + QR code for installing the uploader as a home-screen app. |

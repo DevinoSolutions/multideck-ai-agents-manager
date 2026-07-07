@@ -87,6 +87,20 @@ def _attention_state() -> str:
     return "on" if heartbeat_fresh("attention") else "stale"
 
 
+def _agents_snapshot(cfg: MultideckConfig) -> list[dict[str, object]]:
+    """One-shot engine poll — the scripting face of `multideck watch`."""
+    from multideck import attention  # heavy subsystem: in-body per policy
+    from multideck.cli.attention_cmd import name_pairs_from_config
+
+    engine = attention.AttentionEngine(
+        attention.name_map_from_projects(name_pairs_from_config(cfg))
+    )
+    return [
+        {"name": v.name, "state": v.state, "age_s": round(v.age_s, 1)}
+        for v in engine.poll()
+    ]
+
+
 def _gather_status(cfg: MultideckConfig) -> dict[str, str]:
     return {
         "upload_server": _upload_state(cfg.settings.upload_port),
@@ -190,7 +204,9 @@ def status_cmd(ctx: click.Context, as_json: bool) -> None:
     if as_json:
         cfg = _load_config_or_exit(config_file)
         status = _gather_status(cfg)
-        click.echo(json.dumps(status))
+        payload: dict[str, object] = dict(status)
+        payload["agents"] = _agents_snapshot(cfg)
+        click.echo(json.dumps(payload))
         sys.exit(3 if _is_degraded(status) else 0)
 
     if _render_status(config_file):

@@ -19,6 +19,7 @@ from multideck.cli import (  # noqa: F401  # reason: side-effect import — runs
     spawns,
     status,
     ui,
+    watch,
 )
 from multideck.cli.app import main
 from multideck.cli.attach import (
