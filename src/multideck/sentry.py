@@ -3,12 +3,17 @@
 When MULTIDECK_SENTRY_DSN is unset: zero work, zero imports.
 When set: init with errors-only (no traces), no PII, logging integration
 at ERROR level (captures every logger.exception), excepthook, and
-threading integrations.
+threading integrations. If the DSN is set but sentry-sdk isn't installed,
+this prints an install tip to stderr rather than silently doing nothing.
 
 Import this module in-body at CLI entry, after env validation.
 """
 
 from __future__ import annotations
+
+import logging
+
+import click
 
 
 def init_sentry(dsn: str) -> None:
@@ -16,12 +21,15 @@ def init_sentry(dsn: str) -> None:
     import atexit
 
     try:
-        import logging
-
         import sentry_sdk
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.threading import ThreadingIntegration
     except ImportError:
+        click.echo(
+            "Sentry DSN is set but sentry-sdk is not installed -- error "
+            'reporting is OFF. Install with: pip install -e ".[sentry]"',
+            err=True,
+        )
         return
 
     sentry_sdk.init(
