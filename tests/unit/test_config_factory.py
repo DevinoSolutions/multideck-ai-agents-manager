@@ -116,6 +116,27 @@ class TestMigrateConfigFile:
         after = Path(path).read_bytes()
         assert before == after
 
+    def test_migrate_1_to_2_materializes_attention(self, tmp_config):
+        path = tmp_config(
+            {
+                "version": 1,
+                "settings": {"defaultTool": "claude"},
+                "projects": [{"path": "api", "color": "#111111"}],
+            }
+        )
+
+        assert migrate_config_file(path) is True
+
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data["version"] == SCHEMA_VERSION
+        assert data["settings"]["attention"] == {
+            "badge": True,
+            "flash": True,
+            "toast": False,
+            "ntfy": False,
+        }
+
     def test_migrate_is_idempotent(self, tmp_config):
         path = tmp_config(
             {

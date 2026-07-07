@@ -16,7 +16,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from multideck.log import HEARTBEAT_INTERVAL, get_logger, write_heartbeat
-from multideck.titles import MD_TITLE_PREFIX
+from multideck.titles import parse_title
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -195,9 +195,8 @@ def _dib_to_bmp(dib: bytearray) -> bytes | None:
 
 
 def project_from_title(title: str) -> str | None:
-    if title.startswith(MD_TITLE_PREFIX):
-        return title[len(MD_TITLE_PREFIX) :]
-    return None
+    parsed = parse_title(title)
+    return parsed[0] if parsed is not None else None
 
 
 def upload_image(server_url: str, project: str, image_data: bytes) -> bool:

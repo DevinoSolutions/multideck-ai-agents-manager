@@ -74,6 +74,30 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
         "Map of tool names to shell commands. Add custom tools here.",
     ),
     ("ssh.shell", "string", '`"bash -lc"`', "Shell wrapper for remote SSH commands."),
+    (
+        "attention.badge",
+        "boolean",
+        "`true`",
+        "Attention daemon rewrites window titles with a state badge (`md:[!] name`).",
+    ),
+    (
+        "attention.flash",
+        "boolean",
+        "`true`",
+        "Flash the taskbar button when a session needs input or errors.",
+    ),
+    (
+        "attention.toast",
+        "boolean",
+        "`false`",
+        "Windows toast on needs-input/error (requires the optional `winotify` extra).",
+    ),
+    (
+        "attention.ntfy",
+        "boolean",
+        "`false`",
+        "Push needs-input/error to an ntfy topic (set `MULTIDECK_NTFY_TOPIC`).",
+    ),
 ]
 
 

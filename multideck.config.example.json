@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "baseDir": "C:/Users/you/projects",
   "layout": {
     "columns": 2,
@@ -15,6 +15,12 @@
     "uploadPort": 8033,
     "ssh": {
       "shell": "bash -lc"
+    },
+    "attention": {
+      "badge": true,
+      "flash": true,
+      "toast": false,
+      "ntfy": false
     },
     "tools": {
       "claude": "claude --continue",

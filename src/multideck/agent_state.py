@@ -92,3 +92,28 @@ def state_for(cwd: str, max_age: float | None = None) -> dict[str, object] | Non
     if max_age is not None and (time.time() - ts_num) > max_age:
         return None
     return d
+
+
+def norm_cwd(path: str) -> str:
+    """Public path canonicalizer — how config project paths map onto the
+    ``cwd`` field stored in state records (attention engine, watch)."""
+    return _norm(path)
+
+
+def all_states() -> list[dict[str, object]]:
+    """Every readable state record in the store. Corrupt or non-object files
+    are skipped — a half-written or vandalized record must never take the
+    attention loop down with it."""
+    records: list[dict[str, object]] = []
+    try:
+        paths = sorted(STATE_DIR.glob("*.json"))
+    except OSError:
+        return records
+    for p in paths:
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(d, dict):
+            records.append(d)
+    return records

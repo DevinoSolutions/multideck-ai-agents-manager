@@ -23,7 +23,7 @@ from multideck.platform import (
 from multideck.sessions import AGENT_TOOLS, build_resume_command
 from multideck.style import style
 from multideck.tiling import Placement, place_windows
-from multideck.titles import generate_titles, get_leaf_name
+from multideck.titles import generate_titles, get_leaf_name, make_title, parse_title
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -233,6 +233,11 @@ def _launch_projects(
     win_snapshot = plat.snapshot_windows()
 
     def _is_running(key: str, mode: str) -> bool:
+        if mode == "md-name":
+            return any(
+                (parsed := parse_title(t)) is not None and parsed[0] == key
+                for t in win_snapshot
+            )
         if mode == "exact":
             return key in win_snapshot
         return any(key.lower() in t.lower() for t in win_snapshot)
@@ -386,13 +391,13 @@ def _dispatch_cli_agent_project(
                     )
                 )
                 psmux_colors[wname] = proj.color
-        running = is_running(win_title, "exact")
+        running = is_running(win_title, "md-name")
         if not running and not opts.dry_run and not proj_psmux:
             if is_remote:
                 resolved_dir = proj.remote_path or proj.path
                 plat.launch_terminal(
                     TerminalLaunchOpts(
-                        title=win_title,
+                        title=make_title(win_title),
                         cwd=os.getcwd(),
                         command=cmd,
                         color=proj.color,
@@ -408,7 +413,7 @@ def _dispatch_cli_agent_project(
                     continue
                 plat.launch_terminal(
                     TerminalLaunchOpts(
-                        title=win_title,
+                        title=make_title(win_title),
                         cwd=resolved_dir,
                         command=cmd,
                         color=proj.color,
@@ -419,7 +424,7 @@ def _dispatch_cli_agent_project(
         if not running:
             new_count += 1
         targets.append(
-            _Target(name=win_title, key=win_title, mode="exact", is_new=not running)
+            _Target(name=win_title, key=win_title, mode="md-name", is_new=not running)
         )
         _log_project(
             win_title, tool, running, proj.host, happy=use_happy, psmux=proj_psmux
@@ -439,7 +444,9 @@ def _start_psmux_and_upload(
         plat.launch_psmux_session(psmux_windows)
         for pw in psmux_windows:
             plat.attach_psmux(
-                pw.window_name, pw.window_name, psmux_colors.get(pw.window_name)
+                pw.window_name,
+                make_title(pw.window_name),
+                psmux_colors.get(pw.window_name),
             )
         click.echo(
             f"\n  {style('#', fg='yellow')} psmux: {style(str(len(psmux_windows)), fg='yellow', bold=True)} sessions"

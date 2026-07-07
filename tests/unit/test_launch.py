@@ -85,7 +85,7 @@ class TestRunMultideckCharacterization:
 
         assert rc == 0
         assert len(fake_platform.launched_terminals) == 1
-        assert fake_platform.launched_terminals[0].title == "proj"
+        assert fake_platform.launched_terminals[0].title == "md:proj"
         assert len(fake_platform.moved) == 1
         assert fake_platform.moved[0][1] == Rect(x=0, y=0, w=960, h=1080)
 
@@ -155,7 +155,9 @@ class TestRunMultideckCharacterization:
         assert "No projects in group" in capsys.readouterr().err
 
     def test_retile_all_places_running_window(self, monkeypatch, tmp_path, fake_sleep):
-        fp = FakePlatform(windows={"proj": 555})
+        # Live windows carry md:-grammar titles (possibly badged); resolution
+        # goes through parse_title, so a badge must not break retiling.
+        fp = FakePlatform(windows={"md:[!] proj": 555})
         monkeypatch.setattr("multideck.launch.get_platform", lambda: fp)
         cfg = MultideckConfig(
             projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
@@ -213,8 +215,8 @@ class TestStartPsmuxAndUpload:
 
         assert fp.launched_psmux == windows
         assert len(fp.attached_psmux) == 2
-        assert fp.attached_psmux[0] == ("a", "a", "#111111", None)
-        assert fp.attached_psmux[1] == ("b", "b", None, None)
+        assert fp.attached_psmux[0] == ("a", "md:a", "#111111", None)
+        assert fp.attached_psmux[1] == ("b", "md:b", None, None)
 
     def test_noop_on_dry_run(self):
         fp = FakePlatform(supports_psmux=True)
@@ -248,7 +250,7 @@ class TestLaunchProjects:
         result = _launch_projects(fp, cfg, RunOpts(), projects, None)
 
         assert result.targets == [
-            _Target(name="proj", key="proj", mode="exact", is_new=True)
+            _Target(name="proj", key="proj", mode="md-name", is_new=True)
         ]
         assert len(result.psmux_windows) == 1
         assert result.psmux_windows[0].window_name == "proj"
@@ -412,8 +414,10 @@ class TestDispatchCliAgentProject:
 
         assert delta == 1
         assert len(fp.launched_terminals) == 1
-        assert fp.launched_terminals[0].title == "proj"
-        assert targets == [_Target(name="proj", key="proj", mode="exact", is_new=True)]
+        assert fp.launched_terminals[0].title == "md:proj"
+        assert targets == [
+            _Target(name="proj", key="proj", mode="md-name", is_new=True)
+        ]
         assert psmux_windows == []
 
     def test_psmux_collects_instead_of_launching(self, tmp_path, fake_sleep):

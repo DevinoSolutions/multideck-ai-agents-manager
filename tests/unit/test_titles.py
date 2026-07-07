@@ -2,7 +2,13 @@ import sys
 
 import pytest
 
-from multideck.titles import MD_TITLE_PREFIX, generate_titles, get_leaf_name
+from multideck.titles import (
+    MD_TITLE_PREFIX,
+    generate_titles,
+    get_leaf_name,
+    make_title,
+    parse_title,
+)
 
 
 class TestGetLeafName:
@@ -56,30 +62,52 @@ class TestGenerateTitles:
         assert titles == ["a", "b"]
 
 
-class TestMdTitlePrefixContract:
-    """Producer (cli/attach.py) and consumer (hotkey.py) must agree on the
-    md: title prefix, or Alt+V session recognition silently breaks for newly
-    created sessions. Pinned here so a change to either side fails loudly.
-    """
+class TestTitleGrammar:
+    """make_title/parse_title are the single title grammar every producer
+    (launch, attach, the attention badge renderer) and consumer (hotkey,
+    tiling) shares. A change to either side must fail loudly here."""
 
     def test_prefix_value(self):
         assert MD_TITLE_PREFIX == "md:"
 
+    def test_plain_title_round_trips(self):
+        assert make_title("api") == "md:api"
+        assert parse_title("md:api") == ("api", None)
+
+    @pytest.mark.parametrize(
+        ("state", "glyph"),
+        [("needs-input", "!"), ("error", "x"), ("done", "+")],
+    )
+    def test_badged_title_round_trips(self, state, glyph):
+        title = make_title("api", state)
+        assert title == f"md:[{glyph}] api"
+        assert parse_title(title) == ("api", state)
+
+    def test_quiet_states_render_unbadged(self):
+        assert make_title("api", "working") == "md:api"
+        assert make_title("api", "idle") == "md:api"
+
+    def test_non_md_titles_parse_to_none(self):
+        assert parse_title("Windows Terminal") is None
+        assert parse_title("api") is None
+        assert parse_title("") is None
+
+    def test_unknown_glyph_is_part_of_the_name(self):
+        # A newer writer's badge must degrade readably, not vanish.
+        assert parse_title("md:[?] api") == ("[?] api", None)
+
+    def test_hostile_shapes_do_not_crash(self):
+        assert parse_title("md:") == ("", None)
+        assert parse_title("md:[") == ("[", None)
+        assert parse_title("md:[!]") == ("[!]", None)
+        assert parse_title("md:[!] ") == ("", "needs-input")
+
     @pytest.mark.skipif(
         sys.platform != "win32",
         reason="hotkey is Windows-only (ImportError off-Windows)",
     )
-    def test_hotkey_imports_same_object(self):
-        from multideck import hotkey
+    def test_hotkey_consumes_the_grammar(self):
+        from multideck.hotkey import project_from_title
 
-        assert hotkey.MD_TITLE_PREFIX is MD_TITLE_PREFIX
-
-    @pytest.mark.skipif(
-        sys.platform != "win32",
-        reason="hotkey is Windows-only (ImportError off-Windows)",
-    )
-    def test_producers_agree_with_consumer(self):
-        from multideck.hotkey import MD_TITLE_PREFIX as consumer_prefix
-
-        name = "my-project"
-        assert f"md:{name}" == f"{consumer_prefix}{name}"
+        assert project_from_title(make_title("my-project")) == "my-project"
+        assert project_from_title(make_title("my-project", "error")) == "my-project"

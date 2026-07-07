@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from multideck.config import ConfigError, MultideckConfig, load_config
+from multideck.config import SCHEMA_VERSION, ConfigError, MultideckConfig, load_config
 from multideck.init_config import generate_config, scan_for_projects
 
 
@@ -213,10 +213,46 @@ class TestLoadConfig:
         assert "migrate" in capsys.readouterr().err
 
     def test_version_at_current_schema_warns_nothing(self, capsys, tmp_config):
-        path = tmp_config({"version": 1, "projects": [{"path": "api"}]})
+        path = tmp_config({"version": SCHEMA_VERSION, "projects": [{"path": "api"}]})
         cfg = load_config(path)
-        assert cfg.version == 1
+        assert cfg.version == SCHEMA_VERSION
         assert capsys.readouterr().err == ""
+
+
+class TestAttentionSettings:
+    def test_defaults_when_absent(self, tmp_config):
+        path = tmp_config({"version": SCHEMA_VERSION, "projects": [{"path": "api"}]})
+        att = load_config(path).settings.attention
+        assert (att.badge, att.flash, att.toast, att.ntfy) == (
+            True,
+            True,
+            False,
+            False,
+        )
+
+    def test_explicit_values_parse(self, tmp_config):
+        path = tmp_config(
+            {
+                "version": SCHEMA_VERSION,
+                "settings": {"attention": {"badge": False, "toast": True}},
+                "projects": [{"path": "api"}],
+            }
+        )
+        att = load_config(path).settings.attention
+        assert att.badge is False
+        assert att.flash is True  # unspecified keys keep their defaults
+        assert att.toast is True
+
+    def test_unknown_attention_key_warns(self, capsys, tmp_config):
+        path = tmp_config(
+            {
+                "version": SCHEMA_VERSION,
+                "settings": {"attention": {"bogus": True}},
+                "projects": [{"path": "api"}],
+            }
+        )
+        load_config(path)
+        assert "settings.attention.bogus" in capsys.readouterr().err
 
 
 class TestPathResolution:
