@@ -400,9 +400,9 @@ where `RUF100` is the unused-noqa rot guard). The gate lints `src` + `tests` +
 `scripts`; the only sanctioned softening is `[tool.ruff.lint.per-file-ignores]`,
 one reason-comment per code — nothing from `src/` goes there. Changing the
 `select`/`ignore` list requires a written reason in this file, per house rule.
-`ANN401` (no `Any` in annotations) is intentionally deferred to the ty +
-mypy-strict `Any` purge, so `Any` elimination happens once under a validating
-type checker rather than twice; the final ruleset is identical either way.
+`ANN401` (no `Any` in annotations) is active in the `select` list now, not
+deferred — `Any` elimination happens under ty, the sole type checker (mypy
+was retired; see Key Decisions).
 
 **Help-snapshot tests normalize one verified Click difference rather than
 pinning a Click version.** `tests/unit/test_cli_structure.py::_normalize_help`
@@ -424,6 +424,27 @@ checked with literal membership tests repeated in `launch.py`,
 consolidation debt (an `IDE_TOOLS` registry is the natural sibling to
 `AGENT_TOOLS`), listed below because it's real — not an oversight nobody
 noticed, and not something to hot-fix in an unrelated PR.
+
+**mypy retired 2026-07-06 (commit `719d17e`); ty is now the sole type
+checker.** Running two type checkers meant two suppression dialects for the
+same class of finding — a `# type: ignore` here, a `# ty: ignore` there, for
+what is conceptually one problem. Consolidating onto `ty==0.0.56` keeps that
+surface singular. The accepted risk is depending on a pre-1.0 checker with
+known false positives (documented in CLAUDE.md's gotchas); revisit this
+decision once ty ships a 1.0 release.
+
+**Known gap: `platform/windows.py` and `hotkey.py` are excluded from ty and
+are therefore type-checked nowhere.** Both files rely on win32 ctypes
+bindings that ty 0.0.56 cannot resolve regardless of which host OS runs the
+check (see the two permanent `--exclude` flags in `scripts/check.py`, each
+now carrying a reason comment). Closing this gap is Session-B work: either a
+ty `python-platform` configuration or a small, scoped 2-file mypy backstop
+covering just these two files.
+
+**`tests/` is not yet under ty.** The gate's ty step only checks `src` and
+`scripts` (`ty check src scripts ...`) — `tests/` is staged, tracked future
+work (spec §6.5), not an oversight; ruff (lint + format) does cover `tests/`
+today.
 
 ## 3. Known debt
 
@@ -619,10 +640,11 @@ launched as-is, like `cursor-agent`/`agy`), only step 3 applies: one
 
 ## 5. How this document stays honest
 
-Three mechanisms: **the gate** (`scripts/check.py`: ruff + compileall + mypy
-+ unit tests with coverage, required green before every commit, so nothing
-described here as tested or type-checked silently stops being so);
-**pins-first discipline** (every relocation described above as "unchanged"
+Three mechanisms: **the gate** (`scripts/check.py`: ruff (lint + `format
+--check`) + custom lint MD001-MD004 + ty strict + compileall + vulture +
+pytest unit tests with a coverage floor, required green before every commit,
+so nothing described here as tested or type-checked silently stops being
+so); **pins-first discipline** (every relocation described above as "unchanged"
 is backed by a characterization test written *before* the change — 
 "unchanged" is a checked claim); and the standing rule that **a mismatch
 between this document and the code is itself a defect** — fix the document

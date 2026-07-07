@@ -297,7 +297,7 @@ pip install -e ".[dev]"
 pytest tests/unit/ -q                        # fast, safe anywhere
 pytest tests/e2e/ -m "e2e and not needs_ssh" # subprocess dry-runs; no SSH server needed
 pytest tests/platform/ -v -m platform        # real monitors/terminals — CI-grade env only
-python scripts/check.py                      # the quality gate: ruff + compileall + mypy + pytest w/ coverage
+python scripts/check.py                      # the quality gate: ruff + custom lint + ty + compileall + vulture + pytest w/ coverage
 ```
 
 A bare `pytest` collects **all** tiers, including tests that enumerate real monitors, launch real terminals, and expect an SSH server — run those only in an environment set up like CI (`.github/workflows/ci.yml`). `scripts/check.py` is the repo's commit gate; it must pass before every commit.

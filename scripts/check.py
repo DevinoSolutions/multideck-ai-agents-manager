@@ -5,7 +5,8 @@
     uv run python scripts/check.py --fast   # pre-commit: seconds, not minutes
 
 Runs on the current interpreter; CI additionally runs `compileall` across the
-full 3.10-3.14 matrix (see ci.yml). Exits non-zero on the first failing step.
+full 3.10-3.14 matrix (see ci.yml). Runs every step and exits non-zero if any
+step failed.
 """
 
 from __future__ import annotations
