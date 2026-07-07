@@ -112,3 +112,22 @@ class TestCliFailsFastOnBadEnv:
         assert result.exit_code == 1
         assert "MULTIDECK_TOTALLY_UNKNOWN" in result.output
         assert "Traceback" not in result.output
+
+    def test_unknown_var_in_dotenv_names_it_exactly_once(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """R5-01: a .env extra_forbidden error carries the full MULTIDECK_*
+        key in loc (unlike field errors, which carry the bare field name) —
+        the formatter must not double the prefix."""
+        _clear_multideck_env(monkeypatch)
+        monkeypatch.setattr(env_module, "_cached_env", None)
+
+        runner = CliRunner()
+        with runner.isolated_filesystem():
+            Path(".env").write_text("MULTIDECK_FOO=1\n", encoding="utf-8")
+            result = runner.invoke(cli.main, [])
+
+        assert result.exit_code == 1
+        assert "MULTIDECK_FOO: " in result.output
+        assert "MULTIDECK_MULTIDECK" not in result.output
+        assert "Traceback" not in result.output

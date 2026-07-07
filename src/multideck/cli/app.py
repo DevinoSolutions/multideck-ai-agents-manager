@@ -85,8 +85,13 @@ def main(
         env = get_env()
     except ValidationError as exc:
         for error in exc.errors():
+            # loc is a bare field name for field errors, but the full
+            # MULTIDECK_* key for extra_forbidden errors sourced from a
+            # .env file — only prepend the prefix when it isn't already there.
             loc = ".".join(str(part) for part in error["loc"]).upper()
-            prefix = f"MULTIDECK_{loc}: " if loc else ""
+            if loc and not loc.startswith("MULTIDECK_"):
+                loc = f"MULTIDECK_{loc}"
+            prefix = f"{loc}: " if loc else ""
             click.echo(f"{prefix}{error['msg']}", err=True)
         click.echo(
             "Fix the environment variable(s) above (see .env.example).", err=True
