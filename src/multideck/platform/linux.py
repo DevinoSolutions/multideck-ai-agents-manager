@@ -6,7 +6,10 @@ import subprocess
 from typing import Literal
 
 from multideck.grid import MonitorRect, Rect
+from multideck.log import get_logger
 from multideck.platform import Platform, TerminalLaunchOpts, VSCodeLaunchOpts
+
+_log = get_logger("platform")
 
 
 class LinuxPlatform(Platform):
@@ -25,6 +28,11 @@ class LinuxPlatform(Platform):
                 check=False,
             )
         except subprocess.TimeoutExpired:
+            _log.warning(
+                "list_monitors: %s timed out after %ss; treating as no monitors",
+                "xrandr",
+                10,
+            )
             return []
         monitors: list[MonitorRect] = []
         is_first = True
