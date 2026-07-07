@@ -474,6 +474,14 @@ it once its flake rate is known.
 
 Ordered roughly by how likely a future change is to collide with it.
 
+**Title badges are ambient state, not guaranteed state (2026-07-07):** the
+attention daemon's `BadgeRenderer` rewrites window titles via
+`SetWindowTextW`, but shells/terminals with their own title logic (OSC 0/2
+sequences, Windows Terminal tab-title settings) can overwrite a badge at any
+time. The flash (and toast/ntfy when enabled) are the *reliable* signals;
+the badge is best-effort ambience. Revisit only if a real terminal in the
+fleet proves badge-hostile in practice.
+
 **CI multi-monitor emulation is unavailable (R4-05 → documented limitation,
 2026-07-07):** hosted GitHub runners do not materialize `xrandr --setmonitor`
 VIRTUAL monitors under Xvfb, so the platform/e2e CI legs exercise windowing

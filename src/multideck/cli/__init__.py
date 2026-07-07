@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from multideck.cli import (  # noqa: F401  # reason: side-effect import — runs each module's @main.command registration
     attach,
+    attention_cmd,
     config_editor,
     config_io,
     daemons,

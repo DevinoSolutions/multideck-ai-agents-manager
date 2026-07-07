@@ -81,7 +81,13 @@ class FakePlatform(Platform):
     windows/monitors/psmux. Reused by E5 to unit-test the decomposed
     run_multideck pieces (see tests/unit/test_platform_contract.py)."""
 
-    def __init__(self, monitors=None, windows=None, supports_psmux: bool = False):
+    def __init__(
+        self,
+        monitors=None,
+        windows=None,
+        supports_psmux: bool = False,
+        supports_attention: bool = False,
+    ):
         self._monitors = (
             monitors
             if monitors is not None
@@ -91,6 +97,7 @@ class FakePlatform(Platform):
         )
         self._windows = windows if windows is not None else {}
         self._supports_psmux = supports_psmux
+        self._supports_attention = supports_attention
         self._next_handle = 1
         self.dpi_aware_calls = 0
         self.launched_terminals: list[TerminalLaunchOpts] = []
@@ -98,6 +105,9 @@ class FakePlatform(Platform):
         self.launched_psmux: list[PsmuxWindowOpts] = []
         self.attached_psmux: list[tuple] = []
         self.moved: list[tuple] = []
+        self.titles_set: list[tuple] = []
+        self.flashed: list = []
+        self.focused: list = []
 
     def _register_window(self, title: str) -> None:
         """Simulate the launched window becoming visible, so a launch->tile
@@ -136,6 +146,28 @@ class FakePlatform(Platform):
 
     def supports_psmux(self) -> bool:
         return self._supports_psmux
+
+    def supports_attention_signals(self) -> bool:
+        return self._supports_attention
+
+    def set_window_title(self, handle, title: str) -> bool:
+        self.titles_set.append((handle, title))
+        # Mirror the retitle into the snapshot so the next tick sees it --
+        # what a real window manager does, and what idempotency tests need.
+        for t, h in list(self._windows.items()):
+            if h == handle:
+                del self._windows[t]
+                self._windows[title] = h
+                break
+        return True
+
+    def flash_window(self, handle) -> bool:
+        self.flashed.append(handle)
+        return True
+
+    def focus_window(self, handle) -> bool:
+        self.focused.append(handle)
+        return True
 
 
 @pytest.fixture

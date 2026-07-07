@@ -78,15 +78,29 @@ def _listener_state() -> str:
     return "on" if heartbeat_fresh("hotkey") else "stale"
 
 
+def _attention_state() -> str:
+    """ "on" (heartbeat fresh) / "stale" (pid alive, heartbeat expired) / "off"."""
+    from multideck.cli.attention_cmd import daemon_pid
+
+    if not daemon_pid():
+        return "off"
+    return "on" if heartbeat_fresh("attention") else "stale"
+
+
 def _gather_status(cfg: MultideckConfig) -> dict[str, str]:
     return {
         "upload_server": _upload_state(cfg.settings.upload_port),
         "listener": _listener_state(),
+        "attention": _attention_state(),
     }
 
 
 def _is_degraded(status: dict[str, str]) -> bool:
-    return status["upload_server"] == "dead" or status["listener"] == "stale"
+    return (
+        status["upload_server"] == "dead"
+        or status["listener"] == "stale"
+        or status["attention"] == "stale"
+    )
 
 
 def _render_status(config_file: Path) -> bool:
@@ -146,6 +160,15 @@ def _render_status(config_file: Path) -> bool:
     }
     click.echo(
         f"  {style('Alt+V listener', bold=True)}   {listener_labels[status['listener']]}"
+    )
+
+    attention_labels = {
+        "on": style("ON", fg="green", bold=True),
+        "stale": style("STALE  (heartbeat expired)", fg="red", bold=True),
+        "off": style("off  (start with `multideck attention -d`)", dim=True),
+    }
+    click.echo(
+        f"  {style('Attention', bold=True)}        {attention_labels[status['attention']]}"
     )
 
     return _is_degraded(status)
@@ -243,6 +266,14 @@ def down_cmd(
             click.echo(f"  {style('+', fg='green')} Stopped the Alt+V listener.")
         else:
             click.echo(f"  {style('-', dim=True)} Alt+V listener was not running.")
+
+    if do_all:
+        from multideck.cli.attention_cmd import stop_daemon
+
+        if stop_daemon():
+            click.echo(f"  {style('+', fg='green')} Stopped the attention daemon.")
+        else:
+            click.echo(f"  {style('-', dim=True)} Attention daemon was not running.")
 
 
 def _menu_status(config_file: Path) -> None:
