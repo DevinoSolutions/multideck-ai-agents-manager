@@ -16,6 +16,15 @@ class TestProjectFromTitle:
         assert project_from_title("md:marka") == "marka"
         assert project_from_title("md:upup") == "upup"
 
+    def test_extracts_name_through_state_badge(self):
+        # The attention daemon rewrites titles as "md:[!] name" etc.; upload
+        # routing must keep working while a window is badged.
+        from multideck.hotkey import project_from_title
+
+        assert project_from_title("md:[!] marka") == "marka"
+        assert project_from_title("md:[x] upup") == "upup"
+        assert project_from_title("md:[+] api") == "api"
+
     def test_returns_none_for_non_md(self):
         from multideck.hotkey import project_from_title
 
@@ -23,10 +32,14 @@ class TestProjectFromTitle:
         assert project_from_title("claude") is None
         assert project_from_title("") is None
 
-    def test_prefix_value(self):
-        from multideck.hotkey import MD_TITLE_PREFIX
+    def test_agrees_with_the_titles_grammar(self):
+        # hotkey consumes what titles.make_title produces — the round-trip
+        # contract that replaced the old shared-MD_TITLE_PREFIX pin.
+        from multideck.hotkey import project_from_title
+        from multideck.titles import make_title
 
-        assert MD_TITLE_PREFIX == "md:"
+        for state in (None, "needs-input", "error", "done"):
+            assert project_from_title(make_title("proj", state)) == "proj"
 
 
 class TestAltKeyDetection:

@@ -444,6 +444,19 @@ regresses pre-1.0, fall back to a scoped 2-file mypy backstop.**
 work (spec §6.5), not an oversight; ruff (lint + format) does cover `tests/`
 today.
 
+**All multideck windows share one title grammar (2026-07-07, 0-users breaking
+change): `md:` + optional `[!]`/`[x]`/`[+]` badge + name.** Before this, only
+the attach path emitted `md:` titles and every consumer did its own string
+work (hotkey stripped the prefix, tiling matched exact full titles) — which
+made in-place title *rewrites* (the attention daemon's state badges)
+impossible without breaking resolution. Now `titles.make_title` is the only
+producer and `titles.parse_title` the only consumer (hotkey routing, tiling's
+`md-name` mode), so a badge in the title is invisible to matching. The badge
+sits at the FRONT because taskbars truncate title tails; working/idle
+deliberately render unbadged (quiet title = nothing needs you). psmux session
+names remain unprefixed — the grammar applies at the window-title boundary
+only. Constraint: project names must not start with the `[?] ` shape.
+
 **Dependency scanning is a separate advisory workflow, not a quality-gate
 step (added 2026-07-07).** `.github/workflows/dependency-audit.yml` runs a
 pinned `pip-audit==2.10.1` over the exported `uv.lock` closure whenever

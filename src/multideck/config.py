@@ -12,7 +12,7 @@ import click
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 DEFAULT_TOOLS: dict[str, str] = {
     "claude": "claude --continue",
@@ -38,6 +38,20 @@ class SSHConfig:
 
 
 @dataclass
+class AttentionSettings:
+    """Which attention renderers the daemon runs (see multideck.attention).
+
+    toast/ntfy default off: toast needs the optional winotify extra and ntfy
+    needs a MULTIDECK_NTFY_TOPIC env var — off-by-default keeps a fresh
+    config from warning about capabilities that aren't wired yet."""
+
+    badge: bool = True
+    flash: bool = True
+    toast: bool = False
+    ntfy: bool = False
+
+
+@dataclass
 class Settings:
     default_tool: str = "claude"
     settle_seconds: int = 3
@@ -47,6 +61,7 @@ class Settings:
     upload_server: bool = False
     upload_port: int = 8033
     ssh: SSHConfig = field(default_factory=SSHConfig)
+    attention: AttentionSettings = field(default_factory=AttentionSettings)
     tools: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_TOOLS))
 
 
@@ -149,6 +164,15 @@ def _parse_ssh(raw: dict[str, object]) -> SSHConfig:
     return SSHConfig(shell=_str(raw, "shell", "bash -lc"))
 
 
+def _parse_attention(raw: dict[str, object]) -> AttentionSettings:
+    return AttentionSettings(
+        badge=_bool(raw, "badge", True),
+        flash=_bool(raw, "flash", True),
+        toast=_bool(raw, "toast", False),
+        ntfy=_bool(raw, "ntfy", False),
+    )
+
+
 def _parse_settings(raw: dict[str, object] | None) -> Settings:
     if not raw:
         return Settings()
@@ -161,6 +185,7 @@ def _parse_settings(raw: dict[str, object] | None) -> Settings:
         upload_server=_bool(raw, "uploadServer", False),
         upload_port=_int(raw, "uploadPort", 8033),
         ssh=_parse_ssh(_obj(raw, "ssh")),
+        attention=_parse_attention(_obj(raw, "attention")),
         tools=_tools(raw, DEFAULT_TOOLS),
     )
 
@@ -182,6 +207,12 @@ def settings_to_dict(settings: Settings) -> dict[str, object]:
         "uploadServer": settings.upload_server,
         "uploadPort": settings.upload_port,
         "ssh": {"shell": settings.ssh.shell},
+        "attention": {
+            "badge": settings.attention.badge,
+            "flash": settings.attention.flash,
+            "toast": settings.attention.toast,
+            "ntfy": settings.attention.ntfy,
+        },
         "tools": dict(settings.tools),
     }
 
@@ -287,9 +318,11 @@ _ALLOWED_SETTINGS_KEYS = {
     "uploadServer",
     "uploadPort",
     "ssh",
+    "attention",
     "tools",
 }
 _ALLOWED_SSH_KEYS = {"shell"}
+_ALLOWED_ATTENTION_KEYS = {"badge", "flash", "toast", "ntfy"}
 _ALLOWED_PROJECT_KEYS = {
     "path",
     "group",
@@ -346,6 +379,9 @@ def load_config(path: str) -> MultideckConfig:
     settings_raw = _obj(raw, "settings")
     _warn_unknown_keys(settings_raw, _ALLOWED_SETTINGS_KEYS, "settings")
     _warn_unknown_keys(_obj(settings_raw, "ssh"), _ALLOWED_SSH_KEYS, "settings.ssh")
+    _warn_unknown_keys(
+        _obj(settings_raw, "attention"), _ALLOWED_ATTENTION_KEYS, "settings.attention"
+    )
 
     projects: list[ProjectConfig] = []
     for i, p in enumerate(projects_raw):
@@ -369,8 +405,26 @@ def _migrate_0_to_1(raw: dict[str, object]) -> dict[str, object]:
     return raw
 
 
+def _migrate_1_to_2(raw: dict[str, object]) -> dict[str, object]:
+    """v2 adds settings.attention — absent keys parse to their defaults, so
+    the migration only stamps the version and materializes the section so
+    hand-editors can see the knobs exist."""
+    raw = dict(raw)
+    settings = raw.get("settings")
+    if isinstance(settings, dict) and "attention" not in settings:
+        settings["attention"] = {  # ty: ignore[invalid-assignment]  # reason: isinstance guard; ty 0.0.56 invariance gap
+            "badge": True,
+            "flash": True,
+            "toast": False,
+            "ntfy": False,
+        }
+    raw["version"] = 2
+    return raw
+
+
 _MIGRATIONS: dict[int, Callable[[dict[str, object]], dict[str, object]]] = {
-    0: _migrate_0_to_1
+    0: _migrate_0_to_1,
+    1: _migrate_1_to_2,
 }
 
 

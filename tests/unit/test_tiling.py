@@ -252,3 +252,26 @@ class TestPlaceWindows:
         place_windows(fp, placements)
 
         assert len(fake_sleep) == RETRY_SECS_CONTAINS
+
+    def test_md_name_lookup_matches_badged_and_plain_titles(self, fake_sleep):
+        fp = _FakeTilePlat(windows={"md:[!] api": 7, "md:web": 8, "api": 9})
+        badged = Placement(key="api", mode="md-name", slot=_slot())
+        plain = Placement(key="web", mode="md-name", slot=_slot())
+
+        placed, missing = place_windows(fp, [badged, plain])
+
+        assert {p.key for p in placed} == {"api", "web"}
+        assert missing == []
+        # The bare "api" window (handle 9) is NOT multideck's; the badged
+        # md: window (handle 7) must win the "api" placement.
+        assert (7, Rect(x=0, y=0, w=960, h=1080)) in fp.moved
+        assert all(h != 9 for h, _ in fp.moved)
+
+    def test_md_name_requires_exact_name_not_substring(self, fake_sleep):
+        fp = _FakeTilePlat(windows={"md:api-v2": 7})
+        placements = [Placement(key="api", mode="md-name", slot=_slot())]
+
+        placed, missing = place_windows(fp, placements)
+
+        assert placed == []
+        assert [p.key for p in missing] == ["api"]

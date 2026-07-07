@@ -25,7 +25,7 @@ from multideck.log import get_logger
 from multideck.paths import find_config
 from multideck.style import style
 from multideck.tiling import Placement, place_windows
-from multideck.titles import MD_TITLE_PREFIX
+from multideck.titles import make_title, parse_title
 
 
 def _as_session_list(raw: list[object]) -> list[dict[str, object]]:
@@ -97,7 +97,9 @@ def _ssh_json(
 
 
 def _tile_titles(titles: list[str]) -> None:
-    """Tile already-opened windows (matched by exact title) into the monitor grid."""
+    """Tile already-opened windows into the monitor grid. md:-grammar titles
+    are matched by parsed name (badge-proof); anything else falls back to an
+    exact-title match."""
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
 
     plat = get_platform()
@@ -112,10 +114,13 @@ def _tile_titles(titles: list[str]) -> None:
     slots = compute_grid(monitors, 2, 1)
 
     click.echo(f"\n  {style('#', fg='cyan')} Tiling {len(titles)} window(s)...")
-    placements = [
-        Placement(name=title, key=title, mode="exact", slot=slots[i % len(slots)])
-        for i, title in enumerate(titles)
-    ]
+    placements = []
+    for i, title in enumerate(titles):
+        parsed = parse_title(title)
+        key, mode = (parsed[0], "md-name") if parsed is not None else (title, "exact")
+        placements.append(
+            Placement(name=title, key=key, mode=mode, slot=slots[i % len(slots)])
+        )
     place_windows(
         plat,
         placements,
@@ -260,7 +265,7 @@ def _attach_flow(
     titles: list[str] = []
     for sess in up:
         name = _as_str(sess.get("name"))
-        title = f"{MD_TITLE_PREFIX}{name}"
+        title = make_title(name)
         click.echo(f"  {style('o', fg='cyan')} {title}")
         subprocess.Popen(
             [
@@ -328,7 +333,7 @@ def _attach_nomux(target: str, status: dict[str, object]) -> None:
 
     titles: list[str] = []
     for p in projects:
-        title = f"{MD_TITLE_PREFIX}{_as_str(p.get('name'))}"
+        title = make_title(_as_str(p.get("name")))
         remote_dir = _as_str(p.get("resolved")) or _as_str(p.get("path"))
         cmd = _as_str(p.get("cmd")) or "claude --continue"
         click.echo(f"  {style('o', fg='cyan')} {title}")

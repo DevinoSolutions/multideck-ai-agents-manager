@@ -36,6 +36,7 @@ class MultideckEnv(BaseSettings):
     model_config = {"env_prefix": "MULTIDECK_", "env_file": ".env", "extra": "forbid"}
 
     sentry_dsn: HttpUrl | None = None
+    ntfy_topic: HttpUrl | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] | None = None
 
     @model_validator(mode="after")

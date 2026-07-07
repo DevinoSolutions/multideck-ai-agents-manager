@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from multideck.grid import Rect, TileSlot
 from multideck.log import get_logger
+from multideck.titles import parse_title
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,8 +27,8 @@ POLL_INTERVAL_S = 1.0
 
 @dataclass
 class Placement:
-    key: str  # match string: exact title, or substring for contains
-    mode: str  # "exact" | "contains"
+    key: str  # match string: bare name for md-name, exact title, or substring for contains
+    mode: str  # "md-name" | "exact" | "contains"
     slot: TileSlot  # destination rect (carries monitor_index for screen labelling)
     name: str = ""  # display label for callbacks; defaults to key
 
@@ -37,6 +38,14 @@ class Placement:
 
 
 def _lookup(snap: dict[str, object], key: str, mode: str) -> object | None:
+    if mode == "md-name":
+        # Match multideck-owned windows by parsed name so a state badge in
+        # the title (titles.make_title) never breaks resolution.
+        for title, handle in snap.items():
+            parsed = parse_title(title)
+            if parsed is not None and parsed[0] == key:
+                return handle
+        return None
     if mode == "exact":
         return snap.get(key)
     key_lower = key.lower()

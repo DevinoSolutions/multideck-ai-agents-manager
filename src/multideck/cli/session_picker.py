@@ -67,8 +67,10 @@ def _session_statuses(cwds: dict[str, str]) -> dict[str, str]:
     notify, ...) -- ground truth, not terminal scraping. A staleness guard keeps
     a session killed mid-turn from showing 'working...' forever."""
     from multideck import agent_state  # heavy subsystem: in-body per policy
+    from multideck.attention import (
+        STALENESS_S as stale,  # heavy subsystem: in-body per policy
+    )
 
-    stale = {agent_state.WORKING: 1800, agent_state.NEEDS_INPUT: 3600}
     out: dict[str, str] = {}
     for sock, cwd in cwds.items():
         rec = agent_state.state_for(cwd) if cwd else None
