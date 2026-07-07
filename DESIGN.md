@@ -448,6 +448,14 @@ today.
 
 Ordered roughly by how likely a future change is to collide with it.
 
+**CI multi-monitor emulation is unavailable (R4-05 → documented limitation,
+2026-07-07):** hosted GitHub runners do not materialize `xrandr --setmonitor`
+VIRTUAL monitors under Xvfb, so the platform/e2e CI legs exercise windowing
+against a single screen; `setup-virtual-displays` emits a loud `::warning`
+when this happens instead of pretending otherwise. Multi-monitor placement
+logic is covered by `FakePlatform` unit tests only. A real multi-monitor CI
+story (self-hosted runner or a working RANDR emulation) is next-cycle work.
+
 **Nine findings carried open into the next audit cycle** (deliberately
 triaged out of the fix pass that produced this document, not overlooked):
 
