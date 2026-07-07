@@ -1,5 +1,8 @@
 title = "multideck gitleaks config"
 
+[extend]
+useDefault = true
+
 [[rules]]
 id = "tailscale-magdns-hostname"
 description = "Tailscale MagicDNS hostname (contains the tailnet name)"

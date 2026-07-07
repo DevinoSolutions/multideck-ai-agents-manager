@@ -14,6 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secret-scan:
+    name: "Secret Scan (gitleaks)"
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@dcedce43c6f43de0b836d1fe38946645c9c638dc  # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   unit-tests:
     name: "Unit Tests (py${{ matrix.python }}, ${{ matrix.os }})"
     timeout-minutes: 15
@@ -84,10 +96,15 @@ jobs:
       - name: Run e2e tests
         run: pytest tests/e2e/ -v -m "e2e and not needs_ssh"
       - name: Setup SSH server
+        id: ssh_setup
         uses: ./.github/actions/setup-ssh-server
         continue-on-error: true
       - name: Run e2e tests (SSH)
+        if: steps.ssh_setup.outcome == 'success'
         run: pytest tests/e2e/ -v -m "e2e and needs_ssh"
+      - name: Warn on skipped SSH e2e tests
+        if: steps.ssh_setup.outcome != 'success'
+        run: echo "::warning title=SSH e2e skipped::setup-ssh-server failed; needs_ssh tests did not run"
 
   wheel-install-smoke:
     name: "Wheel Build + Install Smoke Test"
