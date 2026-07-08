@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import click
 
+from multideck.config import load_config
 from multideck.style import style
 
 if TYPE_CHECKING:
@@ -97,14 +98,21 @@ def _sublist(d: dict[str, object], key: str) -> list[object]:
     return fresh
 
 
-def _load_config_or_exit(config_file: Path) -> MultideckConfig:
-    from multideck.config import load_config  # heavy subsystem: in-body per policy
-
+def _load_config_or_exit(
+    config_file: Path, *, as_json: bool = False
+) -> MultideckConfig:
+    """Load the typed config or exit 1. ``as_json`` emits a machine-readable
+    ``{"ok": false, "error": ...}`` envelope on stdout instead of a plain-text
+    ``Error:`` line on stderr -- so a ``--json`` caller (status/up) always gets
+    JSON on the config-error path, never a stderr diagnostic (NF-S3-005)."""
     try:
         return load_config(str(config_file))
     except (
         ValueError,
         FileNotFoundError,
     ) as e:  # ConfigError <: ValueError (E7 S2d) -> caught
-        click.echo(f"Error: {e}", err=True)
+        if as_json:
+            click.echo(json.dumps({"ok": False, "error": str(e)}))
+        else:
+            click.echo(f"Error: {e}", err=True)
         sys.exit(1)

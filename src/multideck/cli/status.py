@@ -2,9 +2,10 @@
 `_menu_status`) and the shutdown commands. Carries E3's `_gather_status`/
 `_upload_state`/`_listener_state`/`_health_check` observability additions and
 the `status --json`/exit-3 contract, plus E4's remaining 2 supports_hotkey()
-gates (_listener_state, down_cmd). NF-S3-001 (recorded finding, carried
-verbatim): _menu_down echoes "Stopped upload server." unconditionally after
-calling stop_server(), regardless of its return value.
+gates (_listener_state, down_cmd). NF-S3-001 resolved (pass-2): _menu_down
+now branches on stop_server()'s return value like down_cmd; and status --json
+routes an invalid-config load through _load_config_or_exit's as_json mode, so
+it emits a JSON error envelope instead of a stderr line (NF-S3-005).
 """
 
 from __future__ import annotations
@@ -208,7 +209,7 @@ def status_cmd(ctx: click.Context, as_json: bool) -> None:
         sys.exit(1)
 
     if as_json:
-        cfg = _load_config_or_exit(config_file)
+        cfg = _load_config_or_exit(config_file, as_json=True)
         status = _gather_status(cfg)
         payload: dict[str, object] = dict(status)
         payload["agents"] = _agents_snapshot(cfg)
@@ -433,7 +434,13 @@ def _menu_down(config_file: Path) -> None:
                 stop_server,  # heavy subsystem: in-body per policy
             )
 
-            stop_server(cfg.settings.upload_port)
-            click.echo(f"  {style('+', fg='green')} Stopped upload server.")
+            if stop_server(cfg.settings.upload_port):
+                click.echo(
+                    f"  {style('+', fg='green')} Stopped upload server on port {cfg.settings.upload_port}."
+                )
+            else:
+                click.echo(
+                    f"  {style('-', dim=True)} Upload server not running, or could not be stopped (see logs)."
+                )
     click.echo()
     click.pause(info=f"  {style('press any key to return', dim=True)}")

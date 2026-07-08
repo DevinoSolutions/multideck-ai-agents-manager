@@ -57,6 +57,47 @@ def test_docs_runs(runner):
     assert "# multideck Configuration Reference" in result.output
 
 
+def test_docs_example_config_tools_match_default_tools(runner):
+    # NF-S3-003: the generated example config's tools block is derived from the
+    # factory defaults, so it lists exactly DEFAULT_TOOLS -- no fabricated tool
+    # (the old hand-rolled "aider") that is absent from DEFAULT_TOOLS.
+    from multideck.config import DEFAULT_TOOLS
+
+    result = runner.invoke(main, ["docs"])
+    assert result.exit_code == 0
+    out = result.output
+    fence = "```json"
+    start = out.index("## Example config")
+    blk_start = out.index(fence, start) + len(fence)
+    blk_end = out.index("```", blk_start)
+    example = json.loads(out[blk_start:blk_end])
+    assert set(example["settings"]["tools"]) == set(DEFAULT_TOOLS)
+    assert "aider" not in example["settings"]["tools"]
+
+
+def test_init_base_dir_reports_skipped_dirs(runner, tmp_path, monkeypatch):
+    # P2-06: --init --base-dir surfaces a one-line count of directories skipped
+    # because they were unreadable during the scan.
+    root = tmp_path / "root"
+    (root / "locked").mkdir(parents=True)
+    (root / "ok" / ".git").mkdir(parents=True)
+    real_iterdir = Path.iterdir
+
+    def fake_iterdir(self):
+        if self.name == "locked":
+            raise PermissionError("denied")
+        return real_iterdir(self)
+
+    monkeypatch.setattr(Path, "iterdir", fake_iterdir)
+    cfgpath = tmp_path / "out.json"
+    result = runner.invoke(
+        main,
+        ["--config", str(cfgpath), "--init", "--base-dir", str(root), "--force"],
+    )
+    assert result.exit_code == 0
+    assert "Skipped 1 unreadable" in result.output
+
+
 def test_config_show(runner, tmp_config):
     cfgpath = tmp_config({"baseDir": "/tmp/x", "projects": [{"path": "myapp"}]})
     result = runner.invoke(main, ["--config", cfgpath, "config", "show"])

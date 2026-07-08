@@ -16,10 +16,15 @@ from collections import Counter
 import click
 
 from multideck.cli.app import main
-from multideck.cli.config_io import _as_dict, _as_str, _project_dicts
+from multideck.cli.config_io import (
+    _as_dict,
+    _as_str,
+    _load_config_or_exit,
+    _project_dicts,
+)
 from multideck.cli.spawns import _maybe_start_hotkey, _maybe_start_upload_server
 from multideck.cli.ui import _banner, _divider, _print_session_overview
-from multideck.config import load_config
+from multideck.config import DEFAULT_TOOLS
 from multideck.grid import compute_grid
 from multideck.log import get_logger
 from multideck.paths import find_config
@@ -335,7 +340,8 @@ def _attach_nomux(target: str, status: dict[str, object]) -> None:
     for p in projects:
         title = make_title(_as_str(p.get("name")))
         remote_dir = _as_str(p.get("resolved")) or _as_str(p.get("path"))
-        cmd = _as_str(p.get("cmd")) or "claude --continue"
+        # NF-S3-004: fall back to the registry default, never a drifting literal.
+        cmd = _as_str(p.get("cmd")) or DEFAULT_TOOLS["claude"]
         click.echo(f"  {style('o', fg='cyan')} {title}")
         subprocess.Popen(
             [
@@ -382,14 +388,9 @@ def _attach_nomux(target: str, status: dict[str, object]) -> None:
 def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -> None:
     """Ensure a persistent psmux session per project (host side of `attach`)."""
     config_file = find_config(ctx.obj.get("config_path"))
-    try:
-        cfg = load_config(str(config_file))
-    except (ValueError, FileNotFoundError) as e:
-        if as_json:
-            click.echo(json.dumps({"error": str(e)}))
-        else:
-            click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
+    # Shared as_json config-error envelope (NF-S3-005): --json always gets JSON,
+    # never a stderr Error: line. Folds the former up_cmd raw-loader exception.
+    cfg = _load_config_or_exit(config_file, as_json=as_json)
 
     from multideck.launch import (  # heavy subsystem: in-body per policy
         bring_up_psmux,
