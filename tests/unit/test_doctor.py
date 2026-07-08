@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from pathlib import Path
 
 from multideck import cli
@@ -107,12 +108,50 @@ class TestCheckMonitors:
         assert _check_monitors()[0] == OK
 
 
+def _tailscale_cp(returncode: int, stdout: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.CompletedProcess(
+        args=["tailscale", "ip", "-4"], returncode=returncode, stdout=stdout, stderr=""
+    )
+
+
 class TestCheckTailscale:
+    """Characterization pins: the four WARN/OK wordings are user-facing and
+    must survive the tailnet-leaf dedup (P1-01) byte-for-byte. Mocks sit at
+    the shutil.which / subprocess.run boundary so the pins hold whether the
+    probe lives in doctor.py or in a shared leaf."""
+
     def test_missing_binary_warns_loopback_only(self, monkeypatch):
         monkeypatch.setattr(doctor.shutil, "which", lambda _cmd: None)
         status, detail = _check_tailscale()
         assert status == WARN
         assert "loopback" in detail
+
+    def test_present_but_not_responding_warns(self, monkeypatch):
+        monkeypatch.setattr(doctor.shutil, "which", lambda _cmd: "/usr/bin/tailscale")
+
+        def _hang(*_a: object, **_k: object) -> subprocess.CompletedProcess[str]:
+            raise subprocess.TimeoutExpired(cmd="tailscale", timeout=5)
+
+        monkeypatch.setattr(subprocess, "run", _hang)
+        status, detail = _check_tailscale()
+        assert (status, detail) == (WARN, "tailscale present but not responding")
+
+    def test_up_reports_first_ipv4(self, monkeypatch):
+        monkeypatch.setattr(doctor.shutil, "which", lambda _cmd: "/usr/bin/tailscale")
+        monkeypatch.setattr(
+            subprocess, "run", lambda *a, **k: _tailscale_cp(0, "100.64.1.2\nfd7a::2\n")
+        )
+        status, detail = _check_tailscale()
+        assert (status, detail) == (OK, "tailscale up (100.64.1.2)")
+
+    def test_no_ipv4_warns_logged_out_or_down(self, monkeypatch):
+        monkeypatch.setattr(doctor.shutil, "which", lambda _cmd: "/usr/bin/tailscale")
+        monkeypatch.setattr(subprocess, "run", lambda *a, **k: _tailscale_cp(1, ""))
+        status, detail = _check_tailscale()
+        assert (status, detail) == (
+            WARN,
+            "tailscale installed but no IPv4 (logged out or down?)",
+        )
 
 
 class TestCheckUploadPort:

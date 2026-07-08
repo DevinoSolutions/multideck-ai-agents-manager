@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 import sys
 import tempfile
 from typing import TYPE_CHECKING
 
 import click
 
-from multideck import log
+from multideck import log, tailnet
 from multideck.cli.app import main
 from multideck.paths import find_config
 from multideck.style import style
@@ -161,20 +160,13 @@ def _check_state_dir() -> CheckResult:
 
 
 def _check_tailscale() -> CheckResult:
-    if shutil.which("tailscale") is None:
+    p = tailnet.probe()
+    if not p.on_path:
         return (WARN, "tailscale not on PATH — upload server binds loopback only")
-    try:
-        r = subprocess.run(
-            ["tailscale", "ip", "-4"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
+    if not p.responding:
         return (WARN, "tailscale present but not responding")
-    if r.returncode == 0 and r.stdout.strip():
-        return (OK, f"tailscale up ({r.stdout.strip().splitlines()[0]})")
+    if p.ip:
+        return (OK, f"tailscale up ({p.ip})")
     return (WARN, "tailscale installed but no IPv4 (logged out or down?)")
 
 

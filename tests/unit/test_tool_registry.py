@@ -1,12 +1,21 @@
-"""Unit tests for the AGENT_TOOLS registry (R8, F-CT-001): the registry's
-shape, HAPPY_AGENTS' derivation from it, and the "adding a tool is one dict
-entry" proof that is the whole point of the refactor.
+"""Unit tests for the AGENT_TOOLS registry (R8, F-CT-001) and its IDE mirror
+IDE_COMMANDS/IDE_TOOLS (P1-03, REC-F4): each registry's shape, the names
+derived from it, and the "adding a tool is one dict entry" proofs that are
+the whole point of the refactors.
 """
 
 from __future__ import annotations
 
 from multideck.launch import HAPPY_AGENTS
-from multideck.sessions import AGENT_TOOLS, AgentTool, build_resume_command
+from multideck.sessions import (
+    AGENT_TOOLS,
+    IDE_COMMANDS,
+    IDE_TOOLS,
+    AgentTool,
+    build_resume_command,
+    ide_command,
+    is_ide_tool,
+)
 
 
 class TestRegistryShape:
@@ -48,3 +57,40 @@ class TestOneEditExtensionProof:
         assert minimal.resume_command is None
         assert minimal.happy is False
         assert minimal.multi_window is False
+
+
+class TestIdeRegistryShape:
+    def test_registered_ide_tools(self):
+        assert frozenset({"code", "vscode", "cursor"}) == IDE_TOOLS
+
+    def test_ide_tools_derives_from_the_command_dict(self):
+        assert frozenset(IDE_COMMANDS) == IDE_TOOLS
+
+    def test_vscode_is_an_alias_for_code(self):
+        assert ide_command("code") == "code"
+        assert ide_command("vscode") == "code"
+        assert ide_command("cursor") == "cursor"
+
+    def test_ide_and_agent_registries_are_disjoint(self):
+        assert not IDE_TOOLS & set(AGENT_TOOLS)
+
+    def test_non_ide_tools_do_not_match(self):
+        assert not is_ide_tool("claude")
+        assert not is_ide_tool("")
+
+
+class TestIdeOneEditExtensionProof:
+    def test_adding_an_ide_is_one_dict_entry(self, monkeypatch):
+        """Adding IDE support is one new IDE_COMMANDS entry -- membership
+        (is_ide_tool) and command mapping (ide_command) need no code change
+        to pick it up."""
+        extended = dict(IDE_COMMANDS, zed="zed")
+        monkeypatch.setattr("multideck.sessions.IDE_COMMANDS", extended)
+
+        assert is_ide_tool("zed")
+        assert ide_command("zed") == "zed"
+
+    def test_unknown_tool_falls_back_to_code_command(self):
+        """Pins the historical launch-path fallback: any tool that reaches
+        ide_command without a registry entry opens with plain `code`."""
+        assert ide_command("ghost-ide") == "code"

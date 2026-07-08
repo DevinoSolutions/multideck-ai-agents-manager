@@ -226,7 +226,7 @@ class TestListenerLifecycle:
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
-        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: pid == 4321)
+        monkeypatch.setattr(hotkey, "pid_alive", lambda pid: pid == 4321)
         assert hotkey.listener_pid() == 4321
 
     def test_pid_clears_stale_file(self, tmp_path, monkeypatch):
@@ -235,7 +235,7 @@ class TestListenerLifecycle:
         p = tmp_path / "hotkey.pid"
         p.write_text("999999")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
-        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: False)
+        monkeypatch.setattr(hotkey, "pid_alive", lambda pid: False)
         assert hotkey.listener_pid() is None
         assert not p.exists()  # stale pid file is cleaned up
 
@@ -247,7 +247,7 @@ class TestListenerLifecycle:
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
-        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: True)
+        monkeypatch.setattr(hotkey, "pid_alive", lambda pid: True)
         calls = []
 
         class _Result:
@@ -278,7 +278,7 @@ class TestListenerLifecycle:
         p = tmp_path / "hotkey.pid"
         p.write_text("4321")
         monkeypatch.setattr(hotkey, "_PID_PATH", p)
-        monkeypatch.setattr(hotkey, "_pid_alive", lambda pid: True)
+        monkeypatch.setattr(hotkey, "pid_alive", lambda pid: True)
 
         class _Result:
             returncode = 1

@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import getpass
 import re
-import subprocess
 from pathlib import Path
 
 import click
 
+from multideck import tailnet
 from multideck.cli.app import main
 from multideck.cli.spawns import (
     _maybe_start_upload_server,
@@ -36,18 +36,7 @@ def termius_cmd(
     """
 
     if not host:
-        try:
-            result = subprocess.run(
-                ["tailscale", "ip", "-4"],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                host = result.stdout.strip().splitlines()[0]
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            pass
+        host = tailnet.ip4()
         if not host:
             host = click.prompt(
                 f"  {style('SSH host/IP', fg='cyan')}", default="localhost"
@@ -120,7 +109,6 @@ def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> 
     Claude session via psmux send-keys.
     """
     from multideck.upload_server import (  # heavy subsystem: in-body per policy
-        _tailscale_ip,
         run_server,
     )
 
@@ -134,7 +122,7 @@ def serve_cmd(ctx: click.Context, port: int, host: str | None, ensure: bool) -> 
         click.echo(f"upload server ensured on port {port}")
         return
 
-    ip = _tailscale_ip()
+    ip = tailnet.ip4()
 
     _banner()
     click.echo(

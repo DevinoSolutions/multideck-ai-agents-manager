@@ -19,7 +19,7 @@ import click
 
 from multideck.cli.app import main
 from multideck.cli.config_io import _as_str, _load_config_or_exit
-from multideck.cli.spawns import _maybe_start_upload_server, _pid_alive, _probe_port
+from multideck.cli.spawns import _maybe_start_upload_server, _probe_port
 from multideck.cli.ui import (
     _banner,
     _divider,
@@ -29,6 +29,7 @@ from multideck.cli.ui import (
 )
 from multideck.log import heartbeat_fresh
 from multideck.paths import find_config
+from multideck.procs import pid_alive
 from multideck.style import style
 
 if TYPE_CHECKING:
@@ -57,7 +58,7 @@ def _upload_state(port: int) -> str:
         server_pid,  # heavy subsystem: in-body per policy
     )
 
-    if _probe_port(port) or _pid_alive(server_pid(port)):
+    if _probe_port(port) or pid_alive(server_pid(port)):
         return "dead"
     return "off"
 

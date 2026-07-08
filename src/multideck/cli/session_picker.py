@@ -24,6 +24,7 @@ from multideck.cli.config_io import (
 from multideck.cli.spawns import _running_upload_port, _tailnet_host
 from multideck.cli.ui import _banner, _divider, _menu_item
 from multideck.paths import find_config
+from multideck.sessions import is_ide_tool
 from multideck.style import style
 
 
@@ -144,7 +145,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
         if not p.get("enabled", True):
             continue
         tool = p.get("tool", default_tool)
-        if tool in ("code", "vscode", "cursor"):
+        if isinstance(tool, str) and is_ide_tool(tool):
             continue
         title = p.get("title")
         proj_name = (

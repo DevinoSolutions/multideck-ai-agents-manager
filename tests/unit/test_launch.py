@@ -8,6 +8,7 @@ touching any OS-specific window/monitor API.
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -18,6 +19,7 @@ from multideck.launch import (
     RunOpts,
     _dispatch_cli_agent_project,
     _dispatch_ide_project,
+    _expand_base_dir,
     _launch_projects,
     _LaunchResult,
     _prepare_grid,
@@ -25,6 +27,7 @@ from multideck.launch import (
     _start_psmux_and_upload,
     _Target,
     _tile_targets,
+    eligible_psmux_projects,
     run_multideck,
 )
 from multideck.platform import PsmuxWindowOpts
@@ -480,3 +483,30 @@ class TestDispatchCliAgentProject:
         assert delta == 0
         assert targets == []
         assert "unknown tool" in capsys.readouterr().out
+
+
+class TestBaseDirExpansion:
+    """Characterization pin (P1-08), written before the _expand_base_dir
+    extraction: a configured base_dir gets env vars expanded and forward
+    slashes normalized to os.sep before project paths resolve against it."""
+
+    def test_expand_base_dir_normalizes_env_and_separators(self, monkeypatch):
+        monkeypatch.setenv("MD_TEST_BASE", "base")
+        assert _expand_base_dir("$MD_TEST_BASE/x") == "base" + os.sep + "x"
+
+    def test_expand_base_dir_expands_user(self):
+        assert not _expand_base_dir("~/x").startswith("~")
+
+    def test_eligible_psmux_projects_expands_base_dir(self, tmp_path, monkeypatch):
+        proj_dir = tmp_path / "sub" / "proj"
+        proj_dir.mkdir(parents=True)
+        monkeypatch.setenv("MD_TEST_BASE", str(tmp_path))
+        cfg = MultideckConfig(
+            projects=[ProjectConfig(path="proj")],
+            base_dir="$MD_TEST_BASE/sub",
+        )
+
+        out = eligible_psmux_projects(cfg)
+
+        assert len(out) == 1
+        assert out[0]["resolved"] == str(proj_dir)
