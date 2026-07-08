@@ -14,7 +14,7 @@ import json
 import sys
 from pathlib import Path
 
-from multideck import cli
+from multideck import agent_state, cli
 
 
 def _no_psmux(monkeypatch):
@@ -49,7 +49,8 @@ class TestNoConfig:
             cli.main, ["--config", str(tmp_path / "nope.json"), "status", "--json"]
         )
         assert result.exit_code == 1
-        assert json.loads(result.stdout) == {"error": "No config found."}
+        # P3-04: one error envelope shape across every CLI JSON surface.
+        assert json.loads(result.stdout) == {"ok": False, "error": "No config found."}
 
 
 class TestJsonInvalidConfig:
@@ -170,7 +171,9 @@ class TestJson:
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
 
         assert result.exit_code == 0
+        # P3-04: `ok: true` on success; snake_case state keys (P3-03).
         assert json.loads(result.stdout) == {
+            "ok": True,
             "upload_server": "on",
             "listener": "off",
             "attention": "off",
@@ -190,7 +193,10 @@ class TestJson:
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
 
         assert result.exit_code == 3
+        # `ok: true` even when degraded -- degraded is exit 3 + the state fields,
+        # not the error discriminator (only config errors carry ok: false).
         assert json.loads(result.stdout) == {
+            "ok": True,
             "upload_server": "dead",
             "listener": "off",
             "attention": "off",
@@ -298,3 +304,53 @@ class TestMenuDownServerReport:
         out = capsys.readouterr().out
         assert "could not be stopped" in out
         assert "Stopped upload server on port" not in out
+
+
+class TestAgentsRollup:
+    """WIN (P6): the human status report summarizes how many agents are waiting
+    on you when any session is needs-input/error; silent otherwise."""
+
+    def test_rollup_counts_waiting_agents(
+        self, runner, tmp_config, tmp_path, monkeypatch
+    ):
+        _no_psmux(monkeypatch)
+        _both_off(monkeypatch)
+        api = tmp_path / "api"
+        api.mkdir()
+        agent_state.write_state(str(api), agent_state.NEEDS_INPUT)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 0
+        assert "1 agent(s) need you" in result.output
+        assert "api" in result.output
+
+    def test_error_state_also_counts(self, runner, tmp_config, tmp_path, monkeypatch):
+        _no_psmux(monkeypatch)
+        _both_off(monkeypatch)
+        for name in ("api", "web"):
+            d = tmp_path / name
+            d.mkdir()
+            agent_state.write_state(str(d), agent_state.ERROR)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 0
+        assert "2 agent(s) need you" in result.output
+
+    def test_no_rollup_when_nothing_waiting(
+        self, runner, tmp_config, tmp_path, monkeypatch
+    ):
+        _no_psmux(monkeypatch)
+        _both_off(monkeypatch)
+        api = tmp_path / "api"
+        api.mkdir()
+        agent_state.write_state(str(api), agent_state.WORKING)  # not waiting
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 0
+        assert "need you" not in result.output

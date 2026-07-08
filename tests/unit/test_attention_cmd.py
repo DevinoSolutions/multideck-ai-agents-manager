@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 
 from multideck import agent_state, cli, log
 from multideck.cli import attention_cmd
@@ -60,9 +62,50 @@ class TestForeground:
         )
 
         assert result.exit_code == 0, result.output
-        assert fp.titles_set == [(1, "md:[!] api")]
+        # Badge on the tick, then stripped back to a clean title when the loop
+        # ends — inverse-transience on daemon stop (P6-06).
+        assert fp.titles_set == [(1, "md:[!] api"), (1, "md:api")]
         assert log.heartbeat_age(attention_cmd.HEARTBEAT_NAME) is not None
         assert not pid_file.exists()  # cleaned up on exit
+
+    def test_daemon_start_ages_out_stale_records(
+        self, runner, monkeypatch, tmp_path, tmp_config
+    ):
+        # P6-04: the daemon sweeps records past the retention TTL on start.
+        proj_dir = tmp_path / "api"
+        proj_dir.mkdir()
+        state_dir = tmp_path / "state"
+        state_dir.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", state_dir)
+        monkeypatch.setattr(agent_state, "_swept_this_process", False)
+        # a dead session long past the TTL (its end-hook never fired) ...
+        old_cwd = "/gone/project"
+        old_file = state_dir / f"{agent_state._key(old_cwd)}.json"
+        old_file.write_text(
+            json.dumps(
+                {
+                    "state": agent_state.DONE,
+                    "ts": time.time() - agent_state.STATE_TTL_S - 100,
+                    "cwd": agent_state.norm_cwd(old_cwd),
+                }
+            ),
+            encoding="utf-8",
+        )
+        # ... plus a fresh record that must survive
+        agent_state.write_state(str(proj_dir), agent_state.NEEDS_INPUT)
+
+        fp = FakePlatform(windows={"md:api": 1}, supports_attention=True)
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        monkeypatch.setattr(attention_cmd, "_PID_PATH", tmp_path / "attention.pid")
+
+        config_path = tmp_config({"version": 2, "projects": [{"path": str(proj_dir)}]})
+        result = runner.invoke(
+            cli.main, ["--config", config_path, "attention", "--ticks", "1"]
+        )
+
+        assert result.exit_code == 0, result.output
+        assert not old_file.exists()  # aged out on daemon start
+        assert agent_state.state_for(str(proj_dir)) is not None  # fresh survives
 
     def test_unsupported_platform_with_only_ambient_renderers_exits_1(
         self, runner, monkeypatch, tmp_path, tmp_config

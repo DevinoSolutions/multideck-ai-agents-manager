@@ -345,8 +345,20 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 </html>"""
 
 
+def _sid(session: dict[str, object]) -> str:
+    """The psmux socket id for a session dict: the explicit ``session`` key when
+    present, else ``name`` (P3-01 -- older callers passed only the sanitized
+    name under ``name``)."""
+    return str(session.get("session") or session.get("name") or "")
+
+
 def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
-    """Eligible psmux session names from config -- no psmux calls, so it's fast."""
+    """Eligible psmux sessions from config -- no psmux calls, so it's fast.
+
+    Each entry carries ``name`` (raw display name) and ``session`` (the
+    psmux-sanitized socket id): P3-01 keeps these distinct so ``/api/sessions``
+    consumers can correlate by display name while the wire keeps using the id.
+    """
     config_file = find_config(config_path)
     if not config_file.exists():
         return []
@@ -361,7 +373,13 @@ def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
         if isinstance(tool, str) and is_ide_tool(tool):
             continue
         proj_name = p.get("title") or Path(p["path"]).name
-        out.append({"name": _psmux_session_name(proj_name), "path": p["path"]})
+        out.append(
+            {
+                "name": proj_name,
+                "session": _psmux_session_name(proj_name),
+                "path": p["path"],
+            }
+        )
     return out
 
 
@@ -388,7 +406,7 @@ def _discover_sessions(config_path: str | None) -> list[dict[str, object]]:
         return []
     with ThreadPoolExecutor(max_workers=16) as pool:
         flags = list(
-            pool.map(lambda c: _psmux_window_alive(psmux, str(c["name"])), candidates)
+            pool.map(lambda c: _psmux_window_alive(psmux, _sid(c)), candidates)
         )
     return [c for c, ok in zip(candidates, flags, strict=True) if ok]
 
@@ -396,8 +414,11 @@ def _discover_sessions(config_path: str | None) -> list[dict[str, object]]:
 def _build_html(sessions: list[dict[str, object]]) -> str:
     pills = []
     for s in sessions:
-        name_esc = html.escape(str(s["name"]))
-        pills.append(f'<div class="pill" data-name="{name_esc}">{name_esc}</div>')
+        # data-name (the wire value posted back as `project`) is the psmux
+        # socket id; the pill text shows the same id (P3-01 keeps the display
+        # name only on the JSON surface, not the picker chrome).
+        sid_esc = html.escape(_sid(s))
+        pills.append(f'<div class="pill" data-name="{sid_esc}">{sid_esc}</div>')
     placeholder = (
         "\n".join(pills) if pills else '<p class="none">no active sessions</p>'
     )
@@ -572,6 +593,21 @@ _PWA_ROUTES: dict[str, tuple[str, Callable[[], bytes]]] = {
     "/icon-maskable-512.png": ("image/png", lambda: render_icon(512, False)),
     "/apple-touch-icon.png": ("image/png", lambda: render_icon(180, False)),
 }
+
+# Known routes per verb -- lets a wrong-method request on a real path answer 405
+# (not 404), while a genuinely unknown path stays 404 (P3-16).
+_GET_PATHS: frozenset[str] = frozenset(
+    {
+        "/",
+        "",
+        "/api/sessions",
+        "/install.mobileconfig",
+        "/focus",
+        "/health",
+        *_PWA_ROUTES,
+    }
+)
+_POST_PATHS: frozenset[str] = frozenset({"/upload"})
 
 # iOS "Web Clip" configuration profile. Tapping a link to this in Safari prompts
 # to install a profile that drops a Home Screen icon (our green arrow) opening
@@ -751,7 +787,12 @@ class UploadHandler(BaseHTTPRequestHandler):
                 "text/html; charset=utf-8",
             )
         elif path == "/api/sessions":
-            self._send_bytes(json.dumps(self._sessions()).encode(), "application/json")
+            # P3-04/P3-18: ok-envelope + the LIST lives under `sessions` (the
+            # count is `session_count` on /health, never overloaded here).
+            self._send_bytes(
+                json.dumps({"ok": True, "sessions": self._sessions()}).encode(),
+                "application/json",
+            )
         elif path == "/install.mobileconfig":
             # Built per-request: the Web Clip URL must match the host:port the
             # phone actually used, which only the Host header knows.
@@ -767,7 +808,7 @@ class UploadHandler(BaseHTTPRequestHandler):
             self.wfile.write(data)
         elif path == "/focus":
             project = parse_qs(urlparse(self.path).query).get("project", [""])[0]
-            if project in {s["name"] for s in self._sessions()}:
+            if project in {_sid(s) for s in self._sessions()}:
                 _request_focus(project)
                 safe = html.escape(project)
                 body = (
@@ -782,7 +823,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 ).encode()
                 self._send_bytes(body, "text/html; charset=utf-8")
             else:
-                self.send_error(404)
+                self._json_response({"ok": False, "error": "Unknown project"}, 404)
         elif path == "/health":
             uptime = (
                 time.time() - UploadHandler.started_at
@@ -796,7 +837,8 @@ class UploadHandler(BaseHTTPRequestHandler):
                     "port": UploadHandler.port,
                     "pid": UploadHandler.pid,
                     "uptime_s": uptime,
-                    "sessions": len(UploadHandler.cached_sessions),
+                    # P3-18: a COUNT, named distinctly from the /api/sessions LIST.
+                    "session_count": len(UploadHandler.cached_sessions),
                 }
             ).encode()
             self._send_bytes(body, "application/json")
@@ -804,7 +846,7 @@ class UploadHandler(BaseHTTPRequestHandler):
             content_type, factory = _PWA_ROUTES[path]
             self._send_bytes(factory(), content_type, cache=True)
         else:
-            self.send_error(404)
+            self._reject("GET", path)
 
     def do_POST(self) -> None:
         # See do_GET: a handler-thread crash (e.g. an OSError writing the
@@ -823,20 +865,21 @@ class UploadHandler(BaseHTTPRequestHandler):
         log = get_logger("upload")
         parsed = urlparse(self.path)
         if parsed.path != "/upload":
-            self.send_error(404)
+            self._reject("POST", parsed.path)
             return
 
         psmux = find_psmux()
         # Discovery is concurrent (sub-second), so validating against the session
-        # cache no longer risks timing out the upload.
-        valid_names = {s["name"] for s in self._sessions()}
+        # cache no longer risks timing out the upload. The wire `project` is the
+        # psmux socket id (P3-01), so we validate against `session` ids.
+        valid_sessions = {_sid(s) for s in self._sessions()}
 
         # The Alt+V listener passes ?project= so we can flash "uploading" the
         # instant the request lands -- before the image bytes are even read off
         # the socket -- right in that project's md: window. (The mobile web UI
         # doesn't, so it skips straight to the result flash below.)
         flagged = parse_qs(parsed.query).get("project", [""])[0]
-        flagged = flagged if flagged in valid_names else ""
+        flagged = flagged if flagged in valid_sessions else ""
         if flagged:
             n = _inflight_inc(flagged)
             tail = f" ({n})" if n > 1 else ""
@@ -872,7 +915,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                     {"ok": False, "error": "Missing file or project"}, 400
                 )
                 return
-            if project not in valid_names:
+            if project not in valid_sessions:
                 self._json_response({"ok": False, "error": "Unknown project"}, 400)
                 return
 
@@ -927,7 +970,7 @@ class UploadHandler(BaseHTTPRequestHandler):
             # Confirm in the same md: status line -- for both the listener (paired
             # with the early "uploading" flash) and mobile uploads.
             remaining = _inflight_dec(flagged) if flagged else 0
-            done = project if project in valid_names else flagged
+            done = project if project in valid_sessions else flagged
             if done:
                 more = f"  ({remaining} more)" if remaining else ""
                 if ok:
@@ -954,6 +997,17 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def _reject(self, method: str, path: str) -> None:
+        """405 when the path is a real route for the OTHER verb, else 404 --
+        both as the shared JSON error envelope (P3-04/P3-16)."""
+        wrong_method = (method == "GET" and path in _POST_PATHS) or (
+            method == "POST" and path in _GET_PATHS
+        )
+        if wrong_method:
+            self._json_response({"ok": False, "error": "Method not allowed"}, 405)
+        else:
+            self._json_response({"ok": False, "error": "Not found"}, 404)
 
     def log_message(self, fmt: str, *args: object) -> None:  # ty: ignore[invalid-method-override]  # reason: *args: object is a safe contravariant widening of *args: Any from BaseHTTPRequestHandler
         get_logger("upload").debug(fmt, *args)

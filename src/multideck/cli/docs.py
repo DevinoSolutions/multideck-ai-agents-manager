@@ -19,7 +19,7 @@ _PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
         "`defaultTool`",
         "`claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool.",
     ),
-    ("color", "string", "random", "Terminal tab color (`#rrggbb`)."),
+    ("color", "string", "derived", "Terminal tab color (`#rrggbb`)."),
     ("title", "string", "folder name", "Window title for matching."),
     ("enabled", "boolean", "`true`", "Set `false` to skip without deleting."),
     ("happy", "boolean", "inherit", "Override global Happy setting for this project."),

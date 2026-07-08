@@ -1,7 +1,7 @@
-"""Characterization pins for cli/spawns' phone-URL host resolution
+"""Characterization pins for cli/background's phone-URL host resolution
 (`_tailnet_host`), written BEFORE the P1-01 tailnet-leaf dedup. Mocks sit at
 the subprocess.run / socket boundary so the pins hold whether the Tailscale
-probes live inline in spawns.py or in the shared leaf.
+probes live inline in background.py or in the shared leaf.
 
 Resolution order under pin: MagicDNS name (trailing dot stripped) -> first
 Tailscale IPv4 -> LAN IP -> "localhost".
@@ -13,7 +13,7 @@ import json
 import socket
 import subprocess
 
-from multideck.cli.spawns import _tailnet_host
+from multideck.cli.background import _tailnet_host
 
 
 def _cp(returncode: int, stdout: str) -> subprocess.CompletedProcess[str]:

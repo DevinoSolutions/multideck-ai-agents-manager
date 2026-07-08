@@ -10,14 +10,14 @@ from __future__ import annotations
 from multideck.cli import (  # noqa: F401  # reason: side-effect import — runs each module's @main.command registration
     attach,
     attention_cmd,
+    background,
     config_editor,
     config_io,
-    daemons,
     docs,
     doctor,
     menu,
+    mobile,
     session_picker,
-    spawns,
     status,
     ui,
     watch,
@@ -30,10 +30,10 @@ from multideck.cli.attach import (
     _ssh_json,
     _tile_titles,
 )
+from multideck.cli.background import _maybe_start_hotkey
 from multideck.cli.config_editor import _config_menu
 from multideck.cli.menu import _run_discovery, _show_menu
 from multideck.cli.session_picker import _run_sessions_picker
-from multideck.cli.spawns import _maybe_start_hotkey
 from multideck.cli.status import _menu_down, _menu_status, _menu_up
 from multideck.cli.ui import _grouped, _print_session_overview
 

@@ -16,13 +16,13 @@ from collections import Counter
 import click
 
 from multideck.cli.app import main
+from multideck.cli.background import _maybe_start_hotkey, _maybe_start_upload_server
 from multideck.cli.config_io import (
     _as_dict,
     _as_str,
     _load_config_or_exit,
     _project_dicts,
 )
-from multideck.cli.spawns import _maybe_start_hotkey, _maybe_start_upload_server
 from multideck.cli.ui import _banner, _divider, _print_session_overview
 from multideck.config import DEFAULT_TOOLS
 from multideck.grid import compute_grid
@@ -222,7 +222,7 @@ def _attach_flow(
     raw_down = status.get("down")
     up = _as_session_list(raw_up) if isinstance(raw_up, list) else []  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
     down = _as_session_list(raw_down) if isinstance(raw_down, list) else []  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
-    port = status.get("uploadPort", 8033)
+    port = status.get("upload_port", 8033)
 
     if down and yes:
         up = _bring_up_and_requery(target, grp, up)
@@ -269,8 +269,10 @@ def _attach_flow(
 
     titles: list[str] = []
     for sess in up:
-        name = _as_str(sess.get("name"))
-        title = make_title(name)
+        # The psmux socket id (P3-01): drives the window title, the wire the
+        # Alt+V hotkey posts back, and the host-side `multideck sessions <id>`.
+        sid = _as_str(sess.get("session")) or _as_str(sess.get("name"))
+        title = make_title(sid)
         click.echo(f"  {style('o', fg='cyan')} {title}")
         subprocess.Popen(
             [
@@ -284,7 +286,7 @@ def _attach_flow(
                 "ssh",
                 "-t",
                 target,
-                f"multideck sessions {name}",
+                f"multideck sessions {sid}",
             ]
         )
         titles.append(title)
@@ -338,7 +340,8 @@ def _attach_nomux(target: str, status: dict[str, object]) -> None:
 
     titles: list[str] = []
     for p in projects:
-        title = make_title(_as_str(p.get("name")))
+        # Window title = psmux socket id so the Alt+V hotkey resolves it (P3-01).
+        title = make_title(_as_str(p.get("session")) or _as_str(p.get("name")))
         remote_dir = _as_str(p.get("resolved")) or _as_str(p.get("path"))
         # NF-S3-004: fall back to the registry default, never a drifting literal.
         cmd = _as_str(p.get("cmd")) or DEFAULT_TOOLS["claude"]
@@ -403,15 +406,20 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -
         click.echo(
             json.dumps(
                 {
+                    # P3-03: snake_case across all CLI JSON; P3-04: ok-envelope.
+                    "ok": True,
                     "platform": sys.platform,
                     "psmux": cfg.settings.psmux,
-                    "uploadServer": cfg.settings.upload_server,
-                    "uploadPort": cfg.settings.upload_port,
+                    "upload_server": cfg.settings.upload_server,
+                    "upload_port": cfg.settings.upload_port,
+                    # up/down entries already carry name (display) + session
+                    # (psmux socket id) from psmux_status (P3-01).
                     "up": up,
                     "down": down,
                     "projects": [
                         {
                             "name": p["name"],
+                            "session": p["session"],
                             "path": p["path"],
                             "tool": p["tool"],
                             "group": p["group"],
@@ -432,7 +440,11 @@ def up_cmd(ctx: click.Context, as_json: bool, do_all: bool, group: str | None) -
     _divider()
     click.echo()
 
-    targets = None if do_all else [_as_str(d.get("name")) for d in down]
+    targets = (
+        None
+        if do_all
+        else [_as_str(d.get("session")) or _as_str(d.get("name")) for d in down]
+    )
     if not projects:
         where = f" in group '{group}'" if group else ""
         click.echo(f"  {style('!', fg='yellow')} No eligible projects{where}.")

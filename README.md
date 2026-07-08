@@ -130,7 +130,7 @@ Send screenshots from your phone straight into a project's agent session:
 "settings": { "psmux": true, "uploadServer": true, "uploadPort": 8033 }
 ```
 
-`multideck serve` (or `uploadServer: true` during launch) starts a small HTTP server; `multideck mobile` prints the phone URL + a QR code you can install as a home-screen app. Pick a project on the phone, upload an image, and its path is pasted into that project's session. The Alt+V hotkey (Windows) does the same for whatever `md:` session is focused.
+`multideck serve` (or `uploadServer: true` during launch) starts a small HTTP server; `multideck mobile` prints the phone URL + a QR code you can install as a home-screen app (the QR code needs the optional `qr` extra: `pip install multideck[qr]`). Pick a project on the phone, upload an image, and its path is pasted into that project's session. The Alt+V hotkey (Windows) does the same for whatever `md:` session is focused.
 
 This works **over Tailscale**: the server binds only the loopback and your machine's Tailscale IP — never the LAN wildcard — and `attach`/`mobile`/`termius` shell out to the `tailscale` CLI to resolve hosts. Devices must be on your tailnet; there is deliberately no auth token, since the bind set is the access control. To bind something else (e.g. LAN-wide), use the escape hatch: `multideck serve --host 0.0.0.0`.
 
@@ -206,7 +206,7 @@ Start from the committed sample, [`multideck.config.example.json`](multideck.con
 }
 ```
 
-Configs are versioned (`"version": 1`). A config without a current version still loads but prints a warning until you run `multideck config migrate` — loading never rewrites your file; `migrate` is the only writer (it also persists auto-assigned project colors, which are otherwise re-randomized per run).
+Configs are versioned (`"version": 1`). A config without a current version still loads but prints a warning until you run `multideck config migrate` — loading never rewrites your file; `migrate` is the only writer (it also persists auto-assigned project colors; those are derived deterministically from each project's title/path, so they stay the same every run even before you migrate).
 
 ### Project fields
 
@@ -215,7 +215,7 @@ Configs are versioned (`"version": 1`). A config without a current version still
 | `path` | *(required)* | Absolute, or relative to `baseDir`. |
 | `group` | none | Tag for group launches (`-g`). |
 | `tool` | `defaultTool` | `claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool. |
-| `color` | random | Terminal tab color (`#rrggbb`). |
+| `color` | derived | Terminal tab color (`#rrggbb`); auto-derived from the project title/path when unset. |
 | `title` | folder name | Window title for matching. |
 | `enabled` | `true` | Set `false` to skip without deleting. |
 | `happy` | inherit | Override global Happy setting for this project. |

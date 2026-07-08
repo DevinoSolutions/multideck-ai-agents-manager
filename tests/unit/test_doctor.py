@@ -156,14 +156,18 @@ class TestCheckTailscale:
 
 class TestCheckUploadPort:
     def test_free_port_is_ok(self, monkeypatch):
-        monkeypatch.setattr("multideck.cli.spawns._probe_port", lambda _p: False)
-        monkeypatch.setattr("multideck.cli.spawns._running_upload_port", lambda: None)
+        monkeypatch.setattr("multideck.cli.background._probe_port", lambda _p: False)
+        monkeypatch.setattr(
+            "multideck.cli.background._running_upload_port", lambda: None
+        )
         status, _ = _check_upload_port(None)
         assert status == OK
 
     def test_foreign_occupant_warns(self, monkeypatch):
-        monkeypatch.setattr("multideck.cli.spawns._probe_port", lambda _p: True)
-        monkeypatch.setattr("multideck.cli.spawns._running_upload_port", lambda: None)
+        monkeypatch.setattr("multideck.cli.background._probe_port", lambda _p: True)
+        monkeypatch.setattr(
+            "multideck.cli.background._running_upload_port", lambda: None
+        )
         status, detail = _check_upload_port(None)
         assert status == WARN
         assert "occupied" in detail
@@ -213,6 +217,9 @@ class TestDoctorCli:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)
+        # P3-04: doctor always emits ok: true (it produced a valid report); the
+        # per-check verdict lives in `failures` + the exit code.
+        assert payload["ok"] is True
         assert payload["failures"] == 1
         assert {c["name"] for c in payload["checks"]} == {"config", "monitors"}
         assert all({"name", "status", "detail"} <= set(c) for c in payload["checks"])
@@ -222,8 +229,10 @@ class TestDoctorCli:
         and a valid config — proves the composition, not just the runner."""
         fp = FakePlatform()
         monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
-        monkeypatch.setattr("multideck.cli.spawns._probe_port", lambda _p: False)
-        monkeypatch.setattr("multideck.cli.spawns._running_upload_port", lambda: None)
+        monkeypatch.setattr("multideck.cli.background._probe_port", lambda _p: False)
+        monkeypatch.setattr(
+            "multideck.cli.background._running_upload_port", lambda: None
+        )
         config_path = tmp_config(
             {"version": SCHEMA_VERSION, "projects": [{"path": "api"}]}
         )

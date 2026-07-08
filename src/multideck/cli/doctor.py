@@ -171,7 +171,7 @@ def _check_tailscale() -> CheckResult:
 
 
 def _check_upload_port(cfg: MultideckConfig | None) -> CheckResult:
-    from multideck.cli.spawns import (
+    from multideck.cli.background import (
         _probe_port,
         _running_upload_port,
     )
@@ -227,7 +227,9 @@ def doctor_cmd(ctx: click.Context, as_json: bool) -> None:
     failures = sum(1 for r in results if r["status"] == FAIL)
 
     if as_json:
-        click.echo(json.dumps({"checks": results, "failures": failures}))
+        # P3-04: `ok: true` -- doctor always produces a valid report; the
+        # per-check result lives in `failures` (and the exit code).
+        click.echo(json.dumps({"ok": True, "checks": results, "failures": failures}))
         sys.exit(1 if failures else 0)
 
     click.echo(f"  {style('multideck doctor', bold=True)}")

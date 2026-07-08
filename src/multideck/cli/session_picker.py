@@ -15,13 +15,13 @@ from pathlib import Path
 import click
 
 from multideck.cli.app import main
+from multideck.cli.background import _running_upload_port, _tailnet_host
 from multideck.cli.config_io import (
     _as_dict,
     _as_str,
     _load_raw_config,
     _project_dicts,
 )
-from multideck.cli.spawns import _running_upload_port, _tailnet_host
 from multideck.cli.ui import _banner, _divider, _menu_item
 from multideck.paths import find_config
 from multideck.sessions import is_ide_tool

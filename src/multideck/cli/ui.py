@@ -147,7 +147,10 @@ def _grouped(
         if g not in buckets:
             buckets[g] = []
             order.append(g)
-        raw_name = e["name"]
+        # Bucket by the psmux socket id (P3-01): these buckets feed both the
+        # status/overview display AND the bring-up/kill target lists, so they
+        # must carry the id, not the display name.
+        raw_name = e.get("session") or e.get("name")
         buckets[g].append(raw_name if isinstance(raw_name, str) else "")
     return order, buckets
 
