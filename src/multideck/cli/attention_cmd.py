@@ -10,6 +10,7 @@ import contextlib
 import os
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -24,11 +25,17 @@ from multideck.style import style
 from multideck.titles import get_leaf_name
 
 if TYPE_CHECKING:
-    from multideck.config import MultideckConfig
+    from multideck import attention
+    from multideck.config import AttentionSettings, MultideckConfig
+    from multideck.platform import Platform
 
 _PID_PATH = Path.home() / ".multideck" / "attention.pid"
 
 HEARTBEAT_NAME = "attention"
+
+_NOTHING_TO_DO = (
+    "nothing to do: every attention renderer is disabled or unsupported here"
+)
 
 
 def daemon_pid() -> int | None:
@@ -59,6 +66,12 @@ def stop_daemon() -> bool:
     """Stop the attention daemon; True only if a kill was issued and the
     process is confirmed gone. On failure the pid file is kept so `status`
     keeps reporting the truth."""
+    # A forced kill (taskkill /F, default SIGTERM) doesn't run the daemon's
+    # own finally/except, so this stop path owns the heartbeat cleanup: a clean
+    # stop removes it, which is what distinguishes 'off' from 'crashed' in
+    # status (P6-01).
+    from multideck.log import clear_heartbeat  # heavy subsystem: in-body per policy
+
     pid = daemon_pid()
     if not pid:
         return False
@@ -76,6 +89,7 @@ def stop_daemon() -> bool:
     if killed and not _pid_alive(pid):
         with contextlib.suppress(OSError):
             _PID_PATH.unlink()
+        clear_heartbeat(HEARTBEAT_NAME)
         return True
     return killed and not _pid_alive(pid)
 
@@ -94,8 +108,64 @@ def name_pairs_from_config(cfg: MultideckConfig) -> list[tuple[str, str]]:
     return pairs
 
 
-def _name_pairs(config_file: Path) -> list[tuple[str, str]]:
-    return name_pairs_from_config(_load_config_or_exit(config_file))
+def _plan_renderers(
+    att_cfg: AttentionSettings,
+    plat: Platform,
+    engine: attention.AttentionEngine,
+    ntfy_topic: str | None,
+) -> tuple[list[attention.Renderer], list[str]]:
+    """Build the enabled renderer set and collect any non-fatal prerequisite
+    warnings (badges/flash unsupported here, ntfy on with no topic). An empty
+    renderer list is the caller's fatal 'nothing to do' signal.
+
+    Pure -- no console, no logging, no detach -- so the parent (`-d`) can
+    validate prerequisites and fail fast on the still-attached console BEFORE
+    spawning the detached child, and the child can log the identical result
+    after detachment (P2-02)."""
+    from multideck import attention  # heavy subsystem: in-body per policy
+
+    renderers: list[attention.Renderer] = []
+    warnings: list[str] = []
+    if plat.supports_attention_signals():
+        if att_cfg.badge:
+            renderers.append(attention.BadgeRenderer(plat))
+        if att_cfg.flash:
+            renderers.append(attention.FlashRenderer(plat))
+    elif att_cfg.badge or att_cfg.flash:
+        warnings.append("window badges/flash aren't supported on this OS")
+    if att_cfg.toast:
+        renderers.append(attention.ToastRenderer(engine))
+    if att_cfg.ntfy:
+        if ntfy_topic:
+            renderers.append(attention.NtfyRenderer(engine, str(ntfy_topic)))
+        else:
+            warnings.append(
+                "attention.ntfy is on but MULTIDECK_NTFY_TOPIC is not set "
+                "(see .env.example)"
+            )
+    return renderers, warnings
+
+
+def _setup_from_config(
+    config_file: Path,
+) -> tuple[attention.AttentionEngine, list[attention.Renderer], list[str]]:
+    """Load config, build the engine, and plan renderers -- the shared setup
+    for both the `-d` parent (validate-then-spawn) and the foreground/child
+    (validate-then-run), so both judge prerequisites identically."""
+    from multideck import attention  # heavy subsystem: in-body per policy
+    from multideck.env import get_env  # heavy subsystem: in-body per policy
+    from multideck.platform import get_platform  # heavy subsystem: in-body per policy
+
+    cfg = _load_config_or_exit(config_file)
+    plat = get_platform()
+    engine = attention.AttentionEngine(
+        attention.name_map_from_projects(name_pairs_from_config(cfg))
+    )
+    topic = get_env().ntfy_topic
+    renderers, warnings = _plan_renderers(
+        cfg.settings.attention, plat, engine, str(topic) if topic else None
+    )
+    return engine, renderers, warnings
 
 
 @main.command("attention")
@@ -136,6 +206,17 @@ def attention_cmd(
                 f"{style(f'(pid {existing})', dim=True)}"
             )
             return
+        # P2-02: validate renderer prerequisites on the STILL-ATTACHED console
+        # before detaching. Otherwise the real reason (unsupported OS, missing
+        # ntfy topic, nothing enabled) is printed by the detached child to a
+        # hidden console and the parent only reports a generic "failed to start".
+        _engine, renderers, warnings = _setup_from_config(config_file)
+        for warning in warnings:
+            click.echo(f"  {style('!', fg='yellow')} {warning}")
+        if not renderers:
+            click.echo(f"  {style('x', fg='red')} {_NOTHING_TO_DO}")
+            sys.exit(1)
+
         args = [sys.executable, "-m", "multideck"]
         if config_path:
             args += ["--config", str(config_path)]
@@ -159,64 +240,65 @@ def attention_cmd(
 
     # Foreground loop (also the body of the detached child).
     from multideck import attention  # heavy subsystem: in-body per policy
-    from multideck.env import get_env  # heavy subsystem: in-body per policy
     from multideck.log import (  # heavy subsystem: in-body per policy
+        clear_heartbeat,
         get_logger,
+        run_heartbeat,
         write_heartbeat,
     )
-    from multideck.platform import get_platform  # heavy subsystem: in-body per policy
 
-    cfg = _load_config_or_exit(config_file)
-    att_cfg = cfg.settings.attention
-    plat = get_platform()
-    engine = attention.AttentionEngine(
-        attention.name_map_from_projects(_name_pairs(config_file))
-    )
-
-    renderers: list[attention.Renderer] = []
-    if plat.supports_attention_signals():
-        if att_cfg.badge:
-            renderers.append(attention.BadgeRenderer(plat))
-        if att_cfg.flash:
-            renderers.append(attention.FlashRenderer(plat))
-    elif att_cfg.badge or att_cfg.flash:
-        click.echo(
-            f"  {style('!', fg='yellow')} window badges/flash aren't supported on this OS"
-        )
-    if att_cfg.toast:
-        renderers.append(attention.ToastRenderer(engine))
-    if att_cfg.ntfy:
-        topic = get_env().ntfy_topic
-        if topic:
-            renderers.append(attention.NtfyRenderer(engine, str(topic)))
-        else:
-            click.echo(
-                f"  {style('!', fg='yellow')} attention.ntfy is on but "
-                "MULTIDECK_NTFY_TOPIC is not set (see .env.example)"
-            )
+    engine, renderers, warnings = _setup_from_config(config_file)
+    log = get_logger("attention")
+    for warning in warnings:
+        click.echo(f"  {style('!', fg='yellow')} {warning}")
+        log.warning("%s", warning)
     if not renderers:
-        click.echo(
-            f"  {style('x', fg='red')} nothing to do: every attention renderer "
-            "is disabled or unsupported here"
-        )
+        click.echo(f"  {style('x', fg='red')} {_NOTHING_TO_DO}")
+        # Detached child: the console is gone, so the startup-failure reason
+        # only survives in the logfile (P2-02).
+        log.error("%s", _NOTHING_TO_DO)
         sys.exit(1)
 
-    log = get_logger("attention")
     log.info("attention loop starting: %d renderer(s)", len(renderers))
     click.echo(
         f"  {style('#', fg='cyan')} Watching {style(str(len(engine.poll())), bold=True)}"
         f" session(s) — Ctrl+C to stop."
     )
     _write_pid()
+    # A dedicated heartbeat thread pulses at the fixed log.HEARTBEAT_INTERVAL,
+    # decoupled from --interval: a user who widens --interval past the 30s
+    # freshness window must not make `status` read a false 'stale' (P6-03).
+    write_heartbeat(
+        HEARTBEAT_NAME
+    )  # immediate liveness before the thread's first pulse
+    stop_hb = threading.Event()
+    hb_thread = threading.Thread(
+        target=run_heartbeat, args=(HEARTBEAT_NAME, stop_hb), daemon=True
+    )
+    hb_thread.start()
+    stopped_cleanly = False
     try:
         attention.run_attention_loop(
             engine,
             renderers,
             poll_interval=interval,
             max_ticks=ticks,
-            on_tick=lambda _views: write_heartbeat(HEARTBEAT_NAME),
         )
     except KeyboardInterrupt:
         click.echo(f"\n  {style('Stopped.', dim=True)}")
+        stopped_cleanly = True
+    except Exception:
+        # A crash leaves the heartbeat file behind on purpose: it is the marker
+        # that lets status report 'crashed' instead of a healthy 'off' (P6-01).
+        log.exception("attention daemon crashed")
+        raise
     finally:
+        # Stop and JOIN the heartbeat thread before touching the file, so no
+        # late pulse can re-create it after a clean stop (which would masquerade
+        # as a crash). Only Ctrl+C is a clean in-process stop; a crash keeps the
+        # heartbeat as its marker, and an external kill is handled by stop_daemon.
+        stop_hb.set()
+        hb_thread.join(timeout=5)
+        if stopped_cleanly:
+            clear_heartbeat(HEARTBEAT_NAME)
         _clear_pid()

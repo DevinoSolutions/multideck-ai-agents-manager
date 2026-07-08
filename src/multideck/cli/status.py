@@ -27,7 +27,7 @@ from multideck.cli.ui import (
     _print_names,
     _print_session_overview,
 )
-from multideck.log import heartbeat_fresh
+from multideck.log import heartbeat_age, heartbeat_fresh
 from multideck.paths import find_config
 from multideck.style import style
 
@@ -79,12 +79,16 @@ def _listener_state() -> str:
 
 
 def _attention_state() -> str:
-    """ "on" (heartbeat fresh) / "stale" (pid alive, heartbeat expired) / "off"."""
+    """ "on" (pid + fresh heartbeat) / "stale" (pid alive, heartbeat expired) /
+    "crashed" (no pid but a heartbeat file lingers -- the daemon died without a
+    clean stop) / "off" (neither). A clean stop removes the heartbeat file
+    (attention_cmd), so a leftover heartbeat with no live pid can only mean an
+    uncaught crash -- surfaced loudly rather than swept under "off" (P6-01)."""
     from multideck.cli.attention_cmd import daemon_pid
 
-    if not daemon_pid():
-        return "off"
-    return "on" if heartbeat_fresh("attention") else "stale"
+    if daemon_pid():
+        return "on" if heartbeat_fresh("attention") else "stale"
+    return "crashed" if heartbeat_age("attention") is not None else "off"
 
 
 def _agents_snapshot(cfg: MultideckConfig) -> list[dict[str, object]]:
@@ -113,7 +117,7 @@ def _is_degraded(status: dict[str, str]) -> bool:
     return (
         status["upload_server"] == "dead"
         or status["listener"] == "stale"
-        or status["attention"] == "stale"
+        or status["attention"] in ("stale", "crashed")
     )
 
 
@@ -179,6 +183,7 @@ def _render_status(config_file: Path) -> bool:
     attention_labels = {
         "on": style("ON", fg="green", bold=True),
         "stale": style("STALE  (heartbeat expired)", fg="red", bold=True),
+        "crashed": style("CRASHED  (daemon died — see logs)", fg="red", bold=True),
         "off": style("off  (start with `multideck attention -d`)", dim=True),
     }
     click.echo(
