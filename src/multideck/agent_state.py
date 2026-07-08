@@ -32,6 +32,11 @@ IDLE = "idle"  # session open, nothing pending
 
 _VALID = {WORKING, DONE, NEEDS_INPUT, ERROR, IDLE}
 
+# Schema version — bump when the on-disk record shape changes. External
+# writers (state-sink.mjs, Codex notify) should check this before writing.
+# Pinned by tests/unit/test_agent_state.py::TestSchemaContract.
+RECORD_VERSION = 1
+
 # Retention: a record older than this is almost certainly a dead session whose
 # end-hook never fired — a crash, ``kill -9``, or a misconfigured external
 # writer leaves the last done/error/idle record behind with no one to clear it.
