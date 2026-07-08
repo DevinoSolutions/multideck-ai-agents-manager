@@ -239,7 +239,7 @@ def attention_cmd(
         sys.exit(1)
 
     # Foreground loop (also the body of the detached child).
-    from multideck import attention  # heavy subsystem: in-body per policy
+    from multideck import agent_state, attention  # heavy subsystem: in-body per policy
     from multideck.log import (  # heavy subsystem: in-body per policy
         clear_heartbeat,
         get_logger,
@@ -260,6 +260,9 @@ def attention_cmd(
         sys.exit(1)
 
     log.info("attention loop starting: %d renderer(s)", len(renderers))
+    # Age out long-dead records once on start, before we count/display sessions
+    # (P6-04). Idempotent within the process; poll() would also trigger it.
+    agent_state.maybe_sweep_stale()
     click.echo(
         f"  {style('#', fg='cyan')} Watching {style(str(len(engine.poll())), bold=True)}"
         f" session(s) — Ctrl+C to stop."
@@ -301,4 +304,10 @@ def attention_cmd(
         hb_thread.join(timeout=5)
         if stopped_cleanly:
             clear_heartbeat(HEARTBEAT_NAME)
+        # Inverse-transience: strip any badges we set so a stopped daemon never
+        # leaves a frozen [!]/[x]/[+] glyph misrepresenting state (P6-06). The
+        # BadgeRenderer is the only renderer that tracks what it set.
+        for renderer in renderers:
+            if isinstance(renderer, attention.BadgeRenderer):
+                renderer.clear_badges()
         _clear_pid()

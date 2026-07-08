@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 import types
 import urllib.error
 
@@ -23,6 +24,11 @@ def state_dir(tmp_path, monkeypatch):
     d = tmp_path / "state"
     d.mkdir()
     monkeypatch.setattr(agent_state, "STATE_DIR", d)
+    # These engine/store tests use sentinel timestamps (100.0, 990.0, ...) that
+    # are "ancient" by wall clock; mark the process already-swept so the
+    # opportunistic retention sweep in all_states() doesn't age them out from
+    # under the assertions. Retention itself is covered by TestSweepStale.
+    monkeypatch.setattr(agent_state, "_swept_this_process", True)
     return d
 
 
@@ -64,6 +70,129 @@ class TestAllStates:
     def test_missing_store_dir_returns_empty(self, tmp_path, monkeypatch):
         monkeypatch.setattr(agent_state, "STATE_DIR", tmp_path / "nope")
         assert agent_state.all_states() == []
+
+
+class TestSweepStale:
+    """P6-04/P3-13: age-out of long-dead records. sweep_stale takes an injected
+    ``now`` so retention is exercised with no real clock."""
+
+    def test_deletes_records_past_ttl_keeps_fresh(self, tmp_path, monkeypatch):
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        _write_record(d, "/old", agent_state.DONE, 1000.0)
+        _write_record(d, "/fresh", agent_state.NEEDS_INPUT, 9000.0)
+
+        removed = agent_state.sweep_stale(ttl=100.0, now=9050.0)
+
+        assert removed == 1
+        assert {p.stem for p in d.glob("*.json")} == {agent_state._key("/fresh")}
+
+    def test_age_equal_to_ttl_is_kept(self, tmp_path, monkeypatch):
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        _write_record(d, "/edge", agent_state.IDLE, 1000.0)
+        # age == ttl is kept; only strictly-older records are swept
+        assert agent_state.sweep_stale(ttl=100.0, now=1100.0) == 0
+        assert list(d.glob("*.json"))
+
+    def test_missing_dir_returns_zero(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(agent_state, "STATE_DIR", tmp_path / "nope")
+        assert agent_state.sweep_stale(now=0.0) == 0
+
+    def test_corrupt_record_is_left_untouched(self, tmp_path, monkeypatch):
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        (d / "corrupt.json").write_text("{not json", encoding="utf-8")
+        # no trustworthy ts -> never swept (all_states surfaces it instead)
+        assert agent_state.sweep_stale(ttl=0.0, now=1e12) == 0
+        assert (d / "corrupt.json").exists()
+
+    def test_falls_back_to_path_unlink_without_cwd(self, tmp_path, monkeypatch):
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        (d / "noc.json").write_text(
+            json.dumps({"state": "done", "ts": 1.0}), encoding="utf-8"
+        )
+        assert agent_state.sweep_stale(ttl=100.0, now=1_000_000.0) == 1
+        assert not (d / "noc.json").exists()
+
+
+class TestOpportunisticSweep:
+    """P6-04: all_states() ages out long-dead records at most once per process,
+    so retention holds for users who only ever run watch/status."""
+
+    def test_all_states_ages_out_once_per_process(self, tmp_path, monkeypatch):
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        monkeypatch.setattr(agent_state, "_swept_this_process", False)
+        now = time.time()
+        _write_record(d, "/old", agent_state.DONE, now - agent_state.STATE_TTL_S - 100)
+        _write_record(d, "/fresh", agent_state.NEEDS_INPUT, now)
+
+        cwds = {r["cwd"] for r in agent_state.all_states()}
+
+        assert agent_state.norm_cwd("/old") not in cwds  # aged out on read
+        assert agent_state.norm_cwd("/fresh") in cwds
+        assert agent_state._swept_this_process is True  # guard tripped
+
+    def test_second_read_does_not_resweep(self, tmp_path, monkeypatch):
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        monkeypatch.setattr(agent_state, "_swept_this_process", False)
+        agent_state.all_states()  # trips the once-per-process guard
+        # a record dropped in AFTER the single sweep survives, even if ancient
+        _write_record(
+            d, "/late", agent_state.DONE, time.time() - agent_state.STATE_TTL_S - 100
+        )
+        assert {r["cwd"] for r in agent_state.all_states()} == {
+            agent_state.norm_cwd("/late")
+        }
+
+
+class TestCorruptRecordWarning:
+    """P6-09: skipped corrupt/foreign records are named in one WARNING per file
+    per process — visible, but never per-poll spam."""
+
+    def test_warns_once_per_file_and_still_skips(self, tmp_path, monkeypatch, caplog):
+        import logging
+
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        monkeypatch.setattr(agent_state, "_swept_this_process", True)  # isolate sweep
+        monkeypatch.setattr(agent_state, "_warned_files", set())  # fresh dedup ledger
+        _write_record(d, "/ok", agent_state.DONE, 999.0)
+        (d / "bad.json").write_text("{not json", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="multideck.attention"):
+            first = agent_state.all_states()
+            second = agent_state.all_states()
+
+        assert [r["cwd"] for r in first] == ["/ok"]
+        assert [r["cwd"] for r in second] == ["/ok"]  # good record always returned
+        named = [r for r in caplog.records if "bad.json" in r.getMessage()]
+        assert len(named) == 1  # exactly one WARNING despite two reads
+
+    def test_warns_for_non_object_record(self, tmp_path, monkeypatch, caplog):
+        import logging
+
+        d = tmp_path / "state"
+        d.mkdir()
+        monkeypatch.setattr(agent_state, "STATE_DIR", d)
+        monkeypatch.setattr(agent_state, "_swept_this_process", True)
+        monkeypatch.setattr(agent_state, "_warned_files", set())
+        (d / "arr.json").write_text("[1, 2]", encoding="utf-8")
+
+        with caplog.at_level(logging.WARNING, logger="multideck.attention"):
+            assert agent_state.all_states() == []
+
+        assert any("arr.json" in r.getMessage() for r in caplog.records)
 
 
 class TestNormCwd:
@@ -224,6 +353,25 @@ class TestDebounce:
         assert engine.should_fire("/a", "error") is True
 
 
+class TestDebounceMapPruning:
+    """P6-07: the debounce map must not grow without bound under a churn of
+    ephemeral (git-worktree) cwds — entries for vanished sessions are evicted."""
+
+    def test_last_fired_evicts_cwds_absent_from_the_poll(self, state_dir):
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        # five ephemeral sessions each fire once, then vanish from the store
+        for i in range(5):
+            engine.should_fire(f"/wt-{i}", "toast:needs-input")
+        assert len(engine._last_fired) == 5
+
+        # the next poll sees only one still-live session
+        _write_record(state_dir, "/wt-0", agent_state.NEEDS_INPUT, 999.0)
+        engine.transitions(engine.poll())
+
+        # the four dead cwds are pruned; the map is bounded by the live set
+        assert {key[0] for key in engine._last_fired} == {"/wt-0"}
+
+
 # --- Renderers ----------------------------------------------------------------
 
 
@@ -273,6 +421,72 @@ class TestBadgeRenderer:
         r.render([_view("api", "/a", "error")], [])
 
         assert fp.titles_set == []
+
+
+class TestBadgeCollision:
+    """P6-05: two sessions collapsing to one display name must badge the
+    MOST-urgent state, not the least."""
+
+    def _fake(self, windows):
+        from tests.conftest import FakePlatform
+
+        return FakePlatform(windows=windows, supports_attention=True)
+
+    def test_most_urgent_state_wins_on_duplicate_name(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.BadgeRenderer(fp)
+        # two cwds, same display name; needs-input outranks idle. views arrive
+        # most-urgent-first, as poll() sorts them.
+        views = [_view("api", "/a", "needs-input"), _view("api", "/b", "idle")]
+
+        r.render(views, [])
+
+        # a plain dict comprehension would keep idle (last-wins) and show no
+        # badge; urgency-wins de-aliasing keeps the needs-input glyph.
+        assert fp.titles_set == [(1, "md:[!] api")]
+
+
+class TestBadgeCleanup:
+    """P6-06: a stopped daemon (and a vanished session) must not leave a frozen
+    badge glyph misrepresenting state — the renderer restores clean titles."""
+
+    def _fake(self, windows):
+        from tests.conftest import FakePlatform
+
+        return FakePlatform(windows=windows, supports_attention=True)
+
+    def test_clear_badges_restores_clean_titles(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.BadgeRenderer(fp)
+        r.render([_view("api", "/a", "needs-input")], [])
+        assert fp.titles_set == [(1, "md:[!] api")]
+
+        r.clear_badges()
+
+        assert fp.titles_set[-1] == (1, "md:api")  # glyph stripped on stop
+        r.clear_badges()  # idempotent: nothing left tracked
+        assert fp.titles_set.count((1, "md:api")) == 1
+
+    def test_unbadged_window_is_not_touched_on_clear(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.BadgeRenderer(fp)
+        r.render([_view("api", "/a", "working")], [])  # clean state, no badge
+
+        r.clear_badges()
+
+        assert fp.titles_set == []  # nothing was badged, nothing to restore
+
+    def test_vanished_session_badge_cleared_next_tick(self):
+        fp = self._fake({"md:api": 1})
+        r = attention.BadgeRenderer(fp)
+        r.render([_view("api", "/a", "error")], [])
+        assert fp.titles_set == [(1, "md:[x] api")]
+
+        # the session's record disappears from the store: its name leaves
+        # ``desired``, and the badge we set earlier is restored to clean.
+        r.render([], [])
+
+        assert fp.titles_set[-1] == (1, "md:api")
 
 
 class TestFlashRenderer:
