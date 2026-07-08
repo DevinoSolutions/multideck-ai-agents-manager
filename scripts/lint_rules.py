@@ -18,9 +18,18 @@ MD003  No ``"md:"`` string / f-string literal outside ``titles.py`` and
        ``titles.MD_TITLE_PREFIX``.
 MD004  Every suppression comment (``# noqa`` / ``# type: ignore`` / ``# ty: ignore``)
        must carry a ``reason:`` text — the no-naked-suppressions policy, mechanized.
+MD005  No *module-level* import of a heavy subsystem (``launch``, ``upload_server``,
+       ``discover``, ``agent_state``, ``attention``, ``hotkey``, and the platform
+       backends ``platform.windows`` / ``macos`` / ``linux``) inside
+       ``src/multideck/cli/``. The cli registration hub imports every command module
+       eagerly, so a top-level heavy import makes ``multideck --help`` pay that
+       subsystem's startup cost — they are imported in-body instead. Exempt:
+       ``from multideck.platform import get_platform`` (the package ``__init__`` is
+       light; only the OS backend modules are heavy) and ``if TYPE_CHECKING:`` imports
+       (never executed at runtime).
 
-Scopes: MD001/002/003 apply to ``src/multideck/`` only; MD004 applies to
-``src`` + ``scripts`` + ``tests``.
+Scopes: MD001/002/003 apply to ``src/multideck/`` only; MD005 to
+``src/multideck/cli/`` only; MD004 applies to ``src`` + ``scripts`` + ``tests``.
 """
 
 from __future__ import annotations
@@ -67,6 +76,24 @@ MD003_ALLOW = {"src/multideck/titles.py", "src/multideck/cli/attach.py"}
 # spaces, it *begins* with one of these — so prose that merely mentions the word
 # (or a marker inside a string literal, which is not a COMMENT token) is exempt.
 _SUPPRESSION_STARTS = ("noqa", "type: ignore", "type:ignore", "ty: ignore", "ty:ignore")
+
+# MD005: fully-qualified module paths a src/multideck/cli/ module must not import
+# at module level (they are imported in-body per the startup-cost policy). Only
+# the OS backend modules under platform/ are heavy; the platform package __init__
+# (get_platform / find_psmux) is light and stays importable at the top.
+HEAVY_CLI_IMPORTS = frozenset(
+    {
+        "multideck.launch",
+        "multideck.upload_server",
+        "multideck.discover",
+        "multideck.agent_state",
+        "multideck.attention",
+        "multideck.hotkey",
+        "multideck.platform.windows",
+        "multideck.platform.macos",
+        "multideck.platform.linux",
+    }
+)
 
 
 class Finding(NamedTuple):
@@ -116,8 +143,89 @@ def _starts_md(node: ast.AST) -> bool:
     return False
 
 
+def _is_type_checking_guard(test: ast.expr) -> bool:
+    """True for an ``if TYPE_CHECKING:`` / ``if typing.TYPE_CHECKING:`` test."""
+    if isinstance(test, ast.Name):
+        return test.id == "TYPE_CHECKING"
+    return isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING"
+
+
+def _runtime_toplevel_imports(tree: ast.Module) -> list[ast.stmt]:
+    """Import statements that execute at *module import* time.
+
+    Excludes imports nested in a function/method body (they run only on call —
+    the whole point of the in-body policy) and imports guarded by
+    ``if TYPE_CHECKING:`` (never executed at runtime, so they add no startup cost).
+    Imports inside module-level ``if`` / ``try`` / ``with`` / class bodies DO run at
+    import and are therefore included.
+    """
+    found: list[ast.stmt] = []
+
+    def visit(node: ast.AST, deferred: bool) -> None:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            return  # body runs on call, not at import time
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            if not deferred:
+                found.append(node)
+            return
+        if isinstance(node, ast.If) and _is_type_checking_guard(node.test):
+            for stmt in node.body:
+                visit(stmt, True)
+            for stmt in node.orelse:  # the else-branch DOES run at runtime
+                visit(stmt, deferred)
+            return
+        for child in ast.iter_child_nodes(node):
+            visit(child, deferred)
+
+    for stmt in tree.body:
+        visit(stmt, False)
+    return found
+
+
+def _imported_module_paths(node: ast.stmt, pkg_parts: list[str]) -> set[str]:
+    """Fully-qualified module paths one import statement references.
+
+    Handles ``import a.b``, ``from a.b import c`` (yields both ``a.b`` and
+    ``a.b.c`` so a ``from <pkg> import <heavy-submodule>`` is caught), and
+    relative imports resolved against ``pkg_parts`` (the module's own package)."""
+    paths: set[str] = set()
+    if isinstance(node, ast.Import):
+        paths.update(alias.name for alias in node.names)
+    elif isinstance(node, ast.ImportFrom):
+        if node.level == 0:
+            base = node.module or ""
+        else:
+            up = pkg_parts[: len(pkg_parts) - (node.level - 1)]
+            base = ".".join(up + (node.module.split(".") if node.module else []))
+        if base:
+            paths.add(base)
+            paths.update(f"{base}.{alias.name}" for alias in node.names)
+    return paths
+
+
+def _heavy_import_findings(rel: str, tree: ast.Module) -> list[Finding]:
+    """MD005 — module-level heavy-subsystem imports inside src/multideck/cli/."""
+    pkg_parts = rel.removeprefix("src/").removesuffix(".py").split("/")[:-1]
+    out: list[Finding] = []
+    for node in _runtime_toplevel_imports(tree):
+        hits = _imported_module_paths(node, pkg_parts) & HEAVY_CLI_IMPORTS
+        if hits:
+            out.append(
+                Finding(
+                    rel,
+                    getattr(node, "lineno", 1),
+                    getattr(node, "col_offset", 0) + 1,
+                    "MD005",
+                    f"module-level import of heavy subsystem '{sorted(hits)[0]}' inside "
+                    "cli/ — import it in-body (grep 'heavy subsystem: in-body per policy') "
+                    "so `multideck --help` does not pay its startup cost",
+                )
+            )
+    return out
+
+
 def _ast_rules(rel: str, source: str) -> list[Finding]:
-    """MD001/002/003 — src/multideck/ only."""
+    """MD001/002/003 (src/multideck/) + MD005 (src/multideck/cli/)."""
     out: list[Finding] = []
     try:
         tree = ast.parse(source, filename=rel)
@@ -180,6 +288,8 @@ def _ast_rules(rel: str, source: str) -> list[Finding]:
                     'string literal starting "md:" — the window-title prefix is built only from titles.MD_TITLE_PREFIX',
                 )
             )
+    if in_cli:
+        out += _heavy_import_findings(rel, tree)
     return out
 
 
