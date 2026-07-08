@@ -258,11 +258,14 @@ class ToastRenderer:
                     )
                     self._tip_logged = True
                 return
-            Notification(
-                app_id="multideck",
-                title=f"multideck: {v.name}",
-                msg=f"{v.state} — waiting on you",
-            ).show()
+            try:
+                Notification(
+                    app_id="multideck",
+                    title=f"multideck: {v.name}",
+                    msg=f"{v.state} — waiting on you",
+                ).show()
+            except Exception as exc:  # noqa: BLE001  # reason: winotify shells to COM/PowerShell; a transient toast fault (Focus Assist, COM hiccup, quota) must not page-kill the daemon — logged WARNING and swallowed, mirroring NtfyRenderer
+                get_logger("attention").warning("toast failed for %s: %s", v.name, exc)
 
 
 class NtfyRenderer:
@@ -311,10 +314,20 @@ def run_attention_loop(
     """Poll -> diff -> render, forever (or ``max_ticks`` times — test seam /
     one-shot). ``on_tick`` is the daemon's heartbeat hook. Renderer errors
     beyond each renderer's own handled set propagate on purpose."""
+    log = get_logger("attention")
     ticks = 0
     while max_ticks is None or ticks < max_ticks:
         views = engine.poll()
         transitions = engine.transitions(views)
+        # Audit trail: one INFO line per state change (project, old -> new), so
+        # the "attention" log records exactly when each session flipped state.
+        for t in transitions:
+            log.info(
+                "state %s: %s -> %s",
+                t.view.name,
+                t.prev_state or "new",
+                t.view.state,
+            )
         for r in renderers:
             r.render(views, transitions)
         if on_tick is not None:

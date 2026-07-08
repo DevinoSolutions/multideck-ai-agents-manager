@@ -13,10 +13,15 @@ module.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import logging.handlers
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import threading
 
 LOG_DIR = Path.home() / ".multideck" / "logs"
 HEARTBEAT_DIR = Path.home() / ".multideck"
@@ -111,3 +116,23 @@ def heartbeat_age(name: str) -> float | None:
 def heartbeat_fresh(name: str, max_age: float = HEARTBEAT_MAX_AGE) -> bool:
     age = heartbeat_age(name)
     return age is not None and age <= max_age
+
+
+def clear_heartbeat(name: str) -> None:
+    """Remove a heartbeat file -- the mark of a *clean* daemon shutdown, so
+    `status` reads 'off' (never-started) rather than 'crashed' (a heartbeat
+    left behind by a process that died without cleaning up). Best-effort:
+    never raises."""
+    with contextlib.suppress(OSError):
+        _heartbeat_path(name).unlink()
+
+
+def run_heartbeat(name: str, stop_event: threading.Event) -> None:
+    """Pulse ``name``'s heartbeat every HEARTBEAT_INTERVAL until ``stop_event``
+    is set. Meant to run on a dedicated daemon thread so the liveness signal is
+    decoupled from the caller's work cadence: a slow poll loop -- or a user who
+    widens that loop's interval past HEARTBEAT_MAX_AGE -- can't make `status`
+    read a false 'stale'. Mirrors hotkey.py's heartbeat thread."""
+    while not stop_event.is_set():
+        write_heartbeat(name)
+        stop_event.wait(HEARTBEAT_INTERVAL)

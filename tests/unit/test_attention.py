@@ -376,6 +376,31 @@ class TestToastRenderer:
 
         assert len(calls) == 1
 
+    def test_show_failure_logs_warning_and_survives(self, monkeypatch, caplog):
+        # P6-02: a winotify .show() fault (COM hiccup, Focus Assist, quota) must
+        # be caught and logged as a WARNING, not propagate and kill the daemon.
+        class _FakeNotification:
+            def __init__(self, app_id, title, msg):
+                pass
+
+            def show(self):
+                raise RuntimeError("COM boom")
+
+        fake_mod = types.ModuleType("winotify")
+        fake_mod.Notification = _FakeNotification
+        monkeypatch.setitem(sys.modules, "winotify", fake_mod)
+
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.ToastRenderer(engine)
+        v = _view("api", "/a", "needs-input")
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="multideck.attention"):
+            r.render([v], [_trans(v, "working")])  # must not raise
+
+        assert "toast failed" in caplog.text
+
 
 class TestNtfyRenderer:
     def test_posts_transition_to_topic(self, monkeypatch):
@@ -442,3 +467,52 @@ class TestRunAttentionLoop:
         assert rendered == [1, 1]
         assert ticked == [1, 1]
         assert slept == [2.0]  # sleeps BETWEEN ticks, not after the last
+
+    def test_logs_each_state_transition(self, state_dir, caplog):
+        # WIN: the audit trail -- one INFO line per state change (project +
+        # old -> new) in the "attention" log.
+        _write_record(state_dir, "/api", agent_state.WORKING, 999.0)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+
+        import logging
+
+        with caplog.at_level(logging.INFO, logger="multideck.attention"):
+            attention.run_attention_loop(engine, [], max_ticks=1, sleep=lambda _s: None)
+
+        assert "api" in caplog.text
+        assert "new -> working" in caplog.text
+
+    def test_toast_fault_does_not_stop_later_renderers(
+        self, monkeypatch, state_dir, caplog
+    ):
+        # P6-02 at the loop level: a toast that raises must not prevent the
+        # renderers after it from running on that same tick.
+        class _FakeNotification:
+            def __init__(self, app_id, title, msg):
+                pass
+
+            def show(self):
+                raise RuntimeError("COM boom")
+
+        fake_mod = types.ModuleType("winotify")
+        fake_mod.Notification = _FakeNotification
+        monkeypatch.setitem(sys.modules, "winotify", fake_mod)
+
+        _write_record(state_dir, "/api", agent_state.NEEDS_INPUT, 999.0)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        toast = attention.ToastRenderer(engine)
+        rendered: list[int] = []
+
+        class _Recorder:
+            def render(self, views, transitions):
+                rendered.append(len(views))
+
+        import logging
+
+        with caplog.at_level(logging.WARNING, logger="multideck.attention"):
+            attention.run_attention_loop(
+                engine, [toast, _Recorder()], max_ticks=1, sleep=lambda _s: None
+            )
+
+        assert rendered == [1]  # the recorder ran despite the toast fault
+        assert "toast failed" in caplog.text

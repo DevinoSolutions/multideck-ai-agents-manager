@@ -376,6 +376,60 @@ class TestUploadServerIntegration:
         resp.read()
         assert resp.status == 400
 
+    def test_get_handler_crash_returns_500_and_logs(self, monkeypatch, caplog):
+        # P2-03: an unexpected error inside a GET handler must become a clean
+        # 500 + an ERROR log record (-> logfile + Sentry), never a dropped
+        # connection whose traceback vanishes into socketserver stderr.
+        import multideck.upload_server as mod
+
+        def boom(_sessions):
+            raise RuntimeError("boom in GET")
+
+        monkeypatch.setattr(mod, "_build_html", boom)
+
+        with caplog.at_level("ERROR", logger="multideck.upload"):
+            conn = self._conn()
+            conn.request("GET", "/")
+            resp = conn.getresponse()
+            resp.read()
+            assert resp.status == 500
+            assert self._wait_log(caplog, "GET handler crashed")
+
+        # the server survived the crash: a normal request still succeeds
+        conn2 = self._conn()
+        conn2.request("GET", "/api/sessions")
+        assert conn2.getresponse().status == 200
+
+    def test_post_handler_crash_returns_500_and_logs(self, monkeypatch, caplog):
+        # P2-03: same guarantee for the POST path -- the finding's motivating
+        # case (an unexpected fault while handling an upload).
+        import multideck.upload_server as mod
+
+        def boom(_handler):
+            raise RuntimeError("boom in POST")
+
+        monkeypatch.setattr(mod, "_parse_multipart", boom)
+
+        with caplog.at_level("ERROR", logger="multideck.upload"):
+            conn = self._conn()
+            conn.request(
+                "POST",
+                "/upload",
+                body=b"x",
+                headers={
+                    "Content-Type": "multipart/form-data; boundary=----B",
+                    "Content-Length": "1",
+                },
+            )
+            resp = conn.getresponse()
+            resp.read()
+            assert resp.status == 500
+            assert self._wait_log(caplog, "POST handler crashed")
+
+        conn2 = self._conn()
+        conn2.request("GET", "/api/sessions")
+        assert conn2.getresponse().status == 200
+
 
 class TestHealth:
     """GET /health proves the handler thread is serving -- a session COUNT,

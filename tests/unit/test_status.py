@@ -180,3 +180,69 @@ class TestJson:
             "attention": "off",
             "agents": [],
         }
+
+
+class TestAttentionLiveness:
+    """P6-01: a crashed attention daemon -- a heartbeat file left behind with no
+    live pid -- must read 'crashed' and degrade the exit code, distinct from a
+    clean 'off' (never started / cleanly stopped, which removes the heartbeat)."""
+
+    def _attention(self, monkeypatch, *, pid, fresh, age):
+        _no_psmux(monkeypatch)
+        _both_off(monkeypatch)  # upload + listener both healthy-off
+        monkeypatch.setattr("multideck.cli.attention_cmd.daemon_pid", lambda: pid)
+        monkeypatch.setattr("multideck.cli.status.heartbeat_fresh", lambda name: fresh)
+        monkeypatch.setattr("multideck.cli.status.heartbeat_age", lambda name: age)
+
+    def test_pid_and_fresh_heartbeat_is_on_exit_0(
+        self, runner, tmp_config, monkeypatch
+    ):
+        self._attention(monkeypatch, pid=4242, fresh=True, age=1.0)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 0
+        assert "Attention" in result.output
+        assert "CRASHED" not in result.output
+
+    def test_pid_but_stale_heartbeat_is_stale_exit_3(
+        self, runner, tmp_config, monkeypatch
+    ):
+        self._attention(monkeypatch, pid=4242, fresh=False, age=999.0)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 3
+        assert "STALE" in result.output
+
+    def test_no_pid_with_lingering_heartbeat_is_crashed_exit_3(
+        self, runner, tmp_config, monkeypatch
+    ):
+        self._attention(monkeypatch, pid=None, fresh=False, age=12.0)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 3
+        assert "CRASHED" in result.output
+
+    def test_no_pid_no_heartbeat_is_off_exit_0(self, runner, tmp_config, monkeypatch):
+        self._attention(monkeypatch, pid=None, fresh=False, age=None)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status"])
+
+        assert result.exit_code == 0
+        assert "CRASHED" not in result.output
+        assert "STALE" not in result.output
+
+    def test_json_crashed_degrades_exit_3(self, runner, tmp_config, monkeypatch):
+        self._attention(monkeypatch, pid=None, fresh=False, age=8.0)
+        cfgpath = tmp_config({"projects": []})
+
+        result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
+
+        assert result.exit_code == 3
+        assert json.loads(result.stdout)["attention"] == "crashed"
