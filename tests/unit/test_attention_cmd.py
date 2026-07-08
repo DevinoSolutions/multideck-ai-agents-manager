@@ -170,7 +170,7 @@ class TestStopDaemonClearsHeartbeat:
         monkeypatch.setattr(attention_cmd, "_PID_PATH", pid_file)
         # pid 4321 is "alive" until killed, then gone.
         alive = {4321}
-        monkeypatch.setattr(attention_cmd, "_pid_alive", lambda pid: pid in alive)
+        monkeypatch.setattr(attention_cmd, "pid_alive", lambda pid: pid in alive)
         monkeypatch.setattr(attention_cmd.sys, "platform", "win32")
 
         class _Result:
