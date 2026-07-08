@@ -249,13 +249,14 @@ laziness.
 - **`attach.py`** — SSH/attach orchestration: `_attach_flow` (see Key
   Decisions), its no-mux sibling `_attach_nomux`, `_tile_titles` (delegates
   to `tiling.place_windows` with `settle_s=3` and a hard-coded 2×1 grid —
-  see Known Debt), and the `up`/`attach`/`hotkey` commands. Imports
-  `config.load_config` directly — the one permitted raw-loader call site
-  outside `config_io.py` (see Key Decisions).
+  see Known Debt), and the `up`/`attach`/`hotkey` commands. Loads typed
+  config through `config_io._load_config_or_exit`, whose `as_json` mode powers
+  `up --json`'s JSON error envelope (see Key Decisions).
 - **`docs.py`** — the `multideck docs` command: a pure-string Markdown
   generator (~190 content lines) for the full config reference, reading live
-  defaults off `config.LayoutConfig`/`config.Settings` for some fields but
-  hand-writing others (see Known Debt: NF-S3-003).
+  defaults off `config.LayoutConfig`/`config.Settings` — including the
+  example-config `tools` block, now derived from the factory defaults so it
+  can't drift from `DEFAULT_TOOLS` (NF-S3-003, resolved pass-2).
 - **`daemons.py`** — `serve`/`mobile`/`termius` commands. `serve` carries the
   `--host` escape hatch (see Key Decisions).
 - **`session_picker.py`** — live psmux session listing (`sessions_cmd`) and
@@ -321,26 +322,17 @@ report under their raw names via `env.validation_error_items` (shared by
 "restoring" CWD dotenv support for dev convenience will reintroduce the
 incident.
 
-**`up_cmd` (`cli/attach.py`) is the one permitted raw `load_config` call
-site outside `config_io.py`.** Every other guarded call site in `cli/`
-routes through `config_io._load_config_or_exit`, which prints a plain-text
-`Error: <msg>` to stderr and exits 1. `up_cmd`'s `--json` mode instead needs
-to emit `{"error": "<msg>"}` as JSON **on stdout** on a config error (so a
-machine caller reading `--json` output always gets JSON, never a stderr
-traceback or plain text) — something `_load_config_or_exit`'s fixed
-stderr-text shape cannot do. `up_cmd` therefore calls `config.load_config`
-directly and handles the error itself.
-
-**`status --json`'s config-error path keeps the plain-text shape for now,
-and that asymmetry is recorded, not missed (NF-S3-005).** Unlike `up_cmd`,
-`status_cmd`'s `--json` branch routes a config-load failure through the same
-`_load_config_or_exit` as the plain-text path — so a `--json` caller can get
-a plain-text stderr error instead of JSON. This was deliberately *not*
-unified with `up_cmd`'s JSON-error convention during the refactor that
-produced this module: the site used to be an unguarded raw Python traceback,
-so today's behavior is a strict improvement, and unifying the shapes is a
-real behavior change the relocate-only discipline deferred. Tracked in Known
-Debt below; not a bug to silently "fix" in a drive-by edit.
+**The `--json` config-error envelope is unified through
+`config_io._load_config_or_exit` (NF-S3-005, resolved pass-2).** The helper
+takes an `as_json` flag: on a config-load failure it emits
+`{"ok": false, "error": "<msg>"}` as JSON **on stdout** (so a machine caller
+reading `--json` always gets JSON, never a stderr `Error: <msg>` line or a
+raw traceback); without the flag it keeps the plain-text `Error: <msg>` on
+stderr for human callers. Both `status --json` and `up --json` route through
+it — neither keeps a raw `config.load_config` call of its own, so the former
+"`up_cmd` is the one permitted raw-loader site outside `config_io.py`"
+exception is gone, and `status --json`'s old plain-text asymmetry with it is
+gone too.
 
 **`_config_menu` (F(48), `cli/config_editor.py`), `main` (E(33),
 `cli/app.py`), and `_attach_flow` (D(29), `cli/attach.py`) were relocated,
@@ -521,44 +513,47 @@ triaged out of the fix pass that produced this document, not overlooked):
 | Hotkey module architecture (F-CT-005) | `hotkey.py` mixes raw ctypes Win32 bindings, hook lifecycle, upload-trigger logic, and pid-file management in one module; a structural split is future work. |
 | `agent_state.py` has zero tests (F-IC-007) | No `tests/unit/test_agent_state.py` exists; the module is stdlib-only and eminently testable. |
 
-**Findings recorded during the fix pass, carried in code on purpose**
-(each verified still true on disk; do not drive-by fix — each needs its own
-small, tested change):
+**Findings recorded during earlier fix passes.** The four `NF-S3` code debts
+(001/003/004/005) were burned down in pass-2 (PR-C) and are marked RESOLVED
+below; the remainder are still carried in code on purpose (each verified
+still true on disk; do not drive-by fix — each needs its own small, tested
+change):
 
-- **NF-S3-001 — `_menu_down` echoes success unconditionally.** In
-  `cli/status.py`, `_menu_down` calls `stop_server(...)` and always prints
-  "Stopped upload server." regardless of the (truthful) boolean it returns —
-  the sibling `down_cmd` in the same file does check it. Fix direction:
-  branch on the return value exactly as `down_cmd` does, or route both
-  through one shared helper.
+- **NF-S3-001 — `_menu_down` echoed success unconditionally. RESOLVED
+  (pass-2, PR-C).** `_menu_down` (`cli/status.py`) now branches on
+  `stop_server(...)`'s return value exactly like `down_cmd` — success names
+  the port, failure prints "not running, or could not be stopped (see
+  logs)". Both outcomes covered by
+  `test_status.py::TestMenuDownServerReport`.
 - **NF-S3-002 — stdout/stderr convention for JSON tests existed nowhere.**
   Click's `CliRunner` merges stdout and stderr into `result.output`; JSON
   assertions that read `result.output` corrupt when any stderr diagnostic
   (e.g. the config version warning) fires. Three sites were fixed during the
   audit; the convention ("JSON-body assertions read `result.stdout`,
-  diagnostics via `result.stderr`") is now codified in CLAUDE.md — the debt
-  is that older tests were never swept for latent instances.
-- **NF-S3-003 — `_generate_docs` (`cli/docs.py`) hand-rolls a third, drifted
-  schema example.** Confirmed on disk: its inline example-config block
-  fabricates an `"aider": "aider --model sonnet"` entry that does not exist
-  in `config.DEFAULT_TOOLS`, omits half the settings surface, and its
-  `## CLI commands` table does not list `multideck config migrate` even
-  though that subcommand is live. Same duplicated-schema-truth class the
-  config factory fixed for the runtime path; the docs command wasn't brought
-  under that umbrella. Fix direction: derive the sample from
-  `config.default_config()`/`settings_to_dict` (or embed
-  `multideck.config.example.json`) and generate the command table from the
-  live registration set.
-- **NF-S3-004 — `_attach_nomux` (`cli/attach.py`) hard-codes the fallback
-  command.** `cmd = p.get("cmd") or "claude --continue"` echoes the value of
-  `DEFAULT_TOOLS["claude"]` as a literal in the raw-dict attach path; if the
-  default command ever changes, this site silently drifts. Fix direction:
-  derive the fallback from `DEFAULT_TOOLS` (or the project's resolved tool).
-- **NF-S3-005 — `status --json` error-shape asymmetry.** See Key Decisions
-  ("status --json … recorded, not missed"). Fix direction: teach
-  `_load_config_or_exit` an `as_json` flag (or a small wrapper) emitting
-  `json.dumps({"error": ...})`, adopt it in `status_cmd`, and fold `up_cmd`'s
-  inline guard onto it (dedup).
+  diagnostics via `result.stderr`") is now codified in CLAUDE.md. Pass-2
+  (PR-C, P4-01) swept the lone remaining `result.output`-on-a-JSON-body
+  instance (`test_status.py:51`) to `result.stdout`.
+- **NF-S3-003 — `_generate_docs` (`cli/docs.py`) hand-rolled a drifted schema
+  example. RESOLVED (pass-2, PR-C).** The example-config `tools` block is now
+  rendered from `Settings().tools` (the `settings_to_dict`/`default_config`
+  source), so it lists exactly `DEFAULT_TOOLS` — the fabricated
+  `"aider": "aider --model sonnet"` entry is gone — and the `## CLI commands`
+  table now lists `multideck config migrate`. Pinned by
+  `test_cli_smoke.py::test_docs_example_config_tools_match_default_tools`.
+  (The still-hand-maintained command table remains a smaller latent-drift
+  risk; generating it from the live registration set is future work.)
+- **NF-S3-004 — `_attach_nomux` (`cli/attach.py`) hard-coded the fallback
+  command. RESOLVED (pass-2, PR-C).** `cmd = _as_str(p.get("cmd")) or
+  DEFAULT_TOOLS["claude"]` now derives the fallback from the registry, so it
+  can't drift from the default. First-ever coverage of `_attach_nomux` added
+  in `test_attach.py::TestAttachNomux`.
+- **NF-S3-005 — `status --json` error-shape asymmetry. RESOLVED (pass-2,
+  PR-C).** `config_io._load_config_or_exit` gained an `as_json` flag emitting
+  `{"ok": false, "error": ...}` on stdout; `status --json` and `up --json`
+  both route through it, and `up_cmd`'s inline raw-loader guard was folded
+  onto the shared helper (removing the two-path exception). Covered by
+  `test_status.py::TestJsonInvalidConfig` and
+  `test_attach.py::TestUpJsonConfigError`.
 - **`cli/config_editor.py` (637 lines) awaits a further split.** Extracted
   whole from the old monolith; separating the menu-driven `_config_menu`
   from the 14 scriptable `config` subcommands is legitimate next-cycle work,
