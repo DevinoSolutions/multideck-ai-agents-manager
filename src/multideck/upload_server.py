@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+from multideck import tailnet
 from multideck.launch import _psmux_session_name
 from multideck.log import get_logger
 from multideck.paths import find_config
@@ -929,24 +930,6 @@ class UploadHandler(BaseHTTPRequestHandler):
         get_logger("upload").debug(fmt, *args)
 
 
-def _tailscale_ip() -> str | None:
-    """Best-effort Tailscale IPv4 address, or None if Tailscale isn't
-    installed, isn't running, or doesn't answer in time."""
-    try:
-        r = subprocess.run(
-            ["tailscale", "ip", "-4"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip().splitlines()[0]
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-        pass
-    return None
-
-
 def _bind_addresses(host: str | None) -> list[str]:
     """Addresses run_server should bind.
 
@@ -960,7 +943,7 @@ def _bind_addresses(host: str | None) -> list[str]:
     if host is not None:
         return [host]
     addrs = ["127.0.0.1"]
-    ip = _tailscale_ip()
+    ip = tailnet.ip4()
     if ip:
         addrs.append(ip)
     else:

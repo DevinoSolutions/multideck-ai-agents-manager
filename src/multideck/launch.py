@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import click
 
+from multideck import tailnet
 from multideck.grid import TileSlot, compute_grid
 from multideck.log import get_logger
 from multideck.platform import (
@@ -89,24 +90,6 @@ def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None
 HAPPY_AGENTS = {
     t for t, c in AGENT_TOOLS.items() if c.happy
 }  # derived; name kept for tests
-
-
-def _get_tailscale_ip() -> str | None:
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["tailscale", "ip", "-4"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout.strip().splitlines()[0]
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
-    return None
 
 
 def _psmux_session_name(title: str) -> str:
@@ -465,7 +448,7 @@ def _start_psmux_and_upload(
                 serve_args.extend(["--config", opts.config_path])
             serve_args.extend(["serve", "-p", str(port)])
             spawn_detached(serve_args)
-            ip = _get_tailscale_ip()
+            ip = tailnet.ip4()
             url = f"http://{ip}:{port}" if ip else f"http://localhost:{port}"
             click.echo(
                 f"\n  {style('#', fg='magenta')} upload server: {style(url, fg='cyan', bold=True)}"

@@ -8,14 +8,14 @@ command module eagerly to register it).
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import socket
-import subprocess
 import sys
 import time
 from pathlib import Path
+
+from multideck import tailnet
 
 
 def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
@@ -136,33 +136,9 @@ def _running_upload_port() -> int | None:
 def _tailnet_host() -> str:
     """Best host for the phone URL: Tailscale MagicDNS name, then its IP, then
     the LAN IP. MagicDNS gives the prettiest, most stable URL."""
-
-    try:
-        r = subprocess.run(
-            ["tailscale", "status", "--json"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            dns = (json.loads(r.stdout).get("Self") or {}).get("DNSName", "")
-            if isinstance(dns, str) and dns:
-                return dns.rstrip(".")
-    except (FileNotFoundError, subprocess.TimeoutExpired, ValueError):
-        pass
-    try:
-        r = subprocess.run(
-            ["tailscale", "ip", "-4"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip().splitlines()[0]
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        pass
+    host = tailnet.magicdns_host() or tailnet.ip4()
+    if host:
+        return host
     try:
         return socket.gethostbyname(socket.gethostname())
     except OSError:

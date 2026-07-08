@@ -583,14 +583,14 @@ class TestBindAddresses:
     def test_auto_bind_loopback_only_when_no_tailscale(self, monkeypatch):
         import multideck.upload_server as mod
 
-        monkeypatch.setattr(mod, "_tailscale_ip", lambda: None)
+        monkeypatch.setattr(mod.tailnet, "ip4", lambda: None)
         assert mod._bind_addresses(None) == ["127.0.0.1"]
         assert "0.0.0.0" not in mod._bind_addresses(None)
 
     def test_auto_bind_includes_tailscale(self, monkeypatch):
         import multideck.upload_server as mod
 
-        monkeypatch.setattr(mod, "_tailscale_ip", lambda: "100.64.1.2")
+        monkeypatch.setattr(mod.tailnet, "ip4", lambda: "100.64.1.2")
         assert mod._bind_addresses(None) == ["127.0.0.1", "100.64.1.2"]
 
     def test_explicit_host_honored(self):
@@ -602,7 +602,7 @@ class TestBindAddresses:
     def test_run_server_binds_expected(self, tmp_path, monkeypatch):
         import multideck.upload_server as mod
 
-        monkeypatch.setattr(mod, "_tailscale_ip", lambda: None)
+        monkeypatch.setattr(mod.tailnet, "ip4", lambda: None)
         monkeypatch.setattr(
             mod, "_pid_path", lambda port: tmp_path / f"upload-{port}.pid"
         )
