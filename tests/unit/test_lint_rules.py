@@ -1,4 +1,4 @@
-"""Unit tests for scripts/lint_rules.py — the MD001-MD004 custom lint layer.
+"""Unit tests for scripts/lint_rules.py — the MD001-MD005 custom lint layer.
 
 Each rule is proven with a violating snippet (fires) and a conforming snippet
 (silent), plus scope checks (which path prefixes each rule applies to). The
@@ -136,3 +136,59 @@ def test_ast_rules_do_not_run_outside_src_multideck():
 
 def test_syntax_error_surfaces_as_md000():
     assert _codes("src/multideck/broken.py", "def (:\n") == ["MD000"]
+
+
+# ---- MD005: no module-level heavy-subsystem import inside src/multideck/cli/ --
+
+_CLI = "src/multideck/cli/foo.py"
+
+
+def test_md005_flags_toplevel_from_heavy_subsystem():
+    assert _codes(_CLI, "from multideck.launch import run_multideck\n") == ["MD005"]
+
+
+def test_md005_flags_toplevel_import_heavy_module():
+    assert _codes(_CLI, "import multideck.upload_server\n") == ["MD005"]
+
+
+def test_md005_flags_from_package_import_of_heavy_submodule():
+    # `from multideck import attention` binds the heavy attention module.
+    assert _codes(_CLI, "from multideck import attention\n") == ["MD005"]
+
+
+def test_md005_flags_platform_backend_import():
+    assert _codes(_CLI, "from multideck.platform import windows\n") == ["MD005"]
+
+
+def test_md005_flags_relative_heavy_import():
+    assert _codes(_CLI, "from ..launch import run_multideck\n") == ["MD005"]
+
+
+def test_md005_allows_get_platform_at_toplevel():
+    # The platform package __init__ is light; only the OS backends are heavy.
+    assert _codes(_CLI, "from multideck.platform import get_platform\n") == []
+
+
+def test_md005_allows_heavy_import_in_body():
+    src = "def cmd():\n    from multideck.launch import run_multideck\n    return run_multideck\n"
+    assert _codes(_CLI, src) == []
+
+
+def test_md005_allows_heavy_import_under_type_checking():
+    src = "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from multideck import attention\n"
+    assert _codes(_CLI, src) == []
+
+
+def test_md005_allows_leaf_and_sibling_cli_imports_at_toplevel():
+    src = (
+        "from multideck.config import load_config\nfrom multideck.cli.app import main\n"
+    )
+    assert _codes(_CLI, src) == []
+
+
+def test_md005_does_not_apply_outside_cli():
+    # A subsystem importing another subsystem at top level is allowed (upload_server does).
+    assert (
+        _codes("src/multideck/upload_server.py", "from multideck.launch import x\n")
+        == []
+    )
