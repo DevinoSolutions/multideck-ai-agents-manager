@@ -46,7 +46,6 @@ MD002_ALLOW = {
     "src/multideck/paths.py": "config-dir location is per-OS (APPDATA / XDG / Library)",
     "src/multideck/discover.py": "session-store paths, path separators, FS case-folding",
     "src/multideck/agent_state.py": "state-store path differs per OS",
-    "src/multideck/terminals.py": "terminal-emulator selection is inherently per-OS",
     "src/multideck/launch.py": "Windows job-object breakaway in spawn_detached",
     "src/multideck/upload_server.py": "taskkill vs os.kill process termination",
     "src/multideck/cli/attention_cmd.py": "taskkill vs os.kill process termination",
