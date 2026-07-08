@@ -49,7 +49,8 @@ class TestNoConfig:
             cli.main, ["--config", str(tmp_path / "nope.json"), "status", "--json"]
         )
         assert result.exit_code == 1
-        assert json.loads(result.stdout) == {"error": "No config found."}
+        # P3-04: one error envelope shape across every CLI JSON surface.
+        assert json.loads(result.stdout) == {"ok": False, "error": "No config found."}
 
 
 class TestJsonInvalidConfig:
@@ -170,7 +171,9 @@ class TestJson:
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
 
         assert result.exit_code == 0
+        # P3-04: `ok: true` on success; snake_case state keys (P3-03).
         assert json.loads(result.stdout) == {
+            "ok": True,
             "upload_server": "on",
             "listener": "off",
             "attention": "off",
@@ -190,7 +193,10 @@ class TestJson:
         result = runner.invoke(cli.main, ["--config", cfgpath, "status", "--json"])
 
         assert result.exit_code == 3
+        # `ok: true` even when degraded -- degraded is exit 3 + the state fields,
+        # not the error discriminator (only config errors carry ok: false).
         assert json.loads(result.stdout) == {
+            "ok": True,
             "upload_server": "dead",
             "listener": "off",
             "attention": "off",

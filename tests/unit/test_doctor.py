@@ -213,6 +213,9 @@ class TestDoctorCli:
 
         assert result.exit_code == 1
         payload = json.loads(result.stdout)
+        # P3-04: doctor always emits ok: true (it produced a valid report); the
+        # per-check verdict lives in `failures` + the exit code.
+        assert payload["ok"] is True
         assert payload["failures"] == 1
         assert {c["name"] for c in payload["checks"]} == {"config", "monitors"}
         assert all({"name", "status", "detail"} <= set(c) for c in payload["checks"])

@@ -7,7 +7,7 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
-from multideck.config import _random_tab_color, default_config
+from multideck.config import _derive_tab_color, default_config
 from multideck.sessions.claude import encode_claude_project_path
 
 
@@ -341,7 +341,7 @@ def projects_to_config(projects: list[dict[str, object]]) -> dict[str, object]:
 
         if p["tool"] != "claude":
             entry["tool"] = p["tool"]
-        color = _random_tab_color(used)
+        color = _derive_tab_color(str(entry.get("title") or entry["path"]), used)
         used.add(color)
         entry["color"] = color
         config_projects.append(entry)

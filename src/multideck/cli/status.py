@@ -171,9 +171,9 @@ def _render_status(config_file: Path) -> bool:
             f"{style('Bring some up from the menu or `multideck up`.', dim=True)}"
         )
     if down:
-        preview = ", ".join(_as_str(d.get("name")) for d in down[:6]) + (
-            "..." if len(down) > 6 else ""
-        )
+        preview = ", ".join(
+            _as_str(d.get("session")) or _as_str(d.get("name")) for d in down[:6]
+        ) + ("..." if len(down) > 6 else "")
         click.echo(
             f"\n  {style(str(len(down)), fg='yellow', bold=True)} not running  {style('(' + preview + ')', dim=True)}"
         )
@@ -225,7 +225,8 @@ def status_cmd(ctx: click.Context, as_json: bool) -> None:
     config_file = find_config(ctx.obj.get("config_path"))
     if not config_file.exists():
         if as_json:
-            click.echo(json.dumps({"error": "No config found."}))
+            # P3-04: one error envelope shape across every CLI JSON surface.
+            click.echo(json.dumps({"ok": False, "error": "No config found."}))
         else:
             click.echo("No config found. Run multideck first.", err=True)
         sys.exit(1)
@@ -233,7 +234,9 @@ def status_cmd(ctx: click.Context, as_json: bool) -> None:
     if as_json:
         cfg = _load_config_or_exit(config_file, as_json=True)
         status = _gather_status(cfg)
-        payload: dict[str, object] = dict(status)
+        # P3-04: `ok: true` is the success discriminator (only errors carry
+        # ok: false); degraded is still signalled by the state fields + exit 3.
+        payload: dict[str, object] = {"ok": True, **status}
         payload["agents"] = _agents_snapshot(cfg)
         click.echo(json.dumps(payload))
         sys.exit(3 if _is_degraded(status) else 0)
@@ -270,7 +273,8 @@ def down_cmd(
     )
 
     up, _, _ = psmux_status(cfg, group=group)
-    up_names = [_as_str(u.get("name")) for u in up]
+    # Kill keys off the psmux socket id (P3-01); `status` shows the same ids.
+    up_names = [_as_str(u.get("session")) or _as_str(u.get("name")) for u in up]
     if names:
         wanted = {n.lower() for n in names}
         targets = [n for n in up_names if n.lower() in wanted]
@@ -369,7 +373,7 @@ def _menu_up(config_file: Path) -> None:
         if choice in ("n", "no", "cancel", "q"):
             return
         if choice in ("a", "all", "y", ""):
-            only = [_as_str(d.get("name")) for d in down]
+            only = [_as_str(d.get("session")) or _as_str(d.get("name")) for d in down]
         elif choice.isdigit() and 1 <= int(choice) <= len(pickable):
             only = dn_buckets[pickable[int(choice) - 1]]
         else:
@@ -435,9 +439,9 @@ def _menu_down(config_file: Path) -> None:
         if choice in ("n", "no", "cancel", "q", ""):
             return
         if choice in ("a", "all", "y"):
-            targets = [_as_str(u.get("name")) for u in up]
+            targets = [_as_str(u.get("session")) or _as_str(u.get("name")) for u in up]
         elif choice == "x":
-            targets = [_as_str(u.get("name")) for u in up]
+            targets = [_as_str(u.get("session")) or _as_str(u.get("name")) for u in up]
             also_server = True
         elif choice.isdigit() and 1 <= int(choice) <= len(pickable):
             targets = buckets[pickable[int(choice) - 1]]

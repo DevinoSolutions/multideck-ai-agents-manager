@@ -590,7 +590,12 @@ def eligible_psmux_projects(
         leaf = proj.title or get_leaf_name(proj.path)
         out.append(
             {
-                "name": _psmux_session_name(leaf),
+                # P3-01: `name` is the raw display name; `session` is the
+                # psmux-sanitized socket id. Every socket op keys off `session`;
+                # serialized surfaces expose both so a scripting consumer can
+                # correlate `up --json` against `status --json` by display name.
+                "name": leaf,
+                "session": _psmux_session_name(leaf),
                 "path": proj.path,
                 "tool": tool,
                 "group": proj.group,
@@ -620,13 +625,14 @@ def psmux_status(
     for p in projects:
         info: dict[str, object] = {
             "name": p["name"],
+            "session": p["session"],
             "path": p["path"],
             "tool": p["tool"],
             "group": p.get("group"),
         }
         if psmux and p["resolved"] and p["cmd"]:
             proc = subprocess.Popen(
-                [psmux, "-L", _field_str(p, "name"), "has-session"],
+                [psmux, "-L", _field_str(p, "session"), "has-session"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
@@ -655,13 +661,13 @@ def bring_up_psmux(
     plat = get_platform()
     windows: list[PsmuxWindowOpts] = []
     for p in eligible_psmux_projects(config, group):
-        if only is not None and _field_str(p, "name") not in only:
+        if only is not None and _field_str(p, "session") not in only:
             continue
         if not p["resolved"] or not p["cmd"]:
             continue
         windows.append(
             PsmuxWindowOpts(
-                window_name=_field_str(p, "name"),
+                window_name=_field_str(p, "session"),
                 cwd=_field_str(p, "resolved"),
                 command=_field_str(p, "cmd"),
             )

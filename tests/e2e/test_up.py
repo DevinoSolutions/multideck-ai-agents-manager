@@ -45,13 +45,36 @@ class TestUpJson:
         r = _run(cfg, "up", "--json")
         assert r.returncode == 0, r.stderr
         data = json.loads(r.stdout.strip().splitlines()[-1])
+        # P3-04: ok-envelope; P3-03: snake_case keys (upload_server/upload_port).
+        assert data["ok"] is True
+        assert "upload_server" in data
+        assert data["upload_port"] == 9091
         assert sorted(p["name"] for p in data["projects"]) == ["api", "web"]
         assert data["up"] == []
         assert sorted(d["name"] for d in data["down"]) == ["api", "web"]
-        assert data["uploadPort"] == 9091
+        # P3-01: every eligible entry carries both name (display) and session.
+        assert all("session" in p for p in data["projects"])
         # eligible entries carry the launch command used to create the session
         api = next(p for p in data["projects"] if p["name"] == "api")
         assert api["cmd"] == "claude --continue"
+
+    def test_name_display_vs_session_split(self, tmp_path):
+        # P3-01: a dotted title surfaces as `name` verbatim but `session`
+        # (the psmux socket id) is sanitized -- so a consumer can correlate by
+        # display name across up/status while the wire keeps the safe id.
+        (tmp_path / "svc").mkdir()
+        cfg = _write_cfg(
+            tmp_path,
+            [{"path": str(tmp_path / "svc"), "tool": "claude", "title": "my.api"}],
+        )
+        r = _run(cfg, "up", "--json")
+        assert r.returncode == 0, r.stderr
+        data = json.loads(r.stdout.strip().splitlines()[-1])
+        proj = data["projects"][0]
+        assert proj["name"] == "my.api"
+        assert proj["session"] == "my-api"
+        assert data["down"][0]["name"] == "my.api"
+        assert data["down"][0]["session"] == "my-api"
 
     def test_bad_config_errors_as_json(self, tmp_path):
         cfg = tmp_path / "bad.json"
