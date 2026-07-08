@@ -165,11 +165,11 @@ None of these imports any other `multideck` module (`style.py` imports
   candidate has the strictly greatest `last_active` seen so far, ties going
   to the first offered — the fix for a bug where a two-way pairwise merge
   could silently prefer a strictly older source (R9). Depends on `config`
-  (for `default_config`/`_random_tab_color`) and `sessions.claude` (for its
+  (for `default_config`/`_derive_tab_color`) and `sessions.claude` (for its
   path-encoding helper).
 - **`init_config.py`** — the `--init --base-dir` folder-scan generator
   (`scan_for_projects`/`generate_config`/`write_config`); delegates to
-  `config.default_config`/`_random_tab_color` so its output can't drift from
+  `config.default_config`/`_derive_tab_color` so its output can't drift from
   `discover.py`'s (F-D5-003).
 - **`launch.py`** — the widest-importing subsystem: `config`, `grid`, `log`,
   `platform`, `sessions`, `style`, `tiling`, `titles`. `run_multideck` is now
@@ -299,12 +299,13 @@ rewrites the file as a side effect was one of the audited defects; do not
 reintroduce it.
 
 **Color backfill is ephemeral until migrated.** `load_config` calls
-`_backfill_colors` on every load, assigning a random, session-local color to
-any project missing one — in memory only, never written back. Re-running
-`multideck` against a colorless project can show a different color each run
-until `multideck config migrate` (or a config-editor save) persists one.
-This is the accepted cost of keeping `load_config` a pure read; run
-`migrate` once per config to pin colors.
+`_backfill_colors` on every load, deriving a color for any project missing one
+— in memory only, never written back. The derivation is DETERMINISTIC
+(`_derive_tab_color` hashes the project's title/path → HLS hue, golden-angle
+collision-avoidance within a config), so a colorless project shows the SAME
+color every run (P3-07); `multideck config migrate` (or a config-editor save)
+still persists it into the file so external readers see it and it becomes
+editable. This keeps `load_config` a pure read; run `migrate` once to pin.
 
 **The dotenv file is `~/.multideck/.env` (`env.ENV_FILE`) — never the
 CWD's `.env`.** multideck is a launcher: it is run from arbitrary project

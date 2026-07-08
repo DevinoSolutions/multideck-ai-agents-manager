@@ -11,6 +11,7 @@ import pytest
 from multideck.upload_server import (
     UploadHandler,
     _build_html,
+    _config_sessions,
     _parse_multipart,
 )
 
@@ -29,6 +30,34 @@ class TestBuildHtml:
     def test_no_sessions_shows_message(self):
         html = _build_html([])
         assert "no active sessions" in html
+
+    def test_pill_wire_value_is_session_id(self):
+        # P3-01: the pill's data-name (the value posted back as `project`) is
+        # the psmux socket id, not the display name.
+        html = _build_html([{"name": "my.api", "session": "my-api", "path": "x"}])
+        assert 'data-name="my-api"' in html
+
+
+class TestConfigSessions:
+    def test_carries_display_name_and_sanitized_session(self, tmp_path):
+        # P3-01: _config_sessions splits the display name from the psmux id.
+        cfg = tmp_path / "multideck.config.json"
+        cfg.write_text(
+            json.dumps(
+                {
+                    "projects": [
+                        {
+                            "path": str(tmp_path / "svc"),
+                            "title": "my.api",
+                            "tool": "claude",
+                        }
+                    ]
+                }
+            )
+        )
+        out = _config_sessions(str(cfg))
+        assert out[0]["name"] == "my.api"
+        assert out[0]["session"] == "my-api"
 
     def test_html_escapes_names(self):
         sessions = [{"name": "<b>bad</b>", "path": "x&y"}]
@@ -107,8 +136,8 @@ class TestUploadServerIntegration:
 
         UploadHandler.config_path = None
         UploadHandler.cached_sessions = [
-            {"name": "marka", "path": "INTERNAL/marka"},
-            {"name": "upup", "path": "INTERNAL/upup"},
+            {"name": "marka", "session": "marka", "path": "INTERNAL/marka"},
+            {"name": "upup", "session": "upup", "path": "INTERNAL/upup"},
         ]
         UploadHandler.sessions_ts = time.time() + 9999
 
@@ -138,9 +167,48 @@ class TestUploadServerIntegration:
         conn = self._conn()
         conn.request("GET", "/api/sessions")
         resp = conn.getresponse()
+        assert resp.status == 200
         data = json.loads(resp.read())
-        assert len(data) == 2
-        assert data[0]["name"] == "marka"
+        # P3-04/P3-18: ok-envelope + the LIST lives under `sessions`.
+        assert data["ok"] is True
+        assert len(data["sessions"]) == 2
+        # P3-01: each entry carries the display `name` and psmux `session`.
+        assert data["sessions"][0]["name"] == "marka"
+        assert data["sessions"][0]["session"] == "marka"
+
+    def test_get_on_post_only_path_is_405(self):
+        # P3-16: wrong method on a real route -> 405 (not 404).
+        conn = self._conn()
+        conn.request("GET", "/upload")
+        resp = conn.getresponse()
+        assert resp.status == 405
+        data = json.loads(resp.read())
+        assert data["ok"] is False
+        assert data["error"]
+
+    def test_post_on_get_only_path_is_405(self):
+        conn = self._conn()
+        conn.request("POST", "/", body=b"", headers={"Content-Length": "0"})
+        resp = conn.getresponse()
+        assert resp.status == 405
+        assert json.loads(resp.read())["ok"] is False
+
+    def test_unknown_path_is_404_json_envelope(self):
+        # P3-16: a genuinely unknown path stays 404, as the JSON error envelope.
+        conn = self._conn()
+        conn.request("GET", "/does-not-exist")
+        resp = conn.getresponse()
+        assert resp.status == 404
+        data = json.loads(resp.read())
+        assert data["ok"] is False
+        assert data["error"]
+
+    def test_post_unknown_path_is_404(self):
+        conn = self._conn()
+        conn.request("POST", "/nope", body=b"", headers={"Content-Length": "0"})
+        resp = conn.getresponse()
+        assert resp.status == 404
+        assert json.loads(resp.read())["ok"] is False
 
     def test_upload_saves_file(self):
         body = (
@@ -444,8 +512,8 @@ class TestHealth:
 
         UploadHandler.config_path = None
         UploadHandler.cached_sessions = [
-            {"name": "marka", "path": "INTERNAL/marka"},
-            {"name": "upup", "path": "INTERNAL/upup"},
+            {"name": "marka", "session": "marka", "path": "INTERNAL/marka"},
+            {"name": "upup", "session": "upup", "path": "INTERNAL/upup"},
         ]
         UploadHandler.sessions_ts = time.time() + 9999
         UploadHandler.port = 8080
@@ -471,7 +539,9 @@ class TestHealth:
         assert data["service"] == "multideck-upload"
         assert data["port"] == 8080
         assert data["pid"] == 4321
-        assert data["sessions"] == 2  # a count, never session names
+        # P3-18: the COUNT is `session_count`; `sessions` is the LIST route.
+        assert data["session_count"] == 2
+        assert "sessions" not in data
         assert data["uptime_s"] >= 0
 
 

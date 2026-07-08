@@ -34,10 +34,14 @@ class TestEligibleProjects:
         out = eligible_psmux_projects(cfg)
         assert out[0]["tool"] == "codex"
 
-    def test_session_name_sanitized_from_title(self):
+    def test_name_is_display_and_session_is_sanitized(self):
+        # P3-01: `name` is the raw display title (dots/spaces intact); `session`
+        # is the psmux-sanitized socket id. A scripting consumer correlating
+        # `up --json` against `status --json` joins on the display `name`.
         cfg = _cfg([ProjectConfig(path="/a/x", title="My App.1", tool="claude")])
         out = eligible_psmux_projects(cfg)
-        assert out[0]["name"] == "My-App-1"
+        assert out[0]["name"] == "My App.1"
+        assert out[0]["session"] == "My-App-1"
 
     def test_group_filter_case_insensitive(self):
         cfg = _cfg(

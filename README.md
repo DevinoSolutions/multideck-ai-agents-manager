@@ -206,7 +206,7 @@ Start from the committed sample, [`multideck.config.example.json`](multideck.con
 }
 ```
 
-Configs are versioned (`"version": 1`). A config without a current version still loads but prints a warning until you run `multideck config migrate` — loading never rewrites your file; `migrate` is the only writer (it also persists auto-assigned project colors, which are otherwise re-randomized per run).
+Configs are versioned (`"version": 1`). A config without a current version still loads but prints a warning until you run `multideck config migrate` — loading never rewrites your file; `migrate` is the only writer (it also persists auto-assigned project colors; those are derived deterministically from each project's title/path, so they stay the same every run even before you migrate).
 
 ### Project fields
 
@@ -215,7 +215,7 @@ Configs are versioned (`"version": 1`). A config without a current version still
 | `path` | *(required)* | Absolute, or relative to `baseDir`. |
 | `group` | none | Tag for group launches (`-g`). |
 | `tool` | `defaultTool` | `claude`, `codex`, `cursor-agent`, `agy`, `vscode`, `cursor`, or any custom tool. |
-| `color` | random | Terminal tab color (`#rrggbb`). |
+| `color` | derived | Terminal tab color (`#rrggbb`); auto-derived from the project title/path when unset. |
 | `title` | folder name | Window title for matching. |
 | `enabled` | `true` | Set `false` to skip without deleting. |
 | `happy` | inherit | Override global Happy setting for this project. |

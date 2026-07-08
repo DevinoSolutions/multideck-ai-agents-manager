@@ -32,7 +32,7 @@ from multideck.cli.ui import (
     _open_in_editor,
     _prompt_or_back,
 )
-from multideck.config import _random_tab_color, migrate_config_file
+from multideck.config import _derive_tab_color, migrate_config_file
 from multideck.paths import find_config
 from multideck.style import style
 
@@ -338,7 +338,7 @@ def _config_menu(config_file: Path) -> None:
                 used = {
                     c for p in _project_dicts(data) if (c := _as_str(p.get("color")))
                 }
-                color = _random_tab_color(used)
+                color = _derive_tab_color(str(entry.get("title") or path), used)
             entry["color"] = color
             _sublist(data, "projects").append(entry)
             _save_raw_config(config_file, data)

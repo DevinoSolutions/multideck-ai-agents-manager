@@ -4,7 +4,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from multideck.config import _random_tab_color, default_config
+from multideck.config import _derive_tab_color, default_config
 
 SKIP_DIRS = {
     ".git",
@@ -69,7 +69,7 @@ def scan_for_projects(
             proj["group"] = parts[0]
         if parts[-1] in dup_leaves:
             proj["title"] = rel.replace("/", "-")
-        color = _random_tab_color(used)
+        color = _derive_tab_color(str(proj.get("title") or proj["path"]), used)
         used.add(color)
         proj["color"] = color
         projects.append(proj)

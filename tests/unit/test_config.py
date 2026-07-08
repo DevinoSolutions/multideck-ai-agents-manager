@@ -165,6 +165,40 @@ class TestLoadConfig:
         assert cfg.projects[0].color is not None
         assert before == after
 
+
+class TestDeterministicColors:
+    """P3-07: a colorless project gets a DETERMINISTIC color derived from a
+    stable hash of its title/path -- the same color every load, before any
+    `config migrate` persists it (no more per-load randomness)."""
+
+    def test_derive_is_deterministic(self):
+        from multideck.config import _derive_tab_color
+
+        a = _derive_tab_color("api", set())
+        b = _derive_tab_color("api", set())
+        assert a == b
+        assert a.startswith("#") and len(a) == 7
+
+    def test_distinct_identities_differ(self):
+        from multideck.config import _derive_tab_color
+
+        assert _derive_tab_color("api", set()) != _derive_tab_color("web", set())
+
+    def test_avoids_collision_within_config(self):
+        from multideck.config import _derive_tab_color
+
+        first = _derive_tab_color("api", set())
+        second = _derive_tab_color("api", {first})
+        assert second != first
+        assert second.startswith("#") and len(second) == 7
+
+    def test_backfill_is_stable_across_loads(self, tmp_config):
+        path = tmp_config({"projects": [{"path": "api"}, {"path": "web"}]})
+        first = [p.color for p in load_config(path).projects]
+        second = [p.color for p in load_config(path).projects]
+        assert first == second
+        assert all(c is not None for c in first)
+
     def test_load_config_drops_unknown_settings_key(self, capsys, tmp_config):
         # F-D6-004: unknown settings keys are still dropped from the parsed
         # Settings object (there's nowhere to put them), but now surface a

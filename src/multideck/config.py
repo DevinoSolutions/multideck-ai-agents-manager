@@ -13,8 +13,8 @@ interactive editor — lives in ``cli/config_io.py``; the two paths never overla
 from __future__ import annotations
 
 import colorsys
+import hashlib
 import json
-import random
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -261,16 +261,26 @@ def _parse_project(raw: dict[str, object]) -> ProjectConfig:
     )
 
 
-def _random_tab_color(used: set[str]) -> str:
-    for _ in range(200):
-        h = random.random()
-        s = random.uniform(0.55, 0.95)
-        light = random.uniform(0.40, 0.65)
+def _derive_tab_color(identity: str, used: set[str]) -> str:
+    """A DETERMINISTIC tab color derived from a stable hash of the project
+    identity (title or path). Same hue/saturation/lightness character as the
+    old random picker (S in [0.55, 0.95], L in [0.40, 0.65]) but reproducible:
+    the same project yields the same color on every load, so a colorless config
+    renders stably *before* ``config migrate`` persists it (P3-07). Still
+    collision-avoidant within one config -- on a clash the hue is rotated by the
+    golden angle until a free color is found."""
+    digest = hashlib.sha256(identity.encode("utf-8")).digest()
+    base_h = int.from_bytes(digest[0:4], "big") / 0xFFFFFFFF
+    s = 0.55 + (digest[4] / 255) * (0.95 - 0.55)
+    light = 0.40 + (digest[5] / 255) * (0.65 - 0.40)
+    color = ""
+    for i in range(200):
+        h = (base_h + i * 0.6180339887498949) % 1.0  # golden-angle rotation
         r, g, b = colorsys.hls_to_rgb(h, light, s)
         color = f"#{int(r * 255):02x}{int(g * 255):02x}{int(b * 255):02x}"
         if color not in used:
             return color
-    return f"#{random.randint(0, 0xFFFFFF):06x}"
+    return color
 
 
 def _backfill_colors(projects: list[ProjectConfig]) -> bool:
@@ -278,7 +288,7 @@ def _backfill_colors(projects: list[ProjectConfig]) -> bool:
     changed = False
     for p in projects:
         if not p.color:
-            p.color = _random_tab_color(used)
+            p.color = _derive_tab_color(p.title or p.path, used)
             used.add(p.color)
             changed = True
     return changed
