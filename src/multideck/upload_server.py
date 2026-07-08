@@ -727,6 +727,19 @@ class UploadHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        # Any unhandled error in a request handler must land in the "upload"
+        # log at ERROR (-> logfile stack + Sentry), never only in the detached
+        # daemon's invisible socketserver stderr (P2-03). The whole body is
+        # wrapped, so even the pre-routing setup is covered.
+        try:
+            self._handle_get()
+        except Exception:
+            log = get_logger("upload")
+            log.exception("GET handler crashed for %s", self.path)
+            with contextlib.suppress(OSError):
+                self._json_response({"ok": False, "error": "internal"}, 500)
+
+    def _handle_get(self) -> None:
         path = urlparse(self.path).path
         if path == "/" or path == "":
             self._send_bytes(
@@ -790,6 +803,19 @@ class UploadHandler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self) -> None:
+        # See do_GET: a handler-thread crash (e.g. an OSError writing the
+        # upload, an unexpected multipart fault) must page through logging at
+        # ERROR and return a clean 500 -- the existing inner try/finally keeps
+        # its inflight-count + outcome INFO line intact (P2-03).
+        try:
+            self._handle_post()
+        except Exception:
+            log = get_logger("upload")
+            log.exception("POST handler crashed for %s", self.path)
+            with contextlib.suppress(OSError):
+                self._json_response({"ok": False, "error": "internal"}, 500)
+
+    def _handle_post(self) -> None:
         log = get_logger("upload")
         parsed = urlparse(self.path)
         if parsed.path != "/upload":
