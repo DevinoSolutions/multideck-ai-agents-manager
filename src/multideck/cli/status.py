@@ -19,8 +19,8 @@ from urllib.request import urlopen
 import click
 
 from multideck.cli.app import main
+from multideck.cli.background import _maybe_start_upload_server, _probe_port
 from multideck.cli.config_io import _as_str, _load_config_or_exit
-from multideck.cli.spawns import _maybe_start_upload_server, _probe_port
 from multideck.cli.ui import (
     _banner,
     _divider,

@@ -16,13 +16,13 @@ from collections import Counter
 import click
 
 from multideck.cli.app import main
+from multideck.cli.background import _maybe_start_hotkey, _maybe_start_upload_server
 from multideck.cli.config_io import (
     _as_dict,
     _as_str,
     _load_config_or_exit,
     _project_dicts,
 )
-from multideck.cli.spawns import _maybe_start_hotkey, _maybe_start_upload_server
 from multideck.cli.ui import _banner, _divider, _print_session_overview
 from multideck.config import DEFAULT_TOOLS
 from multideck.grid import compute_grid

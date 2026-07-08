@@ -12,7 +12,7 @@ import click
 
 from multideck import tailnet
 from multideck.cli.app import main
-from multideck.cli.spawns import (
+from multideck.cli.background import (
     _maybe_start_upload_server,
     _running_upload_port,
     _tailnet_host,

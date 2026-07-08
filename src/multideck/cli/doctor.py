@@ -171,7 +171,7 @@ def _check_tailscale() -> CheckResult:
 
 
 def _check_upload_port(cfg: MultideckConfig | None) -> CheckResult:
-    from multideck.cli.spawns import (
+    from multideck.cli.background import (
         _probe_port,
         _running_upload_port,
     )
