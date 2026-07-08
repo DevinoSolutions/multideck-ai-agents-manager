@@ -26,6 +26,15 @@ def _isolate_multideck_home(tmp_path, monkeypatch):
     monkeypatch.setattr(agent_state, "STATE_DIR", tmp_path / "agent-state")
     monkeypatch.setattr(env, "ENV_FILE", tmp_path / "env-file")
     monkeypatch.setattr(env, "_cached_env", None)
+    # Isolating ENV_FILE (above) is not enough: an exported process-env
+    # MULTIDECK_* var (a dev shell's real MULTIDECK_SENTRY_DSN) is still read by
+    # get_env(), and on 2026-07-07 that leaked fake test errors to prod Sentry
+    # (MULTIDECK-1..4). Strip every MULTIDECK_* key so no test can init real
+    # Sentry or see ambient config -- unknown keys swept too, matching env.py's
+    # own closed-schema scan.
+    for _key in list(os.environ):
+        if _key.upper().startswith("MULTIDECK_"):
+            monkeypatch.delenv(_key, raising=False)
     log.reset_logging()
     yield
     log.reset_logging()
