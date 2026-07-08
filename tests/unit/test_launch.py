@@ -8,6 +8,7 @@ touching any OS-specific window/monitor API.
 
 from __future__ import annotations
 
+import os
 import time
 
 import pytest
@@ -18,6 +19,7 @@ from multideck.launch import (
     RunOpts,
     _dispatch_cli_agent_project,
     _dispatch_ide_project,
+    _expand_base_dir,
     _launch_projects,
     _LaunchResult,
     _prepare_grid,
@@ -487,6 +489,13 @@ class TestBaseDirExpansion:
     """Characterization pin (P1-08), written before the _expand_base_dir
     extraction: a configured base_dir gets env vars expanded and forward
     slashes normalized to os.sep before project paths resolve against it."""
+
+    def test_expand_base_dir_normalizes_env_and_separators(self, monkeypatch):
+        monkeypatch.setenv("MD_TEST_BASE", "base")
+        assert _expand_base_dir("$MD_TEST_BASE/x") == "base" + os.sep + "x"
+
+    def test_expand_base_dir_expands_user(self):
+        assert not _expand_base_dir("~/x").startswith("~")
 
     def test_eligible_psmux_projects_expands_base_dir(self, tmp_path, monkeypatch):
         proj_dir = tmp_path / "sub" / "proj"

@@ -21,7 +21,12 @@ from multideck.platform import (
     VSCodeLaunchOpts,
     get_platform,
 )
-from multideck.sessions import AGENT_TOOLS, build_resume_command
+from multideck.sessions import (
+    AGENT_TOOLS,
+    build_resume_command,
+    ide_command,
+    is_ide_tool,
+)
 from multideck.style import style
 from multideck.tiling import Placement, place_windows
 from multideck.titles import generate_titles, get_leaf_name, make_title, parse_title
@@ -80,6 +85,12 @@ def _resolve_path(raw: str, base_dir: str | None) -> str | None:
     return None
 
 
+def _expand_base_dir(base_dir: str) -> str:
+    """Normalize a configured base dir: expand env vars and ~, then unify
+    forward slashes to the OS separator."""
+    return os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)
+
+
 def _get_session_ids(tool: str, project_dir: str, count: int) -> list[str | None]:
     caps = AGENT_TOOLS.get(tool)
     if caps and caps.session_ids:
@@ -120,7 +131,7 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
 
     base_dir = config.base_dir
     if base_dir:
-        base_dir = os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)
+        base_dir = _expand_base_dir(base_dir)
 
     result = _launch_projects(plat, config, opts, projects, base_dir)
 
@@ -229,7 +240,7 @@ def _launch_projects(
         tool = proj.tool or config.settings.default_tool
         is_remote = bool(proj.host)
 
-        if tool in ("code", "vscode", "cursor"):
+        if is_ide_tool(tool):
             new_count += _dispatch_ide_project(
                 plat,
                 config,
@@ -291,7 +302,7 @@ def _dispatch_ide_project(
             if is_remote
             else (_resolve_path(proj.path, base_dir) or proj.path)
         )
-        ide_cmd = "cursor" if tool == "cursor" else "code"
+        ide_cmd = ide_command(tool)
         plat.launch_vscode(
             VSCodeLaunchOpts(
                 dir=vsc_dir,
@@ -329,7 +340,7 @@ def _dispatch_cli_agent_project(
     new_count = 0
 
     windows_cfg = proj.windows
-    if is_remote or tool in ("code", "vscode", "cursor"):
+    if is_remote or is_ide_tool(tool):
         windows_cfg = None
     titles = generate_titles(proj.title, proj.path, windows_cfg)
     window_count = len(titles)
@@ -563,7 +574,7 @@ def eligible_psmux_projects(
     """
     base_dir = config.base_dir
     if base_dir:
-        base_dir = os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)
+        base_dir = _expand_base_dir(base_dir)
 
     out: list[dict[str, object]] = []
     for proj in config.projects:
@@ -572,7 +583,7 @@ def eligible_psmux_projects(
         if group and (not proj.group or proj.group.lower() != group.lower()):
             continue
         tool = proj.tool or config.settings.default_tool
-        if tool in ("code", "vscode", "cursor"):
+        if is_ide_tool(tool):
             continue
         if proj.host:
             continue

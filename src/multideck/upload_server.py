@@ -24,6 +24,7 @@ from multideck.launch import _psmux_session_name
 from multideck.log import get_logger
 from multideck.paths import find_config
 from multideck.platform import find_psmux
+from multideck.sessions import is_ide_tool
 
 
 def _pid_path(port: int) -> Path:
@@ -357,7 +358,7 @@ def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
         if not p.get("enabled", True):
             continue
         tool = p.get("tool", default_tool)
-        if tool in ("code", "vscode", "cursor"):
+        if isinstance(tool, str) and is_ide_tool(tool):
             continue
         proj_name = p.get("title") or Path(p["path"]).name
         out.append({"name": _psmux_session_name(proj_name), "path": p["path"]})

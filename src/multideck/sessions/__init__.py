@@ -40,3 +40,28 @@ def build_resume_command(tool: str, base_cmd: str, session_id: str | None) -> st
     if caps and caps.resume_command:
         return caps.resume_command(base_cmd, session_id)
     return base_cmd
+
+
+# --- IDE tools (REC-F4) -------------------------------------------------------
+# The IDE mirror of AGENT_TOOLS: tools launched as an IDE window instead of a
+# CLI agent in a terminal. The dict is the single source of truth — adding an
+# IDE is one entry here; IDE_TOOLS and both helpers derive from it.
+
+IDE_COMMANDS: dict[str, str] = {
+    "code": "code",
+    "vscode": "code",  # config alias for VS Code
+    "cursor": "cursor",
+}
+
+IDE_TOOLS: frozenset[str] = frozenset(IDE_COMMANDS)
+
+
+def is_ide_tool(tool: str) -> bool:
+    """True when `tool` names an IDE (opened as a window, not a CLI agent)."""
+    return tool in IDE_COMMANDS
+
+
+def ide_command(tool: str) -> str:
+    """CLI executable that opens `tool`'s IDE window. Unknown tools fall back
+    to "code", preserving the historical launch-path behavior."""
+    return IDE_COMMANDS.get(tool, "code")
