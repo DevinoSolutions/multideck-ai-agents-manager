@@ -27,7 +27,7 @@ def _both_off(monkeypatch):
     monkeypatch.setattr("multideck.cli.status._health_check", lambda port: False)
     monkeypatch.setattr("multideck.cli.status._probe_port", lambda port: False)
     monkeypatch.setattr("multideck.upload_server.server_pid", lambda port: None)
-    monkeypatch.setattr("multideck.cli.status._pid_alive", lambda pid: False)
+    monkeypatch.setattr("multideck.cli.status.pid_alive", lambda pid: False)
     if sys.platform == "win32":
         monkeypatch.setattr("multideck.hotkey.listener_pid", lambda: None)
     else:
@@ -109,7 +109,7 @@ class TestUploadServerLiveness:
         _no_psmux(monkeypatch)
         _both_off(monkeypatch)
         monkeypatch.setattr("multideck.upload_server.server_pid", lambda port: 4321)
-        monkeypatch.setattr("multideck.cli.status._pid_alive", lambda pid: pid == 4321)
+        monkeypatch.setattr("multideck.cli.status.pid_alive", lambda pid: pid == 4321)
         cfgpath = tmp_config({"projects": []})
 
         result = runner.invoke(cli.main, ["--config", cfgpath, "status"])

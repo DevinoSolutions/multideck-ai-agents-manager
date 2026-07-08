@@ -365,7 +365,7 @@ def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
     return out
 
 
-def _alive(psmux: str, name: str) -> bool:
+def _psmux_window_alive(psmux: str, name: str) -> bool:
     return (
         subprocess.run(
             [psmux, "-L", name, "has-session"], capture_output=True, check=False
@@ -387,7 +387,9 @@ def _discover_sessions(config_path: str | None) -> list[dict[str, object]]:
     if not candidates or not psmux:
         return []
     with ThreadPoolExecutor(max_workers=16) as pool:
-        flags = list(pool.map(lambda c: _alive(psmux, str(c["name"])), candidates))
+        flags = list(
+            pool.map(lambda c: _psmux_window_alive(psmux, str(c["name"])), candidates)
+        )
     return [c for c, ok in zip(candidates, flags, strict=True) if ok]
 
 

@@ -8,7 +8,6 @@ command module eagerly to register it).
 
 from __future__ import annotations
 
-import os
 import re
 import socket
 import sys
@@ -16,6 +15,7 @@ import time
 from pathlib import Path
 
 from multideck import tailnet
+from multideck.procs import pid_alive
 
 
 def _maybe_start_upload_server(port: int, config_path: str | None) -> None:
@@ -91,29 +91,6 @@ def _probe_port(port: int) -> bool:
         s.close()
 
 
-def _pid_alive(pid: int | None) -> bool:
-    """Portable best-effort liveness check for a pid."""
-    if not pid:
-        return False
-    if sys.platform == "win32":
-        import ctypes  # win-only: ctypes.windll doesn't exist off Windows
-
-        k = ctypes.windll.kernel32
-        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not h:
-            return False
-        code = ctypes.c_ulong()
-        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
-        k.CloseHandle(h)
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    else:
-        return True
-
-
 def _running_upload_port() -> int | None:
     """Port of a *live* locally-running upload server, from its pid file. Skips
     stale pid files (a port whose recorded process is gone)."""
@@ -129,7 +106,7 @@ def _running_upload_port() -> int | None:
         m = re.match(r"upload_server-(\d+)\.pid", f.name)
         if m:
             ports.append(int(m.group(1)))
-    alive = [p for p in ports if _pid_alive(server_pid(p))]
+    alive = [p for p in ports if pid_alive(server_pid(p))]
     return min(alive) if alive else None
 
 

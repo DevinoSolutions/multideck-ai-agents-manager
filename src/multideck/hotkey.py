@@ -16,6 +16,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from multideck.log import HEARTBEAT_INTERVAL, get_logger, write_heartbeat
+from multideck.procs import pid_alive
 from multideck.titles import parse_title
 
 if TYPE_CHECKING:
@@ -244,22 +245,6 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
 # `multideck status` report it and `multideck down --all` stop it.
 
 _PID_PATH = Path.home() / ".multideck" / "hotkey.pid"
-_STILL_ACTIVE = 259
-_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-
-
-def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
-    if not handle:
-        return False
-    try:
-        code = ctypes.wintypes.DWORD()
-        ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-        return bool(ok) and code.value == _STILL_ACTIVE
-    finally:
-        kernel32.CloseHandle(handle)
 
 
 def listener_pid() -> int | None:
@@ -268,7 +253,7 @@ def listener_pid() -> int | None:
         pid = int(_PID_PATH.read_text().strip())
     except (OSError, ValueError):
         return None
-    if _pid_alive(pid):
+    if pid_alive(pid):
         return pid
     with contextlib.suppress(OSError):
         _PID_PATH.unlink()

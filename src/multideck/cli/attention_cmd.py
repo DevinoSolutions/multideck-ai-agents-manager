@@ -18,8 +18,8 @@ import click
 
 from multideck.cli.app import main
 from multideck.cli.config_io import _load_config_or_exit
-from multideck.cli.spawns import _pid_alive
 from multideck.paths import find_config
+from multideck.procs import pid_alive
 from multideck.style import style
 from multideck.titles import get_leaf_name
 
@@ -37,7 +37,7 @@ def daemon_pid() -> int | None:
         pid = int(_PID_PATH.read_text().strip())
     except (OSError, ValueError):
         return None
-    if _pid_alive(pid):
+    if pid_alive(pid):
         return pid
     with contextlib.suppress(OSError):
         _PID_PATH.unlink()
@@ -73,11 +73,11 @@ def stop_daemon() -> bool:
             killed = True
         except OSError:
             killed = False
-    if killed and not _pid_alive(pid):
+    if killed and not pid_alive(pid):
         with contextlib.suppress(OSError):
             _PID_PATH.unlink()
         return True
-    return killed and not _pid_alive(pid)
+    return killed and not pid_alive(pid)
 
 
 def name_pairs_from_config(cfg: MultideckConfig) -> list[tuple[str, str]]:
