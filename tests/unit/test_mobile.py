@@ -1,8 +1,8 @@
-"""Characterization pins for cli/daemons' `termius` host resolution, written
+"""Characterization pins for cli/mobile's `termius` host resolution, written
 BEFORE the P1-01 tailnet-leaf dedup: with no --host, termius asks Tailscale
 for an IPv4 and falls back to an interactive prompt. Mocks sit at the
 subprocess.run boundary so the pins hold whether the probe lives inline in
-daemons.py or in the shared leaf. (`--host`-given behavior is already pinned
+mobile.py or in the shared leaf. (`--host`-given behavior is already pinned
 by tests/unit/test_cli_smoke.py::test_termius_prints_block.)
 """
 

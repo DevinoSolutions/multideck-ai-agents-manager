@@ -1,8 +1,8 @@
 """Tailnet-resolution leaf: the single owner of every `tailscale` CLI probe.
 
 Before this module, ``['tailscale', 'ip', '-4']`` was re-implemented inline at
-five sites (launch, upload_server, cli/daemons, cli/spawns, cli/doctor) plus a
-richer status-json variant in cli/spawns -- and the copies drifted (P1-01).
+five sites (launch, upload_server, cli/mobile, cli/background, cli/doctor) plus a
+richer status-json variant in cli/background -- and the copies drifted (P1-01).
 Like paths.py / titles.py this is a true leaf: stdlib-only, no dependency on
 the cli package or any other multideck module, so launch.py and
 upload_server.py can import it without cycles (LS-A-001).

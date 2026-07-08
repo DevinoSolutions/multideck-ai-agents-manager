@@ -26,7 +26,7 @@ pure leaves:  grid · paths · style · titles · log · terminals · agent_stat
                           ^
 subsystems:   tiling · platform/ · sessions/ · discover · init_config · launch · upload_server · hotkey
                           ^
-cli/ command modules:  app · config_io · ui · spawns · config_editor · menu · attach · docs · daemons · session_picker · status
+cli/ command modules:  app · config_io · ui · background · config_editor · menu · attach · docs · mobile · session_picker · status
                           ^
 cli/__init__.py  (registration hub)
 ```
@@ -42,7 +42,7 @@ own docstring).
 
 `cli/__init__.py` is a 24-line registration hub and nothing else: it imports
 `app.main`, then imports every other command module (`attach`, `config_editor`,
-`config_io`, `daemons`, `docs`, `menu`, `session_picker`, `spawns`, `status`,
+`config_io`, `mobile`, `docs`, `menu`, `session_picker`, `background`, `status`,
 `ui`) purely so their `@main.command` decorators fire at import time, then
 re-exports the ~16 underscore-prefixed names that tests and other call sites
 still reach via `multideck.cli.<name>`. It never imports `paths` or `style`
@@ -229,12 +229,12 @@ laziness.
   `qrcode` import inside a `try/except ImportError` that prints an install
   tip on failure — a deliberate optional dependency, not a latent bug;
   ADJ-S2-5).
-- **`spawns.py`** — the runtime-probe/daemon-bootstrap leaf: port/pid
+- **`background.py`** — the runtime-probe/daemon-bootstrap leaf: port/pid
   liveness checks (`_probe_port`, `_pid_alive`, `_running_upload_port`) and
   the detached-process launchers for the upload server and the Alt+V
   listener (`_maybe_start_upload_server`, `_maybe_start_hotkey`). Also owns
   `_tailnet_host` (Tailscale MagicDNS name → Tailscale IP → LAN IP
-  fallback, used by `mobile_cmd` in `daemons.py`).
+  fallback, used by `mobile_cmd` in `mobile.py`).
 - **`config_editor.py`** — `_config_menu` (the single worst-graded function
   in the repo — see Key Decisions) and the `config` command group (14
   subcommands, including `migrate`). Imports the raw-dict path from
@@ -257,7 +257,7 @@ laziness.
   defaults off `config.LayoutConfig`/`config.Settings` — including the
   example-config `tools` block, now derived from the factory defaults so it
   can't drift from `DEFAULT_TOOLS` (NF-S3-003, resolved pass-2).
-- **`daemons.py`** — `serve`/`mobile`/`termius` commands. `serve` carries the
+- **`mobile.py`** — `serve`/`mobile`/`termius` commands. `serve` carries the
   `--host` escape hatch (see Key Decisions).
 - **`session_picker.py`** — live psmux session listing (`sessions_cmd`) and
   the looping attach-and-return picker (`_run_sessions_picker`). Named
@@ -373,7 +373,7 @@ uploader is the **intended** behavior of this change, not a regression.
 **`hotkey.py` raises `ImportError` at import time off-Windows, by design.**
 `if sys.platform != "win32": raise ImportError("hotkey module is
 Windows-only")` runs at module import. Every caller (`cli/attach.py`,
-`cli/status.py`, `cli/spawns.py`) imports it lazily, inside a function body,
+`cli/status.py`, `cli/background.py`) imports it lazily, inside a function body,
 behind a `get_platform().supports_hotkey()` check, each with a `# ImportError
 off-Windows (hotkey.py guards); must stay lazy` comment on the import line.
 Hoisting any of these imports to module level breaks `import multideck.cli`
@@ -571,12 +571,12 @@ change):
 - **Tailscale-IP resolution exists in four independent places:**
   `upload_server._tailscale_ip` (used by `_bind_addresses` and, via import,
   by `serve_cmd`'s display), `launch._get_tailscale_ip`,
-  `cli/spawns._tailnet_host` (the most complete: MagicDNS name → Tailscale
-  IP → LAN IP), and `cli/daemons.termius_cmd`'s own inline
+  `cli/background._tailnet_host` (the most complete: MagicDNS name → Tailscale
+  IP → LAN IP), and `cli/mobile.termius_cmd`'s own inline
   `subprocess.run(["tailscale", "ip", "-4"], ...)` block.
 - **Two independent pid-liveness checks:** `hotkey._pid_alive` (Windows-only
   ctypes `OpenProcess`/`GetExitCodeProcess`/`STILL_ACTIVE`) and
-  `cli/spawns._pid_alive` (same Windows pattern plus a cross-platform
+  `cli/background._pid_alive` (same Windows pattern plus a cross-platform
   `os.kill(pid, 0)` branch) — neither calls the other.
 - **`launch.py`'s base-dir expansion chain is duplicated:** the exact
   `os.path.expandvars(os.path.expanduser(base_dir)).replace("/", os.sep)`
@@ -693,7 +693,7 @@ launched as-is, like `cursor-agent`/`agy`), only step 3 applies: one
 ## 5. How this document stays honest
 
 Three mechanisms: **the gate** (`scripts/check.py`: ruff (lint + `format
---check`) + custom lint MD001-MD004 + ty strict + compileall + vulture +
+--check`) + custom lint MD001-MD005 + ty strict + compileall + vulture +
 pytest unit tests with a coverage floor, required green before every commit,
 so nothing described here as tested or type-checked silently stops being
 so); **pins-first discipline** (every relocation described above as "unchanged"

@@ -1,6 +1,6 @@
 """Process-liveness leaf: the one owner of "is this pid alive?".
 
-Before this module, cli/spawns.py and hotkey.py each carried a private
+Before this module, cli/background.py and hotkey.py each carried a private
 ``_pid_alive`` (P1-09) -- the hotkey copy existed only because hotkey.py
 raises ImportError off-Windows, so nothing importable-from-anywhere owned the
 check. Like paths.py / titles.py / tailnet.py this is a true leaf:
