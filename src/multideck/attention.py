@@ -18,6 +18,7 @@ never limp silently.
 
 from __future__ import annotations
 
+import contextlib
 import time
 import urllib.error
 import urllib.request
@@ -147,6 +148,14 @@ class AttentionEngine:
             if prev != v.state:
                 out.append(Transition(view=v, prev_state=prev))
         self._last_state = seen
+        # Evict debounce entries for cwds no longer in the store, so a daemon
+        # watching ephemeral (git-worktree) sessions doesn't accumulate a dead
+        # (cwd, kind) key per vanished session forever (P6-07). _last_state is
+        # already rebuilt each poll; _last_fired must be pruned to match.
+        live = set(seen)
+        self._last_fired = {
+            key: ts for key, ts in self._last_fired.items() if key[0] in live
+        }
         return out
 
     def should_fire(self, cwd: str, state: str) -> bool:
@@ -190,15 +199,29 @@ class BadgeRenderer:
 
     Only rewrites when the desired title differs, so a quiet tick makes zero
     Win32 calls. Windows whose parsed name matches no session (e.g. "proj-2"
-    secondary windows) are left alone. Known limitation (DESIGN.md): shells
-    that rewrite their own titles may overwrite the badge — flash is the
-    primary signal, the badge is ambient state."""
+    secondary windows) are left alone — unless this renderer badged them
+    earlier, in which case the badge is restored to a clean title when the
+    session leaves the store (P6-06). Known limitation (DESIGN.md): shells that
+    rewrite their own titles may overwrite the badge — flash is the primary
+    signal, the badge is ambient state."""
 
     def __init__(self, plat: Platform) -> None:
         self._plat = plat
+        # Handles we have put a badge on, {handle: name}. Lets us clear a
+        # frozen glyph both when a session leaves the store mid-run and when
+        # the daemon stops (inverse-transience — P6-06).
+        self._badged: dict[object, str] = {}
 
     def render(self, views: list[SessionView], transitions: list[Transition]) -> None:
-        desired = {v.name: v.state for v in views}
+        # views are most-urgent-first; setdefault keeps the FIRST (most urgent)
+        # state when two sessions collapse to one display name, so a needs-input
+        # session sharing a name with an idle one still badges (P6-05). A plain
+        # dict comprehension would keep the LAST — the least-urgent — and hide
+        # the glyph. The window boundary is name-keyed (titles carry the name,
+        # not the cwd), so urgency-wins de-aliasing is the fix available here.
+        desired: dict[str, str] = {}
+        for v in views:
+            desired.setdefault(v.name, v.state)
         # Materialize first: the ABC doesn't promise a fresh dict, and
         # retitling mid-iteration would mutate a live snapshot under us.
         for title, handle in list(self._plat.snapshot_windows().items()):
@@ -207,10 +230,35 @@ class BadgeRenderer:
                 continue
             name = parsed[0]
             if name not in desired:
+                # Session gone but we badged this window earlier: restore the
+                # clean title instead of freezing a stale glyph (P6-06).
+                if handle in self._badged:
+                    self._retitle(handle, title, make_title(name))
+                    del self._badged[handle]
                 continue
             want = make_title(name, desired[name])
-            if want != title:
-                self._plat.set_window_title(handle, want)
+            self._retitle(handle, title, want)
+            if want == make_title(name):
+                self._badged.pop(handle, None)
+            else:
+                self._badged[handle] = name
+
+    def _retitle(self, handle: object, current: str, want: str) -> None:
+        if want != current:
+            self._plat.set_window_title(handle, want)
+
+    def clear_badges(self) -> None:
+        """Restore a clean (badge-less) title on every window this renderer
+        badged. Called on daemon shutdown so a stopped daemon never leaves a
+        [!]/[x]/[+] glyph frozen on a window that then misrepresents state for
+        hours (P6-06). Best-effort — a window that has since vanished is
+        skipped. (A win32 detached daemon killed via ``taskkill /F`` never runs
+        its ``finally``, so this covers Ctrl+C / foreground stop, not a forced
+        kill — an inherent limit noted in DESIGN.md.)"""
+        for handle, name in list(self._badged.items()):
+            with contextlib.suppress(OSError):
+                self._plat.set_window_title(handle, make_title(name))
+            del self._badged[handle]
 
 
 class FlashRenderer:

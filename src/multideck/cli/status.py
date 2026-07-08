@@ -107,6 +107,26 @@ def _agents_snapshot(cfg: MultideckConfig) -> list[dict[str, object]]:
     ]
 
 
+def _agents_attention_rollup(cfg: MultideckConfig) -> None:
+    """Print a one-line 'N agents need you' summary when any session is blocked
+    on the user (needs-input) or errored — the human counterpart to `status
+    --json`'s agents array. Silent when nothing needs attention (WIN, P6)."""
+    from multideck import agent_state  # heavy subsystem: in-body per policy
+
+    waiting = [
+        a
+        for a in _agents_snapshot(cfg)
+        if a.get("state") in (agent_state.NEEDS_INPUT, agent_state.ERROR)
+    ]
+    if not waiting:
+        return
+    names = ", ".join(str(a.get("name")) for a in waiting)
+    click.echo(
+        f"  {style(f'{len(waiting)} agent(s) need you', fg='yellow', bold=True)}"
+        f"  {style('(' + names + ')', dim=True)}"
+    )
+
+
 def _gather_status(cfg: MultideckConfig) -> dict[str, str]:
     return {
         "upload_server": _upload_state(cfg.settings.upload_port),
@@ -191,6 +211,8 @@ def _render_status(config_file: Path) -> bool:
     click.echo(
         f"  {style('Attention', bold=True)}        {attention_labels[status['attention']]}"
     )
+
+    _agents_attention_rollup(cfg)
 
     return _is_degraded(status)
 
