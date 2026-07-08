@@ -138,9 +138,12 @@ def main(
             if not root.is_dir():
                 click.echo(f"Folder not found: {base_dir}", err=True)
                 sys.exit(1)
-            success = write_config(str(root), str(config_file), force=force)
+            success, skipped = write_config(str(root), str(config_file), force=force)
             if success:
                 click.echo(f"Wrote config to {config_file}")
+                if skipped:
+                    noun = "directory" if skipped == 1 else "directories"
+                    click.echo(f"Skipped {skipped} unreadable {noun}.", err=True)
             else:
                 click.echo(
                     f"{config_file} exists -- use --force to overwrite.", err=True

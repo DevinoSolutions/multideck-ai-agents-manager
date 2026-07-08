@@ -174,10 +174,13 @@ def _generate_docs() -> str:
     w(f'    "defaultTool": "{defaults_settings.default_tool}",')
     w(f'    "settleSeconds": {defaults_settings.settle_seconds},')
     w(f'    "launchDelayMs": {defaults_settings.launch_delay_ms},')
+    # Derive the tools block straight from the factory defaults so the example
+    # can never drift from DEFAULT_TOOLS (NF-S3-003 -- no fabricated tools).
     w('    "tools": {')
-    for name, cmd in defaults_settings.tools.items():
-        w(f'      "{name}": "{cmd}",')
-    w('      "aider": "aider --model sonnet"')
+    tool_items = list(defaults_settings.tools.items())
+    for i, (name, cmd) in enumerate(tool_items):
+        trailing = "," if i < len(tool_items) - 1 else ""
+        w(f'      "{name}": "{cmd}"{trailing}')
     w("    }")
     w("  },")
     w('  "projects": [')
@@ -313,6 +316,9 @@ def _generate_docs() -> str:
     w("| `multideck config set <path> <field> <value>` | Set a project field. |")
     w("| `multideck config open` | Open config in editor. |")
     w("| `multideck config path` | Print config file path. |")
+    w(
+        "| `multideck config migrate` | Stamp the schema version and backfill project colors. |"
+    )
     w("")
 
     return "\n".join(lines)

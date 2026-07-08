@@ -21,7 +21,12 @@ SKIP_DIRS = {
 }
 
 
-def scan_for_projects(root: str, max_depth: int = 3) -> list[dict[str, object]]:
+def scan_for_projects(
+    root: str, max_depth: int = 3, *, skipped: list[str] | None = None
+) -> list[dict[str, object]]:
+    """Walk ``root`` for git repos. Directories denied by a ``PermissionError``
+    are skipped; when a ``skipped`` list is passed, their paths are recorded so
+    the caller can report how many were omitted (F-OB-005 / P2-06)."""
     root_path = Path(root).resolve()
     repos: list[Path] = []
     stack: list[tuple[Path, int]] = [(root_path, 0)]
@@ -38,6 +43,8 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict[str, object]]:
                     if child.is_dir() and child.name not in SKIP_DIRS:
                         stack.append((child, depth + 1))
             except PermissionError:
+                if skipped is not None:
+                    skipped.append(str(current))
                 continue
 
     dirs = (
@@ -70,15 +77,22 @@ def scan_for_projects(root: str, max_depth: int = 3) -> list[dict[str, object]]:
     return projects
 
 
-def generate_config(root: str) -> dict[str, object]:
-    projects = scan_for_projects(root)
+def generate_config(
+    root: str, *, skipped: list[str] | None = None
+) -> dict[str, object]:
+    projects = scan_for_projects(root, skipped=skipped)
     return default_config(projects, base_dir=str(Path(root).resolve()))
 
 
-def write_config(root: str, out_path: str, force: bool = False) -> bool:
+def write_config(root: str, out_path: str, force: bool = False) -> tuple[bool, int]:
+    """Write a generated config. Returns ``(wrote, skipped_count)`` -- the count
+    of directories skipped because they were unreadable during the scan, so the
+    CLI can surface them (P2-06). ``skipped_count`` is 0 when nothing was
+    written (file already exists and ``force`` is False)."""
     out = Path(out_path)
     if out.exists() and not force:
-        return False
-    config = generate_config(root)
+        return False, 0
+    skipped: list[str] = []
+    config = generate_config(root, skipped=skipped)
     out.write_text(json.dumps(config, indent=2), encoding="utf-8")
-    return True
+    return True, len(skipped)

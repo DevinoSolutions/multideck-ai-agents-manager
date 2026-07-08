@@ -319,6 +319,24 @@ class TestScanForProjects:
         repos = scan_for_projects(str(tmp_path))
         assert len(repos) == 2
 
+    def test_records_skipped_unreadable_dirs(self, tmp_path, monkeypatch):
+        # A subdir whose iterdir() is denied is skipped, and its path is
+        # recorded so the CLI can report the omission once (P2-06).
+        (tmp_path / "locked").mkdir()
+        (tmp_path / "ok" / ".git").mkdir(parents=True)
+        real_iterdir = Path.iterdir
+
+        def fake_iterdir(self):
+            if self.name == "locked":
+                raise PermissionError("denied")
+            return real_iterdir(self)
+
+        monkeypatch.setattr(Path, "iterdir", fake_iterdir)
+        skipped: list[str] = []
+        scan_for_projects(str(tmp_path), skipped=skipped)
+        assert len(skipped) == 1
+        assert skipped[0].endswith("locked")
+
 
 class TestGenerateConfig:
     def test_generates_valid_config(self, tmp_path):

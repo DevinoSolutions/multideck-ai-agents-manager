@@ -131,3 +131,46 @@ class TestSshJsonParsing:
             lambda *a, **k: (255, "no route to host", "err"),
         )
         assert cli._ssh_json("u@h", "multideck up --json") is None
+
+
+class TestAttachNomux:
+    """NF-S3-004 + P4: first coverage of _attach_nomux. Its fallback command
+    derives from the tool registry (DEFAULT_TOOLS['claude']), never a
+    hard-coded literal that could silently drift from the default."""
+
+    def _run(self, monkeypatch, projects):
+        from multideck.cli import attach as attach_mod
+
+        calls: list[list[str]] = []
+        monkeypatch.setattr(
+            attach_mod.subprocess, "Popen", lambda cmd, *a, **k: calls.append(cmd)
+        )
+        monkeypatch.setattr(attach_mod, "_tile_titles", lambda titles: None)
+        monkeypatch.setattr(attach_mod.time, "sleep", lambda *a, **k: None)
+        attach_mod._attach_nomux("u@host", {"projects": projects})
+        return calls
+
+    def test_fallback_cmd_derived_from_default_tools(self, monkeypatch):
+        from multideck.config import DEFAULT_TOOLS
+
+        calls = self._run(monkeypatch, [{"path": "api", "name": "api"}])
+        # The remote command is the last Popen argument: `cd <dir> && <cmd>`.
+        assert calls[0][-1] == f"cd api && {DEFAULT_TOOLS['claude']}"
+
+    def test_uses_explicit_cmd_when_present(self, monkeypatch):
+        calls = self._run(monkeypatch, [{"path": "web", "name": "web", "cmd": "codex"}])
+        assert calls[0][-1] == "cd web && codex"
+
+
+class TestUpJsonConfigError:
+    """NF-S3-005: up --json emits a JSON error envelope (not a stderr line) on
+    an invalid config, now that up_cmd routes through _load_config_or_exit."""
+
+    def test_invalid_config_emits_json_error_exit_1(self, runner, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ not valid json")
+        result = runner.invoke(cli.main, ["--config", str(bad), "up", "--json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]

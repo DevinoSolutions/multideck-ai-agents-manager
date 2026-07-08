@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
+from pathlib import Path
 
 from multideck import cli
 
@@ -48,7 +49,22 @@ class TestNoConfig:
             cli.main, ["--config", str(tmp_path / "nope.json"), "status", "--json"]
         )
         assert result.exit_code == 1
-        assert json.loads(result.output) == {"error": "No config found."}
+        assert json.loads(result.stdout) == {"error": "No config found."}
+
+
+class TestJsonInvalidConfig:
+    """NF-S3-005: when the config EXISTS but is invalid, status --json must
+    still emit a parseable JSON error envelope on stdout (not a plain-text
+    stderr line) -- mirroring the already-JSON missing-config path."""
+
+    def test_json_invalid_config_emits_json_error_exit_1(self, runner, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ not valid json")
+        result = runner.invoke(cli.main, ["--config", str(bad), "status", "--json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.stdout)
+        assert payload["ok"] is False
+        assert payload["error"]
 
 
 class TestStatusLines:
@@ -246,3 +262,39 @@ class TestAttentionLiveness:
 
         assert result.exit_code == 3
         assert json.loads(result.stdout)["attention"] == "crashed"
+
+
+class TestMenuDownServerReport:
+    """NF-S3-001: the menu's 'x = all + server' path branches on
+    stop_server()'s return value like down_cmd, instead of always claiming
+    'Stopped upload server.' regardless of the truthful boolean."""
+
+    def _drive(self, monkeypatch, tmp_config, stop_ok):
+        from multideck.cli import status as status_mod
+
+        monkeypatch.setattr(
+            "multideck.launch.psmux_status",
+            lambda cfg, group=None: ([{"name": "api"}], [], []),
+        )
+        monkeypatch.setattr("multideck.launch.kill_psmux", lambda targets: None)
+        monkeypatch.setattr("multideck.cli.status._probe_port", lambda port: True)
+        monkeypatch.setattr("multideck.upload_server.stop_server", lambda port: stop_ok)
+        monkeypatch.setattr(status_mod.click, "prompt", lambda *a, **k: "x")
+        monkeypatch.setattr(status_mod.click, "pause", lambda *a, **k: None)
+        cfgpath = tmp_config({"version": 2, "projects": [{"path": "api"}]})
+        status_mod._menu_down(Path(cfgpath))
+
+    def test_reports_stopped_when_stop_server_true(
+        self, monkeypatch, tmp_config, capsys
+    ):
+        self._drive(monkeypatch, tmp_config, stop_ok=True)
+        out = capsys.readouterr().out
+        assert "Stopped upload server on port" in out
+
+    def test_reports_failure_when_stop_server_false(
+        self, monkeypatch, tmp_config, capsys
+    ):
+        self._drive(monkeypatch, tmp_config, stop_ok=False)
+        out = capsys.readouterr().out
+        assert "could not be stopped" in out
+        assert "Stopped upload server on port" not in out
