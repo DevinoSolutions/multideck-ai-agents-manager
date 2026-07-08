@@ -36,6 +36,31 @@ _FORMAT = "%(asctime)s %(levelname)s %(process)d %(name)s %(message)s"
 _CONFIGURED_ATTR = "_multideck_log_configured"
 
 
+def _configured_level() -> int:
+    """The level from ``MULTIDECK_LOG_LEVEL``, or INFO when unset.
+
+    Read via the ``multideck.env`` accessor only (``os.environ`` is banned
+    outside env.py, TID251); imported in-body to keep this leaf import-light and
+    cycle-free. A bad value fails fast at CLI entry (app.py exits 1 before any
+    logging happens), so an unset level (``None``) is simply the honest default
+    of INFO -- not a swallowed error. But if ``get_env()`` still raises here --
+    a detached daemon whose inherited env went bad after startup -- logging must
+    never crash the process it observes, so that case also falls back to INFO.
+    """
+    from pydantic import ValidationError
+
+    from multideck.env import get_env
+
+    try:
+        level = get_env().log_level
+    except ValidationError:
+        return logging.INFO
+    if level is None:
+        return logging.INFO
+    value = getattr(logging, level)
+    return value if isinstance(value, int) else logging.INFO
+
+
 def get_logger(name: str) -> logging.Logger:
     """Return the ``multideck.<name>`` logger, attaching a rotating file
     handler under LOG_DIR on first use. Idempotent -- repeat calls return the
@@ -62,7 +87,7 @@ def get_logger(name: str) -> logging.Logger:
         handler = logging.NullHandler()
 
     logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
+    logger.setLevel(_configured_level())
     setattr(logger, _CONFIGURED_ATTR, True)
     return logger
 

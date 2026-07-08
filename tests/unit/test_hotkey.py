@@ -116,6 +116,19 @@ class TestUploadImage:
         result = upload_image("http://127.0.0.1:1", "marka", b"data")
         assert result is False
 
+    def test_network_error_logs_specific_transport_cause(self, caplog):
+        # P2-07: a failed paste must record WHY (connection refused vs. timeout
+        # vs. malformed response), not just a bare False the caller can't
+        # explain -- the cause (exception class + message) lands in hotkey.log.
+        from multideck.hotkey import upload_image
+
+        with caplog.at_level("WARNING", logger="multideck.hotkey"):
+            result = upload_image("http://127.0.0.1:1", "marka", b"data")
+
+        assert result is False
+        assert "transport error" in caplog.text
+        assert "URLError" in caplog.text  # the specific class, not a generic line
+
 
 class TestDibToBmp:
     """Clipboard DIB -> BMP conversion (the all-black image bug)."""

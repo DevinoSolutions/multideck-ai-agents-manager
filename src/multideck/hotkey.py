@@ -235,7 +235,13 @@ def upload_image(server_url: str, project: str, image_data: bytes) -> bool:
         with urlopen(req, timeout=20) as resp:
             result = json.loads(resp.read())
             return bool(result.get("ok", False)) if isinstance(result, dict) else False
-    except (URLError, OSError, json.JSONDecodeError):
+    except (URLError, OSError, json.JSONDecodeError) as exc:
+        # Log the specific cause (server down vs. 20s timeout vs. malformed
+        # response) -- the caller only sees the bare False, so without this the
+        # reason a paste failed is unrecoverable from the logs (P2-07).
+        get_logger("hotkey").warning(
+            "upload transport error (%s): %s", type(exc).__name__, exc
+        )
         return False
 
 

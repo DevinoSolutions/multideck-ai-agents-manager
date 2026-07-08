@@ -94,6 +94,23 @@ class TestCapturabilityContract:
         registered[0]()  # invoke the registered callback directly
         assert fake_sdk.flush_calls == [2]
 
+    def test_init_tags_environment_dev_and_release(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Live-verification by-product (MULTIDECK-5/6): the untagged init
+        defaulted environment to 'production' on a dev box and pinned release
+        to git HEAD only by accident of running inside the repo. Pin both: a
+        fixed 'dev' environment and a release key derived from the installed
+        version (present even if the distribution lookup returns None)."""
+        fake_sdk = _install_fake_sentry_sdk(monkeypatch)
+        monkeypatch.setattr(atexit, "register", lambda _callback: None)
+
+        init_sentry(_FAKE_DSN)
+
+        call = fake_sdk.init_calls[0]
+        assert call["environment"] == "dev"
+        assert "release" in call  # tag always present; value is version or None
+
     def test_logging_integration_is_error_level_only(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
