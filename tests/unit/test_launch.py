@@ -25,6 +25,7 @@ from multideck.launch import (
     _start_psmux_and_upload,
     _Target,
     _tile_targets,
+    eligible_psmux_projects,
     run_multideck,
 )
 from multideck.platform import PsmuxWindowOpts
@@ -480,3 +481,23 @@ class TestDispatchCliAgentProject:
         assert delta == 0
         assert targets == []
         assert "unknown tool" in capsys.readouterr().out
+
+
+class TestBaseDirExpansion:
+    """Characterization pin (P1-08), written before the _expand_base_dir
+    extraction: a configured base_dir gets env vars expanded and forward
+    slashes normalized to os.sep before project paths resolve against it."""
+
+    def test_eligible_psmux_projects_expands_base_dir(self, tmp_path, monkeypatch):
+        proj_dir = tmp_path / "sub" / "proj"
+        proj_dir.mkdir(parents=True)
+        monkeypatch.setenv("MD_TEST_BASE", str(tmp_path))
+        cfg = MultideckConfig(
+            projects=[ProjectConfig(path="proj")],
+            base_dir="$MD_TEST_BASE/sub",
+        )
+
+        out = eligible_psmux_projects(cfg)
+
+        assert len(out) == 1
+        assert out[0]["resolved"] == str(proj_dir)
