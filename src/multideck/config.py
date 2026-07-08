@@ -1,3 +1,15 @@
+"""Typed, validated config — the schema half of multideck's two-path config contract.
+
+This module owns the *typed* view of a config file: the dataclasses
+(``LayoutConfig``, ``Settings``, ``ProjectConfig``, ``MultideckConfig`` …),
+``SCHEMA_VERSION``, ``DEFAULT_TOOLS``, and the pure ``load_config`` that parses,
+validates, and warns but never writes to disk. ``default_config`` /
+``settings_to_dict`` are the one envelope factory every config generator shares,
+and ``migrate_config_file`` is this module's only writer. The other half of the
+contract — raw-dict round-tripping that preserves unknown/unmodeled keys for the
+interactive editor — lives in ``cli/config_io.py``; the two paths never overlap.
+"""
+
 from __future__ import annotations
 
 import colorsys

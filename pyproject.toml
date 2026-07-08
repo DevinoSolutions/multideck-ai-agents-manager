@@ -10,6 +10,7 @@ dependencies = ["click>=8.0", "pydantic-settings>=2.14"]
 [project.optional-dependencies]
 sentry = ["sentry-sdk>=2"]
 toast = ["winotify>=1.1.0"]
+qr = ["qrcode>=7"]
 dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
 
 [project.scripts]
