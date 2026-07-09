@@ -1,30 +1,16 @@
 from __future__ import annotations
 
-import functools
-import shutil
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+from multideck.psmux import PsmuxWindowOpts, find_psmux
+
 if TYPE_CHECKING:
     from multideck.grid import MonitorRect, Rect
 
-
-@functools.lru_cache(maxsize=1)
-def find_psmux() -> str | None:
-    found = shutil.which("psmux")
-    if found:
-        return found
-    if sys.platform == "win32":
-        from multideck.env import (
-            localappdata_dir,
-        )  # heavy subsystem: in-body per policy
-
-        local = localappdata_dir() / "psmux" / "psmux.exe"
-        if local.is_file():
-            return str(local)
-    return None
+__all__ = ["PsmuxWindowOpts", "find_psmux"]
 
 
 @dataclass
@@ -36,13 +22,6 @@ class TerminalLaunchOpts:
     ssh_host: str | None = None
     ssh_remote_dir: str | None = None
     ssh_shell: str = "bash -lc"
-
-
-@dataclass
-class PsmuxWindowOpts:
-    window_name: str
-    cwd: str
-    command: str
 
 
 @dataclass

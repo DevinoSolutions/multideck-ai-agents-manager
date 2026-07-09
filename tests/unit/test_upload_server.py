@@ -8,10 +8,10 @@ from typing import ClassVar
 
 import pytest
 
+from multideck.psmux import config_sessions
 from multideck.upload_server import (
     UploadHandler,
     _build_html,
-    _config_sessions,
     _parse_multipart,
 )
 
@@ -55,7 +55,7 @@ class TestConfigSessions:
                 }
             )
         )
-        out = _config_sessions(str(cfg))
+        out = config_sessions(str(cfg))
         assert out[0]["name"] == "my.api"
         assert out[0]["session"] == "my-api"
 
@@ -130,8 +130,9 @@ class TestUploadServerIntegration:
         import multideck.upload_server as mod
 
         monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
-        # Keep these tests hermetic: no real psmux send-keys / status-line flash.
-        monkeypatch.setattr(mod, "find_psmux", lambda: None)
+        import multideck.psmux as psmux_mod
+
+        monkeypatch.setattr(psmux_mod, "find_psmux", lambda: None)
         self.upload_dir = tmp_path / "uploads"
 
         UploadHandler.config_path = None
@@ -508,7 +509,9 @@ class TestHealth:
         import multideck.upload_server as mod
 
         monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
-        monkeypatch.setattr(mod, "find_psmux", lambda: None)
+        import multideck.psmux as psmux_mod
+
+        monkeypatch.setattr(psmux_mod, "find_psmux", lambda: None)
 
         UploadHandler.config_path = None
         UploadHandler.cached_sessions = [
@@ -553,7 +556,9 @@ class TestInSessionFeedback:
         import multideck.upload_server as mod
 
         monkeypatch.setattr(mod, "_UPLOAD_DIR", tmp_path / "uploads")
-        monkeypatch.setattr(mod, "find_psmux", lambda: "psmux")
+        import multideck.psmux as psmux_mod
+
+        monkeypatch.setattr(psmux_mod, "find_psmux", lambda: "psmux")
         monkeypatch.setattr(mod, "_inflight", {})
 
         self.calls: list[list[str]] = []
@@ -569,6 +574,7 @@ class TestInSessionFeedback:
             return R()
 
         monkeypatch.setattr(mod.subprocess, "run", _rec)
+        monkeypatch.setattr(psmux_mod.subprocess, "run", _rec)
 
         UploadHandler.config_path = None
         UploadHandler.cached_sessions = [{"name": "marka", "path": "INTERNAL/marka"}]

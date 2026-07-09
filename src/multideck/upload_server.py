@@ -19,13 +19,9 @@ from urllib.parse import parse_qs, urlparse
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-from multideck import tailnet
+from multideck import psmux, tailnet
 from multideck.icons import render_icon
-from multideck.launch import _psmux_session_name
 from multideck.log import get_logger
-from multideck.paths import find_config
-from multideck.platform import find_psmux
-from multideck.sessions import is_ide_tool
 
 
 def _pid_path(port: int) -> Path:
@@ -128,31 +124,14 @@ def _inflight_dec(project: str) -> int:
 
 
 def _flash(
-    psmux: str | None,
+    _psmux_unused: str | None,
     project: str,
     message: str,
     duration_ms: int,
     style: str | None = None,
 ) -> None:
-    """Best-effort: flash a transient message in the session's psmux status line.
-
-    Non-disruptive -- ``display-message`` repaints the status bar, not the agent
-    pane. ``style`` (a tmux message-style spec) tints the bar; it's set in the
-    same psmux invocation, just before the message, via tmux's ``;`` command
-    chaining. Never raises and never blocks the upload for long.
-    """
-    if not psmux:
-        return
-    cmd = [psmux, "-L", project]
-    if style:
-        cmd += ["set", "-g", "message-style", style, ";"]
-    cmd += ["display-message", "-d", str(duration_ms), message]
-    try:
-        subprocess.run(cmd, capture_output=True, timeout=3, check=False)
-    except (OSError, subprocess.SubprocessError) as e:
-        get_logger("upload").warning(
-            "status-line flash failed for project=%s: %s", project, e
-        )
+    """Best-effort status-line flash. Delegates to ``psmux.flash_message``."""
+    psmux.flash_message(project, message, duration_ms, style=style)
 
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
@@ -347,69 +326,13 @@ if ('serviceWorker' in navigator && window.isSecureContext) {
 
 
 def _sid(session: dict[str, object]) -> str:
-    """The psmux socket id for a session dict: the explicit ``session`` key when
-    present, else ``name`` (P3-01 -- older callers passed only the sanitized
-    name under ``name``)."""
-    return str(session.get("session") or session.get("name") or "")
-
-
-def _config_sessions(config_path: str | None) -> list[dict[str, object]]:
-    """Eligible psmux sessions from config -- no psmux calls, so it's fast.
-
-    Each entry carries ``name`` (raw display name) and ``session`` (the
-    psmux-sanitized socket id): P3-01 keeps these distinct so ``/api/sessions``
-    consumers can correlate by display name while the wire keeps using the id.
-    """
-    config_file = find_config(config_path)
-    if not config_file.exists():
-        return []
-
-    data = json.loads(config_file.read_text(encoding="utf-8"))
-    default_tool = data.get("settings", {}).get("defaultTool", "claude")
-    out: list[dict[str, object]] = []
-    for p in data.get("projects", []):
-        if not p.get("enabled", True):
-            continue
-        tool = p.get("tool", default_tool)
-        if isinstance(tool, str) and is_ide_tool(tool):
-            continue
-        proj_name = p.get("title") or Path(p["path"]).name
-        out.append(
-            {
-                "name": proj_name,
-                "session": _psmux_session_name(proj_name),
-                "path": p["path"],
-            }
-        )
-    return out
-
-
-def _psmux_window_alive(psmux: str, name: str) -> bool:
-    return (
-        subprocess.run(
-            [psmux, "-L", name, "has-session"], capture_output=True, check=False
-        ).returncode
-        == 0
-    )
+    """Delegate to ``psmux.socket_id``."""
+    return psmux.socket_id(session)
 
 
 def _discover_sessions(config_path: str | None) -> list[dict[str, object]]:
-    """Active psmux sessions from config.
-
-    Checks every candidate socket concurrently -- with a large config a serial
-    scan takes several seconds, long enough to time out an Alt+V upload.
-    """
-    from concurrent.futures import ThreadPoolExecutor
-
-    candidates = _config_sessions(config_path)
-    psmux = find_psmux()
-    if not candidates or not psmux:
-        return []
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        flags = list(
-            pool.map(lambda c: _psmux_window_alive(psmux, _sid(c)), candidates)
-        )
-    return [c for c, ok in zip(candidates, flags, strict=True) if ok]
+    """Delegate to ``psmux.discover_sessions``."""
+    return psmux.discover_sessions(config_path)
 
 
 def _build_html(sessions: list[dict[str, object]]) -> str:
@@ -626,19 +549,12 @@ def _request_focus(project: str) -> None:
     tmp = _FOCUS_TARGET_FILE.with_suffix(".tmp")
     tmp.write_text(project, encoding="utf-8")
     os.replace(tmp, _FOCUS_TARGET_FILE)
-    psmux = find_psmux()
     try:
         current = _PICKER_ATTACHED_FILE.read_text(encoding="utf-8").strip()
     except OSError:
         current = ""
-    if psmux and current:
-        with contextlib.suppress(OSError, subprocess.SubprocessError):
-            subprocess.run(
-                [psmux, "-L", current, "detach-client"],
-                capture_output=True,
-                timeout=3,
-                check=False,
-            )
+    if current:
+        psmux.detach_client(current)
 
 
 class UploadHandler(BaseHTTPRequestHandler):
@@ -770,7 +686,6 @@ class UploadHandler(BaseHTTPRequestHandler):
             self._reject("POST", parsed.path)
             return
 
-        psmux = find_psmux()
         # Discovery is concurrent (sub-second), so validating against the session
         # cache no longer risks timing out the upload. The wire `project` is the
         # psmux socket id (P3-01), so we validate against `session` ids.
@@ -786,7 +701,7 @@ class UploadHandler(BaseHTTPRequestHandler):
             n = _inflight_inc(flagged)
             tail = f" ({n})" if n > 1 else ""
             _flash(
-                psmux,
+                None,
                 flagged,
                 f"multideck  {_FB_UP} uploading image{tail}",
                 _FLASH_UP_MS,
@@ -837,13 +752,8 @@ class UploadHandler(BaseHTTPRequestHandler):
                 return
             dest.write_bytes(data)
 
-            if inject and psmux:
-                result = subprocess.run(
-                    [psmux, "-L", project, "send-keys", "-t", project, "--", str(dest)],
-                    capture_output=True,
-                    check=False,
-                )
-                injected = result.returncode == 0
+            if inject and psmux.find_psmux():
+                injected = psmux.send_keys(project, str(dest), target=project)
             elif inject:
                 log.warning(
                     "upload project=%s requested inject but psmux is unavailable",
@@ -877,7 +787,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                 more = f"  ({remaining} more)" if remaining else ""
                 if ok:
                     _flash(
-                        psmux,
+                        None,
                         done,
                         f"multideck  {_FB_OK} image uploaded{more}",
                         _FLASH_OK_MS,
@@ -885,7 +795,7 @@ class UploadHandler(BaseHTTPRequestHandler):
                     )
                 else:
                     _flash(
-                        psmux,
+                        None,
                         done,
                         f"multideck  {_FB_NO} upload failed{more}",
                         _FLASH_NO_MS,

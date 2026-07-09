@@ -104,8 +104,14 @@ HAPPY_AGENTS = {
 
 
 def _psmux_session_name(title: str) -> str:
-    """Sanitize a window title into a valid psmux/tmux session name."""
-    return title.replace(".", "-").replace(":", "-").replace(" ", "-")
+    """Sanitize a window title into a valid psmux/tmux session name.
+
+    Thin wrapper kept for backward compatibility with upload_server's import.
+    Delegates to ``psmux.session_name()``.
+    """
+    from multideck.psmux import session_name
+
+    return session_name(title)
 
 
 def _wrap_happy(tool: str, cmd: str) -> str:
@@ -555,137 +561,35 @@ def _log_project(
 # ---------------------------------------------------------------------------
 
 
-def _field_str(d: dict[str, object], key: str) -> str:
-    """A psmux-descriptor dict's string field (these dicts are built in-module
-    with str values; narrows the dict[str, object] read back to str)."""
-    value = d.get(key, "")
-    return value if isinstance(value, str) else ""
-
-
 def eligible_psmux_projects(
     config: MultideckConfig, group: str | None = None
 ) -> list[dict[str, object]]:
-    """Projects that map to a persistent psmux session.
+    """Delegate to ``psmux.eligible_projects``."""
+    from multideck.psmux import eligible_projects
 
-    A project is eligible when it is enabled, runs a CLI agent (not an IDE),
-    and is local to this machine (no ``host`` -- remote projects are launched
-    over SSH directly, not via psmux). When ``group`` is given, only projects
-    tagged with that group (case-insensitive) are returned.
-    """
-    base_dir = config.base_dir
-    if base_dir:
-        base_dir = _expand_base_dir(base_dir)
-
-    out: list[dict[str, object]] = []
-    for proj in config.projects:
-        if not proj.enabled:
-            continue
-        if group and (not proj.group or proj.group.lower() != group.lower()):
-            continue
-        tool = proj.tool or config.settings.default_tool
-        if is_ide_tool(tool):
-            continue
-        if proj.host:
-            continue
-        leaf = proj.title or get_leaf_name(proj.path)
-        out.append(
-            {
-                # P3-01: `name` is the raw display name; `session` is the
-                # psmux-sanitized socket id. Every socket op keys off `session`;
-                # serialized surfaces expose both so a scripting consumer can
-                # correlate `up --json` against `status --json` by display name.
-                "name": leaf,
-                "session": _psmux_session_name(leaf),
-                "path": proj.path,
-                "tool": tool,
-                "group": proj.group,
-                "resolved": _resolve_path(proj.path, base_dir),
-                "cmd": config.settings.tools.get(tool, ""),
-                "color": proj.color,
-            }
-        )
-    return out
+    return eligible_projects(config, group)
 
 
 def psmux_status(
     config: MultideckConfig, group: str | None = None
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]]]:
-    """Return ``(up, down, all_projects)`` for eligible projects.
+    """Delegate to ``psmux.psmux_status``."""
+    from multideck import psmux
 
-    ``up``/``down`` are split by whether a live psmux session already exists.
-    """
-    from multideck.platform import find_psmux
-
-    psmux = find_psmux()
-    projects = eligible_psmux_projects(config, group)
-    up: list[dict[str, object]] = []
-    down: list[dict[str, object]] = []
-
-    checkable = []
-    for p in projects:
-        info: dict[str, object] = {
-            "name": p["name"],
-            "session": p["session"],
-            "path": p["path"],
-            "tool": p["tool"],
-            "group": p.get("group"),
-        }
-        if psmux and p["resolved"] and p["cmd"]:
-            proc = subprocess.Popen(
-                [psmux, "-L", _field_str(p, "session"), "has-session"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            checkable.append((info, proc))
-        else:
-            down.append(info)
-
-    for info, proc in checkable:
-        (up if proc.wait() == 0 else down).append(info)
-
-    return up, down, projects
+    return psmux.psmux_status(config, group)
 
 
 def bring_up_psmux(
     config: MultideckConfig, only: list[str] | None = None, group: str | None = None
 ) -> list[str]:
-    """Create detached psmux sessions for eligible projects.
+    """Delegate to ``psmux.bring_up``."""
+    from multideck import psmux
 
-    ``only`` restricts creation to the given session names (pass the ``down``
-    set to avoid disturbing sessions that are already running); ``group``
-    restricts to a single project group. Returns the names that were
-    (re)created.
-    """
-    from multideck.platform import PsmuxWindowOpts, get_platform
-
-    plat = get_platform()
-    windows: list[PsmuxWindowOpts] = []
-    for p in eligible_psmux_projects(config, group):
-        if only is not None and _field_str(p, "session") not in only:
-            continue
-        if not p["resolved"] or not p["cmd"]:
-            continue
-        windows.append(
-            PsmuxWindowOpts(
-                window_name=_field_str(p, "session"),
-                cwd=_field_str(p, "resolved"),
-                command=_field_str(p, "cmd"),
-            )
-        )
-    if windows:
-        plat.launch_psmux_session(windows)
-    return [w.window_name for w in windows]
+    return psmux.bring_up(config, only, group)
 
 
 def kill_psmux(names: list[str]) -> list[str]:
-    """Kill the psmux server backing each named session. Returns the names tried."""
-    from multideck.platform import find_psmux
+    """Delegate to ``psmux.kill_servers``."""
+    from multideck.psmux import kill_servers
 
-    psmux = find_psmux()
-    if not psmux:
-        return []
-    for name in names:
-        subprocess.run(
-            [psmux, "-L", name, "kill-server"], capture_output=True, check=False
-        )
-    return list(names)
+    return kill_servers(names)

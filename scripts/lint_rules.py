@@ -68,6 +68,7 @@ MD002_ALLOW = {
     "src/multideck/cli/attach.py": "reports the sys.platform value in JSON status (data, not a gate)",
     "src/multideck/env.py": "host-env readers (config_base, vscode_storage_base) select per-OS default directories",
     "src/multideck/lockfile.py": "msvcrt.locking (Windows) vs fcntl.flock (Unix) — each OS has a different locking API",
+    "src/multideck/psmux.py": "psmux binary fallback path is per-OS (LOCALAPPDATA on Windows)",
 }
 
 # MD003: the only two src files allowed to hold a literal "md:".
