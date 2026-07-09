@@ -113,17 +113,29 @@ def send_keys(
 
 
 def pane_cwd(name: str, psmux: str | None = None) -> str:
-    """Return the current working directory of the active pane, or ``""``."""
+    """Return the current working directory of the active pane, or ``""``.
+
+    Guarded like the inline closure it replaced (P1-06): a 3s timeout, utf-8
+    decode with ``errors="replace"``, and any OSError/SubprocessError swallowed
+    to ``""`` -- a hung, unlaunchable, or non-utf-8 psmux must never propagate
+    to a caller fanning this across every live session.
+    """
     binary = psmux or find_psmux()
     if not binary:
         return ""
-    result = subprocess.run(
-        [binary, "-L", name, "display-message", "-p", "#{pane_current_path}"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return result.stdout.strip() if result.returncode == 0 else ""
+    try:
+        result = subprocess.run(
+            [binary, "-L", name, "display-message", "-p", "#{pane_current_path}"],
+            capture_output=True,
+            timeout=3,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    else:
+        return (result.stdout or "").strip() if result.returncode == 0 else ""
 
 
 def flash_message(

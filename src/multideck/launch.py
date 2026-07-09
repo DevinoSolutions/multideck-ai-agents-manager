@@ -369,17 +369,39 @@ def _dispatch_cli_agent_project(
 
     for i, win_title in enumerate(titles):
         win_cfg = windows_cfg[i] if windows_cfg and i < len(windows_cfg) else None
-        win_tool = win_cfg.tool if win_cfg and win_cfg.tool else tool
+        override = win_cfg.tool if win_cfg and win_cfg.tool else None
+        if override and override != tool:
+            override_cmd = tools.get(override)
+            if override_cmd is None:
+                # An override naming a tool absent from settings.tools can't be
+                # honored -- warn and fall back to the base tool ENTIRELY, so
+                # resume/happy/log all reflect what actually runs.
+                click.echo(
+                    f"WARN: {win_title} — unknown tool '{override}' in windows[{i}]"
+                    f" (add under settings.tools); using '{tool}'"
+                )
+                win_tool, win_base = tool, base_cmd
+            else:
+                win_tool, win_base = override, override_cmd
+        else:
+            win_tool, win_base = tool, base_cmd
+
         if win_cfg and win_cfg.command:
             cmd = win_cfg.command
+        elif win_tool != tool:
+            # Per-window override: the discovered session ids belong to the
+            # base `tool`, not `win_tool` -- never reuse them for the override.
+            cmd = (
+                build_resume_command(win_tool, win_base, None)
+                if window_count > 1
+                else win_base
+            )
+        elif window_count > 1 and session_ids[i] is not None:
+            cmd = build_resume_command(win_tool, win_base, session_ids[i])
+        elif window_count > 1:
+            cmd = build_resume_command(win_tool, win_base, None)
         else:
-            win_base = tools.get(win_tool) or base_cmd
-            if window_count > 1 and session_ids[i] is not None:
-                cmd = build_resume_command(win_tool, win_base, session_ids[i])
-            elif window_count > 1:
-                cmd = build_resume_command(win_tool, win_base, None)
-            else:
-                cmd = win_base
+            cmd = win_base
 
         if use_happy:
             cmd = _wrap_happy(win_tool, cmd)
@@ -433,7 +455,7 @@ def _dispatch_cli_agent_project(
             _Target(name=win_title, key=win_title, mode="md-name", is_new=not running)
         )
         _log_project(
-            win_title, tool, running, proj.host, happy=use_happy, psmux=proj_psmux
+            win_title, win_tool, running, proj.host, happy=use_happy, psmux=proj_psmux
         )
 
     return new_count
