@@ -20,7 +20,12 @@
       "badge": true,
       "flash": true,
       "toast": false,
-      "ntfy": false
+      "ntfy": false,
+      "pollIntervalS": 2.0,
+      "stalenessWorkingS": 1800.0,
+      "stalenessNeedsInputS": 3600.0,
+      "debounceS": 300.0,
+      "stateTtlDays": 14
     },
     "tools": {
       "claude": "claude --continue",

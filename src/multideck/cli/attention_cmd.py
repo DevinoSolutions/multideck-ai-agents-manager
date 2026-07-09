@@ -149,24 +149,36 @@ def _plan_renderers(
 
 def _setup_from_config(
     config_file: Path,
-) -> tuple[attention.AttentionEngine, list[attention.Renderer], list[str]]:
+) -> tuple[
+    attention.AttentionEngine,
+    list[attention.Renderer],
+    list[str],
+    MultideckConfig,
+]:
     """Load config, build the engine, and plan renderers -- the shared setup
     for both the `-d` parent (validate-then-spawn) and the foreground/child
     (validate-then-run), so both judge prerequisites identically."""
-    from multideck import attention  # heavy subsystem: in-body per policy
+    from multideck import agent_state, attention  # heavy subsystem: in-body per policy
     from multideck.env import get_env  # heavy subsystem: in-body per policy
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
 
     cfg = _load_config_or_exit(config_file)
+    att = cfg.settings.attention
+    staleness = {
+        agent_state.WORKING: att.staleness_working_s,
+        agent_state.NEEDS_INPUT: att.staleness_needs_input_s,
+    }
     plat = get_platform()
     engine = attention.AttentionEngine(
-        attention.name_map_from_projects(name_pairs_from_config(cfg))
+        attention.name_map_from_projects(name_pairs_from_config(cfg)),
+        staleness=staleness,
+        debounce_s=att.debounce_s,
     )
     topic = get_env().ntfy_topic
     renderers, warnings = _plan_renderers(
-        cfg.settings.attention, plat, engine, str(topic) if topic else None
+        att, plat, engine, str(topic) if topic else None
     )
-    return engine, renderers, warnings
+    return engine, renderers, warnings, cfg
 
 
 @main.command("attention")
@@ -211,7 +223,7 @@ def attention_cmd(
                     return
                 # P2-02: validate renderer prerequisites on the STILL-ATTACHED
                 # console before detaching.
-                _engine, renderers, warnings = _setup_from_config(config_file)
+                _engine, renderers, warnings, _cfg = _setup_from_config(config_file)
                 for warning in warnings:
                     click.echo(f"  {style('!', fg='yellow')} {warning}")
                 if not renderers:
@@ -254,7 +266,7 @@ def attention_cmd(
         write_heartbeat,
     )
 
-    engine, renderers, warnings = _setup_from_config(config_file)
+    engine, renderers, warnings, cfg = _setup_from_config(config_file)
     log = get_logger("attention")
     for warning in warnings:
         click.echo(f"  {style('!', fg='yellow')} {warning}")
@@ -266,10 +278,9 @@ def attention_cmd(
         log.error("%s", _NOTHING_TO_DO)
         sys.exit(1)
 
+    state_ttl_s = cfg.settings.attention.state_ttl_days * 24 * 60 * 60
     log.info("attention loop starting: %d renderer(s)", len(renderers))
-    # Age out long-dead records once on start, before we count/display sessions
-    # (P6-04). Idempotent within the process; poll() would also trigger it.
-    agent_state.maybe_sweep_stale()
+    agent_state.maybe_sweep_stale(ttl=state_ttl_s)
     click.echo(
         f"  {style('#', fg='cyan')} Watching {style(str(len(engine.poll())), bold=True)}"
         f" session(s) — Ctrl+C to stop."
@@ -288,10 +299,11 @@ def attention_cmd(
     hb_thread.start()
     stopped_cleanly = False
     try:
+        poll_s = interval if interval != 2.0 else cfg.settings.attention.poll_interval_s
         attention.run_attention_loop(
             engine,
             renderers,
-            poll_interval=interval,
+            poll_interval=poll_s,
             max_ticks=ticks,
         )
     except KeyboardInterrupt:
