@@ -13,7 +13,7 @@ import time
 
 import pytest
 
-from multideck.config import MultideckConfig, ProjectConfig, Settings
+from multideck.config import MultideckConfig, ProjectConfig, Settings, WindowConfig
 from multideck.grid import MonitorRect, Rect, compute_grid
 from multideck.launch import (
     RunOpts,
@@ -483,6 +483,104 @@ class TestDispatchCliAgentProject:
         assert delta == 0
         assert targets == []
         assert "unknown tool" in capsys.readouterr().out
+
+
+class TestPerWindowToolOverride:
+    """Regression pins for the per-window ``tool`` override (P3-06 follow-up).
+
+    Bug: resumable session ids are discovered ONCE for the project's base
+    tool, but a per-window override (``windows[i].tool``) was still handed
+    ``session_ids[i]`` -- so a base-claude project whose window 2 overrides to
+    codex launched it as ``codex resume <claude-uuid>``, a foreign session id.
+    An override window must never borrow the base tool's session ids, and an
+    override naming a tool absent from ``settings.tools`` must warn and fall
+    back to the base tool entirely (not silently run base_cmd while logging
+    the bogus name)."""
+
+    def _dispatch(self, fp, cfg, proj, tool, monkeypatch, session_ids):
+        # Fake session discovery: the base tool's ids, one per window.
+        monkeypatch.setattr(
+            "multideck.launch._get_session_ids",
+            lambda _tool, _dir, _count: list(session_ids),
+        )
+        targets: list[_Target] = []
+        return _dispatch_cli_agent_project(
+            fp,
+            cfg,
+            RunOpts(),
+            proj,
+            tool,
+            False,
+            None,
+            cfg.settings.tools,
+            False,
+            lambda key, mode: False,
+            targets,
+            [],
+            {},
+        )
+
+    def test_override_window_does_not_reuse_base_tool_session_id(
+        self, tmp_path, fake_sleep, monkeypatch
+    ):
+        fp = FakePlatform()
+        proj = ProjectConfig(
+            path=str(tmp_path),
+            tool="claude",
+            title="proj",
+            windows=[WindowConfig(), WindowConfig(tool="codex")],
+        )
+        cfg = MultideckConfig(
+            projects=[proj],
+            settings=Settings(
+                tools={"claude": "claude --continue", "codex": "codex"},
+                default_tool="claude",
+            ),
+        )
+
+        self._dispatch(
+            fp,
+            cfg,
+            proj,
+            "claude",
+            monkeypatch,
+            session_ids=["claude-sid-AAA", "claude-sid-BBB"],
+        )
+
+        # Window 1 (base claude): resumed on its OWN discovered session id.
+        assert fp.launched_terminals[0].command == "claude --resume claude-sid-AAA"
+        # Window 2 (codex override): fresh codex form, and crucially NO claude
+        # session id anywhere in it (the bug shipped `codex resume <claude-uuid>`).
+        assert fp.launched_terminals[1].command == "codex"
+        assert "claude-sid" not in fp.launched_terminals[1].command
+
+    def test_unknown_override_tool_warns_and_falls_back_to_base(
+        self, tmp_path, fake_sleep, monkeypatch, capsys
+    ):
+        fp = FakePlatform()
+        proj = ProjectConfig(
+            path=str(tmp_path),
+            tool="claude",
+            title="proj",
+            windows=[WindowConfig(tool="nope"), WindowConfig()],
+        )
+        cfg = MultideckConfig(
+            projects=[proj],
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
+        )
+
+        self._dispatch(fp, cfg, proj, "claude", monkeypatch, session_ids=[None, None])
+
+        out = capsys.readouterr().out
+        assert "WARN:" in out
+        assert "unknown tool 'nope'" in out
+        assert "windows[0]" in out
+        assert "using 'claude'" in out
+        # The window runs the base tool (claude), never the bogus 'nope'.
+        assert fp.launched_terminals[0].command == "claude"
+        assert "nope" not in fp.launched_terminals[0].command
 
 
 class TestBaseDirExpansion:
