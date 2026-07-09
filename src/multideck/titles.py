@@ -13,6 +13,11 @@ shape; ``parse_title`` would strip it (accepted — enforced by convention).
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from multideck.config import WindowConfig
+
 MD_TITLE_PREFIX = "md:"
 
 # Attention states worth a badge; keys match multideck.agent_state values.
@@ -58,15 +63,12 @@ def parse_title(title: str) -> tuple[str, str | None] | None:
 def generate_titles(
     title: str | None,
     path: str,
-    windows: int | list[str] | None,
+    windows: list[WindowConfig] | None,
 ) -> list[str]:
-    if isinstance(windows, list):
-        return list(windows)
-
     base = title or get_leaf_name(path)
-    count = windows if isinstance(windows, int) and windows > 1 else 1
-
-    titles: list[str] = [base]
-    for i in range(2, count + 1):
-        titles.append(f"{base}-{i}")
+    if not windows:
+        return [base]
+    titles: list[str] = []
+    for i, w in enumerate(windows):
+        titles.append(w.name if w.name else (base if i == 0 else f"{base}-{i + 1}"))
     return titles

@@ -368,15 +368,21 @@ def _dispatch_cli_agent_project(
     use_happy = proj.happy if proj.happy is not None else config.settings.happy
 
     for i, win_title in enumerate(titles):
-        if window_count > 1 and session_ids[i] is not None:
-            cmd = build_resume_command(tool, base_cmd, session_ids[i])
-        elif window_count > 1:
-            cmd = build_resume_command(tool, base_cmd, None)
+        win_cfg = windows_cfg[i] if windows_cfg and i < len(windows_cfg) else None
+        win_tool = win_cfg.tool if win_cfg and win_cfg.tool else tool
+        if win_cfg and win_cfg.command:
+            cmd = win_cfg.command
         else:
-            cmd = base_cmd
+            win_base = tools.get(win_tool) or base_cmd
+            if window_count > 1 and session_ids[i] is not None:
+                cmd = build_resume_command(win_tool, win_base, session_ids[i])
+            elif window_count > 1:
+                cmd = build_resume_command(win_tool, win_base, None)
+            else:
+                cmd = win_base
 
         if use_happy:
-            cmd = _wrap_happy(tool, cmd)
+            cmd = _wrap_happy(win_tool, cmd)
 
         proj_psmux = use_psmux and not is_remote
         if proj_psmux and not opts.dry_run:
