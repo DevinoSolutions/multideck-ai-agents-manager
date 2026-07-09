@@ -53,7 +53,8 @@ class TestLoadConfig:
         p = cfg.projects[0]
         assert p.group == "backend"
         assert p.color == "#ff0000"
-        assert p.windows == 3
+        assert p.windows is not None
+        assert len(p.windows) == 3
 
     def test_defaults_applied(self, tmp_config):
         path = tmp_config({"projects": [{"path": "x"}]})
@@ -70,7 +71,8 @@ class TestLoadConfig:
     def test_windows_as_string_array(self, tmp_config):
         path = tmp_config({"projects": [{"path": "api", "windows": ["feat", "bugs"]}]})
         cfg = load_config(path)
-        assert cfg.projects[0].windows == ["feat", "bugs"]
+        assert cfg.projects[0].windows is not None
+        assert [w.name for w in cfg.projects[0].windows] == ["feat", "bugs"]
 
     def test_windows_omitted_is_none(self, tmp_config):
         path = tmp_config({"projects": [{"path": "api"}]})

@@ -2,6 +2,7 @@ import sys
 
 import pytest
 
+from multideck.config import WindowConfig
 from multideck.titles import (
     MD_TITLE_PREFIX,
     generate_titles,
@@ -37,29 +38,43 @@ class TestGenerateTitles:
         titles = generate_titles(title=None, path="internal/api", windows=None)
         assert titles == ["api"]
 
-    def test_windows_int_auto_titles(self):
-        titles = generate_titles(title=None, path="internal/api", windows=3)
+    def test_windows_list_auto_titles(self):
+        windows = [WindowConfig(), WindowConfig(), WindowConfig()]
+        titles = generate_titles(title=None, path="internal/api", windows=windows)
         assert titles == ["api", "api-2", "api-3"]
 
-    def test_windows_int_with_title(self):
-        titles = generate_titles(title="my-api", path="internal/api", windows=3)
+    def test_windows_list_with_title(self):
+        windows = [WindowConfig(), WindowConfig(), WindowConfig()]
+        titles = generate_titles(title="my-api", path="internal/api", windows=windows)
         assert titles == ["my-api", "my-api-2", "my-api-3"]
 
-    def test_windows_1_same_as_none(self):
-        titles = generate_titles(title=None, path="internal/api", windows=1)
+    def test_single_window_same_as_none(self):
+        titles = generate_titles(title=None, path="internal/api", windows=None)
         assert titles == ["api"]
 
-    def test_windows_string_array(self):
-        titles = generate_titles(
-            title=None, path="internal/api", windows=["feat", "bugs", "review"]
-        )
+    def test_windows_named_array(self):
+        windows = [
+            WindowConfig(name="feat"),
+            WindowConfig(name="bugs"),
+            WindowConfig(name="review"),
+        ]
+        titles = generate_titles(title=None, path="internal/api", windows=windows)
         assert titles == ["feat", "bugs", "review"]
 
-    def test_windows_string_array_ignores_title(self):
-        titles = generate_titles(
-            title="ignored", path="internal/api", windows=["a", "b"]
-        )
+    def test_windows_named_array_ignores_title(self):
+        windows = [WindowConfig(name="a"), WindowConfig(name="b")]
+        titles = generate_titles(title="ignored", path="internal/api", windows=windows)
         assert titles == ["a", "b"]
+
+    def test_windows_mixed_named_and_unnamed(self):
+        windows = [WindowConfig(name="custom"), WindowConfig()]
+        titles = generate_titles(title=None, path="internal/api", windows=windows)
+        assert titles == ["custom", "api-2"]
+
+    def test_windows_with_tool_override(self):
+        windows = [WindowConfig(tool="codex"), WindowConfig(command="agy --yolo")]
+        titles = generate_titles(title=None, path="internal/api", windows=windows)
+        assert titles == ["api", "api-2"]
 
 
 class TestTitleGrammar:

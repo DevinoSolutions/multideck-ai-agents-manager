@@ -24,7 +24,7 @@ import click
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 DEFAULT_TOOLS: dict[str, str] = {
     "claude": "claude --continue",
@@ -88,6 +88,15 @@ class Settings:
 
 
 @dataclass
+class WindowConfig:
+    """Per-window overrides inside a project's ``windows`` array."""
+
+    name: str | None = None
+    tool: str | None = None
+    command: str | None = None
+
+
+@dataclass
 class ProjectConfig:
     path: str
     group: str | None = None
@@ -98,7 +107,7 @@ class ProjectConfig:
     happy: bool | None = None
     host: str | None = None
     remote_path: str | None = None
-    windows: int | list[str] | None = None
+    windows: list[WindowConfig] | None = None
 
 
 @dataclass
@@ -171,14 +180,26 @@ def _tools(raw: dict[str, object], default: dict[str, str]) -> dict[str, str]:
     return {str(k): v for k, v in value.items() if isinstance(v, str)}
 
 
-def _windows(raw: dict[str, object]) -> int | list[str] | None:
+def _windows(raw: dict[str, object]) -> list[WindowConfig] | None:
     value = raw.get("windows")
     if isinstance(value, bool):
         return None
-    if isinstance(value, int):
-        return value
+    if isinstance(value, int) and value > 1:
+        return [WindowConfig() for _ in range(value)]
     if isinstance(value, list):
-        return [item for item in value if isinstance(item, str)]
+        out: list[WindowConfig] = []
+        for item in value:
+            if isinstance(item, str):
+                out.append(WindowConfig(name=item))
+            elif isinstance(item, dict):
+                out.append(
+                    WindowConfig(
+                        name=_str_or_none(item, "name"),  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+                        tool=_str_or_none(item, "tool"),  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+                        command=_str_or_none(item, "command"),  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+                    )
+                )
+        return out or None
     return None
 
 
@@ -396,6 +417,7 @@ _ALLOWED_PROJECT_KEYS = {
     "remotePath",
     "windows",
 }
+_ALLOWED_WINDOW_KEYS = {"name", "tool", "command"}
 
 
 def _warn_unknown_keys(raw: dict[str, object], allowed: set[str], path: str) -> None:
@@ -448,6 +470,15 @@ def load_config(path: str) -> MultideckConfig:
     for i, p in enumerate(projects_raw):
         p_obj = p if isinstance(p, dict) else {}
         _warn_unknown_keys(p_obj, _ALLOWED_PROJECT_KEYS, f"projects[{i}]")  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+        w_raw = p_obj.get("windows")
+        if isinstance(w_raw, list):
+            for j, w in enumerate(w_raw):
+                if isinstance(w, dict):
+                    _warn_unknown_keys(
+                        w,  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+                        _ALLOWED_WINDOW_KEYS,
+                        f"projects[{i}].windows[{j}]",
+                    )
         projects.append(_parse_project(p_obj))  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
     _backfill_colors(projects)
 
@@ -483,9 +514,41 @@ def _migrate_1_to_2(raw: dict[str, object]) -> dict[str, object]:
     return raw
 
 
+def _migrate_2_to_3(raw: dict[str, object]) -> dict[str, object]:
+    """v3 changes ``windows`` from ``int | list[str]`` to ``list[WindowConfig]``.
+
+    Existing shapes are normalised into the uniform array-of-objects form so
+    hand-editors can see the new knobs. Projects without ``windows`` are left
+    untouched (the field stays absent → ``None`` at parse time).
+    """
+    raw = dict(raw)
+    projects = raw.get("projects")
+    if isinstance(projects, list):
+        for p in projects:
+            if not isinstance(p, dict):
+                continue
+            w = p.get("windows")
+            if isinstance(w, bool):
+                del p["windows"]  # ty: ignore[invalid-argument-type]  # reason: isinstance guard; ty 0.0.56 invariance gap
+            elif isinstance(w, int) and w > 1:
+                p["windows"] = [{}] * w  # ty: ignore[invalid-assignment]  # reason: isinstance guard; ty 0.0.56 invariance gap
+            elif isinstance(w, list):
+                migrated: list[object] = []
+                for item in w:
+                    if isinstance(item, str):
+                        migrated.append({"name": item})
+                    elif isinstance(item, dict):
+                        migrated.append(item)
+                if migrated:
+                    p["windows"] = migrated  # ty: ignore[invalid-assignment]  # reason: isinstance guard; ty 0.0.56 invariance gap
+    raw["version"] = 3
+    return raw
+
+
 _MIGRATIONS: dict[int, Callable[[dict[str, object]], dict[str, object]]] = {
     0: _migrate_0_to_1,
     1: _migrate_1_to_2,
+    2: _migrate_2_to_3,
 }
 
 
