@@ -31,24 +31,16 @@ from multideck.style import style
 def _session_cwds(psmux: str, names: list[str]) -> dict[str, str]:
     """Each live session's working directory (psmux ``pane_current_path``) -- the
     key we match against the agent-state store. Fetched concurrently."""
-
-    def cwd(name: str) -> str:
-        try:
-            r = subprocess.run(
-                [psmux, "-L", name, "display-message", "-p", "#{pane_current_path}"],
-                capture_output=True,
-                text=True,
-                timeout=3,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return ""
-        return (r.stdout or "").strip()
+    from multideck import psmux as psmux_mod  # heavy subsystem: in-body per policy
 
     with ThreadPoolExecutor(max_workers=16) as pool:
-        return dict(zip(names, pool.map(cwd, names), strict=True))
+        return dict(
+            zip(
+                names,
+                pool.map(lambda n: psmux_mod.pane_cwd(n, psmux=psmux), names),
+                strict=True,
+            )
+        )
 
 
 def _status_label(state: str | None) -> str:
@@ -126,13 +118,10 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
     /focus detaches this picker's client, the attach returns, and the loop jumps
     straight to the requested project."""
 
-    from multideck.launch import (
-        _psmux_session_name,  # heavy subsystem: in-body per policy
-    )
-    from multideck.platform import find_psmux  # heavy subsystem: in-body per policy
+    from multideck import psmux as psmux_mod  # heavy subsystem: in-body per policy
 
-    psmux = find_psmux()
-    if not psmux:
+    psmux_bin = psmux_mod.find_psmux()
+    if not psmux_bin:
         click.echo(
             f"  {style('x', fg='red')} psmux not found on PATH. Install: choco install psmux"
         )
@@ -153,13 +142,8 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
             if isinstance(title, str) and title
             else Path(_as_str(p.get("path"))).name
         )
-        sock = _psmux_session_name(proj_name)
-        if (
-            subprocess.run(
-                [psmux, "-L", sock, "has-session"], capture_output=True, check=False
-            ).returncode
-            == 0
-        ):
+        sock = psmux_mod.session_name(proj_name)
+        if psmux_mod.has_session(sock, psmux=psmux_bin):
             sessions.append(sock)
 
     if not sessions:
@@ -178,10 +162,9 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
             subprocess.run(["tput", "reset"], capture_output=True, check=False)
 
     def _attach(target: str) -> None:
-        # Record the attachment so /focus can detach us to trigger a switch.
         _set_picker_attached(target)
         try:
-            subprocess.call([psmux, "-L", target, "attach"])
+            subprocess.call([psmux_bin, "-L", target, "attach"])
         finally:
             _set_picker_attached(None)
             _reset_terminal()
@@ -216,7 +199,7 @@ def _run_sessions_picker(config_file: Path, name: str | None = None) -> None:
                 f"  {style('WebApp To Upload Images', bold=True)}  {style(upload_url, fg='cyan', bold=True)}"
             )
             click.echo()
-        statuses = _session_statuses(_session_cwds(psmux, sessions))
+        statuses = _session_statuses(_session_cwds(psmux_bin, sessions))
         for i, sess in enumerate(sessions, 1):
             status = statuses.get(sess, "")
             extra = (" " * max(2, 26 - len(sess)) + status) if status else ""
