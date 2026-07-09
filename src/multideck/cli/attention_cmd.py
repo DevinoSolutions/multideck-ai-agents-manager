@@ -109,6 +109,27 @@ def name_pairs_from_config(cfg: MultideckConfig) -> list[tuple[str, str]]:
     return pairs
 
 
+def engine_from_config(cfg: MultideckConfig) -> attention.AttentionEngine:
+    """Build an AttentionEngine whose staleness/debounce come from
+    ``settings.attention`` — so `status`/`watch` age states with the SAME
+    config-driven windows as the daemon, not the module defaults. The name_map
+    is derived from the enabled projects. Daemon-only concerns (renderers, ntfy
+    topic) stay at the daemon call site; this helper covers the config-derived
+    kwargs common to all three surfaces."""
+    from multideck import agent_state, attention  # heavy subsystem: in-body per policy
+
+    att = cfg.settings.attention
+    staleness = {
+        agent_state.WORKING: att.staleness_working_s,
+        agent_state.NEEDS_INPUT: att.staleness_needs_input_s,
+    }
+    return attention.AttentionEngine(
+        attention.name_map_from_projects(name_pairs_from_config(cfg)),
+        staleness=staleness,
+        debounce_s=att.debounce_s,
+    )
+
+
 def _plan_renderers(
     att_cfg: AttentionSettings,
     plat: Platform,
@@ -158,22 +179,13 @@ def _setup_from_config(
     """Load config, build the engine, and plan renderers -- the shared setup
     for both the `-d` parent (validate-then-spawn) and the foreground/child
     (validate-then-run), so both judge prerequisites identically."""
-    from multideck import agent_state, attention  # heavy subsystem: in-body per policy
     from multideck.env import get_env  # heavy subsystem: in-body per policy
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
 
     cfg = _load_config_or_exit(config_file)
     att = cfg.settings.attention
-    staleness = {
-        agent_state.WORKING: att.staleness_working_s,
-        agent_state.NEEDS_INPUT: att.staleness_needs_input_s,
-    }
     plat = get_platform()
-    engine = attention.AttentionEngine(
-        attention.name_map_from_projects(name_pairs_from_config(cfg)),
-        staleness=staleness,
-        debounce_s=att.debounce_s,
-    )
+    engine = engine_from_config(cfg)
     topic = get_env().ntfy_topic
     renderers, warnings = _plan_renderers(
         att, plat, engine, str(topic) if topic else None
@@ -184,14 +196,19 @@ def _setup_from_config(
 @main.command("attention")
 @click.option("--daemon", "-d", "as_daemon", is_flag=True, help="Run detached")
 @click.option("--stop", "do_stop", is_flag=True, help="Stop the running daemon")
-@click.option("--interval", default=2.0, show_default=True, help="Poll seconds")
+@click.option(
+    "--interval",
+    default=None,
+    type=float,
+    help="Seconds between polls (default: attention.pollIntervalS from config)",
+)
 @click.option("--ticks", default=None, type=int, hidden=True)  # test seam
 @click.pass_context
 def attention_cmd(
     ctx: click.Context,
     as_daemon: bool,
     do_stop: bool,
-    interval: float,
+    interval: float | None,
     ticks: int | None,
 ) -> None:
     """Ambient attention signals for your agent fleet.
@@ -233,7 +250,12 @@ def attention_cmd(
                 args = [sys.executable, "-m", "multideck"]
                 if config_path:
                     args += ["--config", str(config_path)]
-                args += ["attention", "--interval", str(interval)]
+                args += ["attention"]
+                # Forward --interval only when the user set it explicitly; an
+                # unset (None) interval lets the detached child read
+                # attention.pollIntervalS from config itself.
+                if interval is not None:
+                    args += ["--interval", str(interval)]
                 from multideck.launch import (  # heavy subsystem: in-body per policy
                     spawn_detached,
                 )
@@ -299,7 +321,9 @@ def attention_cmd(
     hb_thread.start()
     stopped_cleanly = False
     try:
-        poll_s = interval if interval != 2.0 else cfg.settings.attention.poll_interval_s
+        poll_s = (
+            interval if interval is not None else cfg.settings.attention.poll_interval_s
+        )
         attention.run_attention_loop(
             engine,
             renderers,

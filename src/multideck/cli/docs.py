@@ -27,9 +27,9 @@ _PROJECT_FIELD_DOCS: list[tuple[str, str, str, str]] = [
     ("remotePath", "string", "`path`", "Remote directory when different from `path`."),
     (
         "windows",
-        "int or list",
+        "list",
         "none",
-        '`int` or `["name1", "name2"]` for multi-window sessions.',
+        'List of window objects `{"name", "tool", "command"}` with per-window tool/command overrides. Legacy `int` / `["name1", "name2"]` forms still parse (normalized by `multideck config migrate`).',
     ),
 ]
 
@@ -195,15 +195,30 @@ def _generate_docs() -> str:
     w("## Multi-window sessions")
     w("")
     w(
-        "Open the same project in multiple windows, each resuming a different conversation:"
+        "Open the same project in multiple windows. `windows` is a list of window "
+        "objects, each with optional per-window `tool`/`command` overrides:"
     )
     w("")
     w("```json")
-    w('{ "path": "api", "windows": 3 }')
+    w("{")
+    w('  "path": "api",')
+    w('  "windows": [')
+    w('    { "name": "api" },')
+    w('    { "name": "api-2" },')
+    w('    { "name": "api-codex", "tool": "codex" }')
+    w("  ]")
+    w("}")
     w("```")
     w("")
     w(
-        "Opens 3 windows (`api`, `api-2`, `api-3`), each resuming the Nth most recent session."
+        "`name` sets the window title; `tool`/`command` override the project's "
+        "defaults for that window only. Windows without an override each resume "
+        "the Nth most recent session for the project's tool."
+    )
+    w("")
+    w(
+        'The legacy `"windows": 3` and `"windows": ["api", "api-2"]` forms still '
+        "parse and are normalized to window objects by `multideck config migrate`."
     )
     w("")
 

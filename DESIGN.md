@@ -190,13 +190,16 @@ None of these imports any other `multideck` module (`style.py` imports
   used by `up_cmd`/`_menu_up`/`_attach_flow`) — those are two different
   operations, and giving them near-identical names would have been its own
   clarity defect.
-- **`upload_server.py`** — imports `launch._psmux_session_name`,
-  `log.get_logger`, `paths.find_config`, and `platform.find_psmux` at the
-  top level, and **never** imports the `cli` package (that is the actual
-  invariant LS-A-001 established — not "depends on nothing but `paths`,"
-  which was an earlier, imprecise description this document deliberately
-  does not repeat). `run_server` binds one `ThreadingHTTPServer` per address
-  returned by `_bind_addresses` (see Key Decisions).
+- **`upload_server.py`** — imports the `psmux` and `tailnet` modules,
+  `icons.render_icon`, and `log.get_logger` at the top level, reaching every
+  psmux primitive (`find_psmux`, `send_keys`, `discover_sessions`, …) through
+  the `multideck.psmux` module (consolidated in #39) rather than the former
+  top-level `launch._psmux_session_name` import, and **never** imports the
+  `cli` package (that is the actual invariant LS-A-001 established — not
+  "depends on nothing but `paths`," which was an earlier, imprecise
+  description this document deliberately does not repeat). `run_server` binds
+  one `ThreadingHTTPServer` per address returned by `_bind_addresses` (see Key
+  Decisions).
 - **`hotkey.py`** — the Windows-only Alt+V clipboard-image listener.
   `if sys.platform != "win32": raise ImportError(...)` fires at import time,
   by design — every call site imports it lazily, behind a `supports_hotkey()`

@@ -6,9 +6,19 @@ import json
 import os
 import time
 
-from multideck import agent_state, cli, log
+from multideck import agent_state, cli, config, log
 from multideck.cli import attention_cmd
 from tests.conftest import FakePlatform
+
+
+def _age_sole_record(seconds: float) -> None:
+    """Push the single agent-state record's ts `seconds` into the past so
+    staleness aging can be exercised without touching the real clock."""
+    files = list(agent_state.STATE_DIR.glob("*.json"))
+    assert len(files) == 1
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    rec["ts"] = time.time() - seconds
+    files[0].write_text(json.dumps(rec), encoding="utf-8")
 
 
 class TestStop:
@@ -229,3 +239,90 @@ class TestStopDaemonClearsHeartbeat:
 
         assert attention_cmd.stop_daemon() is True
         assert log.heartbeat_age(attention_cmd.HEARTBEAT_NAME) is None
+
+
+class TestEngineFromConfig:
+    """engine_from_config threads settings.attention staleness into the engine so
+    status/watch age states with the SAME config windows as the daemon (P3-10
+    follow-up: only the daemon honored the config before this)."""
+
+    def test_config_staleness_ages_working_record(self, tmp_path, tmp_config):
+        proj = tmp_path / "api"
+        proj.mkdir()
+        agent_state.write_state(str(proj), agent_state.WORKING)
+        # 120s old: older than our 10s stalenessWorkingS, far younger than the
+        # 1800s module default — so which one wins decides the effective state.
+        _age_sole_record(120.0)
+
+        config_path = tmp_config(
+            {
+                "version": config.SCHEMA_VERSION,
+                "projects": [{"path": str(proj)}],
+                "settings": {"attention": {"stalenessWorkingS": 10}},
+            }
+        )
+        views = attention_cmd.engine_from_config(config.load_config(config_path)).poll()
+
+        assert len(views) == 1
+        # Module default (1800s) would still read 'working'; honoring the 10s
+        # config value ages it to 'idle'.
+        assert views[0].state == agent_state.IDLE
+
+    def test_default_staleness_keeps_working_record(self, tmp_path, tmp_config):
+        # Control: the same 120s-old record with default staleness stays
+        # 'working', proving the aging above is genuinely config-driven.
+        proj = tmp_path / "api"
+        proj.mkdir()
+        agent_state.write_state(str(proj), agent_state.WORKING)
+        _age_sole_record(120.0)
+
+        config_path = tmp_config(
+            {"version": config.SCHEMA_VERSION, "projects": [{"path": str(proj)}]}
+        )
+        views = attention_cmd.engine_from_config(config.load_config(config_path)).poll()
+
+        assert len(views) == 1
+        assert views[0].state == agent_state.WORKING
+
+
+class TestIntervalConfigResolution:
+    """`--interval` defaults to None (a real sentinel), so an explicit value wins
+    over settings.attention.pollIntervalS while an omitted flag falls back to it
+    — fixing the old `!= 2.0` sentinel that silently swallowed an explicit 2.0."""
+
+    def _run_poll_interval(self, runner, monkeypatch, tmp_path, tmp_config, argv):
+        captured: dict[str, float] = {}
+
+        def fake_loop(*_a, poll_interval, **_k):
+            captured["poll_interval"] = poll_interval
+
+        monkeypatch.setattr("multideck.attention.run_attention_loop", fake_loop)
+        fp = FakePlatform(supports_attention=True)
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        monkeypatch.setattr(attention_cmd, "_PID_PATH", tmp_path / "attention.pid")
+        config_path = tmp_config(
+            {
+                "version": config.SCHEMA_VERSION,
+                "projects": [{"path": "api"}],
+                "settings": {"attention": {"pollIntervalS": 9.0}},
+            }
+        )
+        result = runner.invoke(cli.main, ["--config", config_path, "attention", *argv])
+        assert result.exit_code == 0, result.output
+        return captured["poll_interval"]
+
+    def test_explicit_interval_two_beats_config(
+        self, runner, monkeypatch, tmp_path, tmp_config
+    ):
+        # The regression: explicit --interval 2.0 must NOT be overridden by
+        # config's pollIntervalS (9.0), as the old `!= 2.0` sentinel did.
+        poll = self._run_poll_interval(
+            runner, monkeypatch, tmp_path, tmp_config, ["--interval", "2.0"]
+        )
+        assert poll == 2.0
+
+    def test_omitted_interval_uses_config(
+        self, runner, monkeypatch, tmp_path, tmp_config
+    ):
+        poll = self._run_poll_interval(runner, monkeypatch, tmp_path, tmp_config, [])
+        assert poll == 9.0

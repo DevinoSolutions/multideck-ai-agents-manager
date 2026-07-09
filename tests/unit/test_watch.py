@@ -3,10 +3,22 @@
 from __future__ import annotations
 
 import json
+import time
 
 from multideck import agent_state, cli
 from multideck.cli.watch import _age_label, _focus_by_name
 from tests.conftest import FakePlatform
+
+
+def _write_aged_working(path, seconds: float = 120.0) -> None:
+    """Write a WORKING record for `path`, then age its ts `seconds` into the
+    past — older than the tests' 10s config staleness but far younger than the
+    1800s module default, so the effective state reveals which window won."""
+    agent_state.write_state(str(path), agent_state.WORKING)
+    files = list(agent_state.STATE_DIR.glob("*.json"))
+    rec = json.loads(files[0].read_text(encoding="utf-8"))
+    rec["ts"] = time.time() - seconds
+    files[0].write_text(json.dumps(rec), encoding="utf-8")
 
 
 class TestAgeLabel:
@@ -101,3 +113,52 @@ class TestStatusJsonAgents:
             {"name": "api", "state": "done", "age_s": payload["agents"][0]["age_s"]}
         ]
         assert payload["agents"][0]["age_s"] >= 0
+
+
+class TestConfigStaleness:
+    """status and watch honor settings.attention.stalenessWorkingS — both built
+    the engine with module defaults before, ignoring config (P3-10 follow-up)."""
+
+    def test_status_json_ages_working_per_config(
+        self, runner, monkeypatch, tmp_path, tmp_config
+    ):
+        api = tmp_path / "api"
+        api.mkdir()
+        _write_aged_working(api)
+        config_path = tmp_config(
+            {
+                "version": 3,
+                "projects": [{"path": str(api)}],
+                "settings": {"attention": {"stalenessWorkingS": 10}},
+            }
+        )
+
+        result = runner.invoke(cli.main, ["--config", config_path, "status", "--json"])
+
+        payload = json.loads(result.stdout)
+        # honoring the 10s config value ages the 120s-old 'working' to 'idle';
+        # the module default (1800s) would have kept it 'working'.
+        assert payload["agents"][0]["state"] == "idle"
+
+    def test_watch_ages_working_per_config(
+        self, runner, monkeypatch, tmp_path, tmp_config
+    ):
+        api = tmp_path / "api"
+        api.mkdir()
+        _write_aged_working(api)
+        fp = FakePlatform()
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        config_path = tmp_config(
+            {
+                "version": 3,
+                "projects": [{"path": str(api)}],
+                "settings": {"attention": {"stalenessWorkingS": 10}},
+            }
+        )
+
+        result = runner.invoke(cli.main, ["--config", config_path, "watch", "--once"])
+
+        assert result.exit_code == 0, result.output
+        # 'idle' (aged) rather than 'working' proves watch's engine used config.
+        assert "idle" in result.output
+        assert "working" not in result.output

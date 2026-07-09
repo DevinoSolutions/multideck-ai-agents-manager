@@ -221,17 +221,26 @@ Configs are versioned (`"version": 1`). A config without a current version still
 | `happy` | inherit | Override global Happy setting for this project. |
 | `host` | none | SSH target for remote projects. |
 | `remotePath` | `path` | Remote directory when different from `path`. |
-| `windows` | none | `int` or `["name1", "name2"]` for multi-window sessions. |
+| `windows` | none | List of window objects `{"name", "tool", "command"}` with per-window tool/command overrides. Legacy `int` / `["name1", "name2"]` forms still parse. |
 
 ### Multi-window sessions
 
-Open the same project in multiple windows, each resuming a different conversation:
+Open the same project in multiple windows. `windows` is a list of window objects, each with optional per-window `tool`/`command` overrides:
 
 ```json
-{ "path": "api", "windows": 3 }
+{
+  "path": "api",
+  "windows": [
+    { "name": "api" },
+    { "name": "api-2" },
+    { "name": "api-codex", "tool": "codex" }
+  ]
+}
 ```
 
-This opens 3 windows (`api`, `api-2`, `api-3`), each resuming the Nth most recent Claude/Codex session.
+`name` sets the window title; `tool`/`command` override the project's defaults for that window only. Windows without an override each resume the Nth most recent Claude/Codex session.
+
+The legacy `"windows": 3` and `"windows": ["api", "api-2"]` forms still parse and are normalized to window objects by `multideck config migrate`.
 
 ### Remote projects
 
