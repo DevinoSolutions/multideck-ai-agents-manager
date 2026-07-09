@@ -19,6 +19,7 @@ import click
 
 from multideck.cli.app import main
 from multideck.cli.config_io import _load_config_or_exit
+from multideck.lockfile import LockHeld, exclusive_lock
 from multideck.paths import find_config
 from multideck.procs import pid_alive
 from multideck.style import style
@@ -211,44 +212,50 @@ def attention_cmd(
     config_file = find_config(config_path)
 
     if as_daemon:
-        existing = daemon_pid()
-        if existing:
+        try:
+            with exclusive_lock("attention"):
+                existing = daemon_pid()
+                if existing:
+                    click.echo(
+                        f"  {style('+', fg='green')} Attention daemon already running "
+                        f"{style(f'(pid {existing})', dim=True)}"
+                    )
+                    return
+                # P2-02: validate renderer prerequisites on the STILL-ATTACHED
+                # console before detaching.
+                _engine, renderers, warnings, _cfg = _setup_from_config(config_file)
+                for warning in warnings:
+                    click.echo(f"  {style('!', fg='yellow')} {warning}")
+                if not renderers:
+                    click.echo(f"  {style('x', fg='red')} {_NOTHING_TO_DO}")
+                    sys.exit(1)
+
+                args = [sys.executable, "-m", "multideck"]
+                if config_path:
+                    args += ["--config", str(config_path)]
+                args += ["attention", "--interval", str(interval)]
+                from multideck.launch import (  # heavy subsystem: in-body per policy
+                    spawn_detached,
+                )
+
+                spawn_detached(args)
+                for _ in range(20):
+                    time.sleep(0.1)
+                    pid = daemon_pid()
+                    if pid:
+                        click.echo(
+                            f"  {style('+', fg='green')} Attention daemon running "
+                            f"{style(f'(pid {pid})', dim=True)}"
+                        )
+                        return
+                click.echo(f"  {style('x', fg='red')} attention daemon failed to start")
+                sys.exit(1)
+        except LockHeld:
             click.echo(
-                f"  {style('+', fg='green')} Attention daemon already running "
-                f"{style(f'(pid {existing})', dim=True)}"
+                f"  {style('+', fg='green')} Another attention daemon launch "
+                f"is already in progress."
             )
             return
-        # P2-02: validate renderer prerequisites on the STILL-ATTACHED console
-        # before detaching. Otherwise the real reason (unsupported OS, missing
-        # ntfy topic, nothing enabled) is printed by the detached child to a
-        # hidden console and the parent only reports a generic "failed to start".
-        _engine, renderers, warnings, _cfg = _setup_from_config(config_file)
-        for warning in warnings:
-            click.echo(f"  {style('!', fg='yellow')} {warning}")
-        if not renderers:
-            click.echo(f"  {style('x', fg='red')} {_NOTHING_TO_DO}")
-            sys.exit(1)
-
-        args = [sys.executable, "-m", "multideck"]
-        if config_path:
-            args += ["--config", str(config_path)]
-        args += ["attention", "--interval", str(interval)]
-        from multideck.launch import (  # heavy subsystem: in-body per policy
-            spawn_detached,
-        )
-
-        spawn_detached(args)
-        for _ in range(20):
-            time.sleep(0.1)
-            pid = daemon_pid()
-            if pid:
-                click.echo(
-                    f"  {style('+', fg='green')} Attention daemon running "
-                    f"{style(f'(pid {pid})', dim=True)}"
-                )
-                return
-        click.echo(f"  {style('x', fg='red')} attention daemon failed to start")
-        sys.exit(1)
 
     # Foreground loop (also the body of the detached child).
     from multideck import agent_state, attention  # heavy subsystem: in-body per policy
