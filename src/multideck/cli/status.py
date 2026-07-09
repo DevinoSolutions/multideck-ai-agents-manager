@@ -94,13 +94,12 @@ def _attention_state() -> str:
 
 
 def _agents_snapshot(cfg: MultideckConfig) -> list[dict[str, object]]:
-    """One-shot engine poll — the scripting face of `multideck watch`."""
-    from multideck import attention  # heavy subsystem: in-body per policy
-    from multideck.cli.attention_cmd import name_pairs_from_config
+    """One-shot engine poll — the scripting face of `multideck watch`. Builds
+    the engine via the shared config-driven builder so `status` ages states
+    with settings.attention staleness/debounce, not the module defaults."""
+    from multideck.cli.attention_cmd import engine_from_config
 
-    engine = attention.AttentionEngine(
-        attention.name_map_from_projects(name_pairs_from_config(cfg))
-    )
+    engine = engine_from_config(cfg)
     return [
         {"name": v.name, "state": v.state, "age_s": round(v.age_s, 1)}
         for v in engine.poll()

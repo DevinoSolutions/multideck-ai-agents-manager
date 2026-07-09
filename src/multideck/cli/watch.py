@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import click
 
 from multideck.cli.app import main
-from multideck.cli.attention_cmd import name_pairs_from_config
+from multideck.cli.attention_cmd import engine_from_config
 from multideck.cli.config_io import _load_config_or_exit
 from multideck.paths import find_config
 from multideck.style import style
@@ -118,15 +118,12 @@ def watch_cmd(ctx: click.Context, interval: float, once: bool) -> None:
     (needs-input and errors on top, time-in-state alongside). Press a row
     number to focus that session's window; q quits.
     """
-    from multideck import attention  # heavy subsystem: in-body per policy
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
 
     config_file = find_config(ctx.obj.get("config_path"))
     cfg = _load_config_or_exit(config_file)
     plat = get_platform()
-    engine = attention.AttentionEngine(
-        attention.name_map_from_projects(name_pairs_from_config(cfg))
-    )
+    engine = engine_from_config(cfg)
 
     while True:
         views = engine.poll()
