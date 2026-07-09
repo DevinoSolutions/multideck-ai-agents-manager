@@ -37,15 +37,7 @@ _VALID = {WORKING, DONE, NEEDS_INPUT, ERROR, IDLE}
 # Pinned by tests/unit/test_agent_state.py::TestSchemaContract.
 RECORD_VERSION = 1
 
-# Retention: a record older than this is almost certainly a dead session whose
-# end-hook never fired — a crash, ``kill -9``, or a misconfigured external
-# writer leaves the last done/error/idle record behind with no one to clear it.
-# Without an age-out ``~/.multideck/state`` (and every ``watch`` / ``status
-# --json agents`` table that reads it) grows without bound. 14 days is
-# deliberately generous: a project you return to next week is still remembered,
-# yet a machine used daily never accretes months of dead rows. A module
-# constant, not a config key — no schema churn this pass; retune here if the
-# fleet-table noise floor ever warrants it.
+# Default retention — overridable via settings.attention.stateTtlDays.
 STATE_TTL_S = 14 * 24 * 60 * 60  # 14 days, in seconds
 
 # Process-lifetime bookkeeping (a fresh interpreter resets both): the store
@@ -135,7 +127,7 @@ def sweep_stale(ttl: float = STATE_TTL_S, now: float | None = None) -> int:
     return removed
 
 
-def maybe_sweep_stale() -> None:
+def maybe_sweep_stale(ttl: float = STATE_TTL_S) -> None:
     """Run :func:`sweep_stale` at most once per process. Called eagerly on
     attention-daemon start and opportunistically from every ``all_states``
     read, so retention holds even for a user who only ever runs
@@ -145,7 +137,7 @@ def maybe_sweep_stale() -> None:
     if _swept_this_process:
         return
     _swept_this_process = True
-    sweep_stale()
+    sweep_stale(ttl=ttl)
 
 
 def state_for(cwd: str, max_age: float | None = None) -> dict[str, object] | None:
