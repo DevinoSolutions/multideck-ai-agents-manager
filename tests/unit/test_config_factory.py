@@ -11,6 +11,7 @@ from multideck.config import (
     ConfigError,
     LayoutConfig,
     Settings,
+    _migrate_2_to_3,
     _parse_settings,
     default_config,
     layout_to_dict,
@@ -155,6 +156,49 @@ class TestMigrateConfigFile:
         p.write_text("not json{{{")
         with pytest.raises(ConfigError, match="valid JSON"):
             migrate_config_file(str(p))
+
+
+class TestMigrate2To3Windows:
+    """Characterization pins for _migrate_2_to_3, which normalizes the v2
+    ``windows`` field (``int | list[str]``) into the v3 array-of-objects form.
+    These document the EXACT current behavior of every input shape so a future
+    change to the migration surfaces as a visible, deliberate diff -- including
+    the shapes the migration deliberately leaves alone."""
+
+    @staticmethod
+    def _windows_after(windows: object) -> object:
+        raw = _migrate_2_to_3(
+            {"version": 2, "projects": [{"path": "api", "windows": windows}]}
+        )
+        projects = raw["projects"]
+        assert isinstance(projects, list)
+        project = projects[0]
+        assert isinstance(project, dict)
+        return project.get("windows", "<absent>")
+
+    def test_int_count_expands_to_empty_objects(self):
+        assert self._windows_after(3) == [{}, {}, {}]
+
+    def test_list_of_strings_becomes_name_objects(self):
+        assert self._windows_after(["a", "b"]) == [{"name": "a"}, {"name": "b"}]
+
+    @pytest.mark.parametrize("flag", [True, False])
+    def test_bool_deletes_windows_key(self, flag):
+        assert self._windows_after(flag) == "<absent>"
+
+    @pytest.mark.parametrize("count", [1, 0, -1])
+    def test_int_not_greater_than_one_is_left_unchanged(self, count):
+        # Documented current behavior: only int > 1 expands; 1/0/negative pass
+        # through untouched (and parse to windows=None downstream).
+        assert self._windows_after(count) == count
+
+    def test_v3_array_of_objects_passes_through_unchanged(self):
+        # Idempotent: already-v3 shapes survive a re-run byte-for-byte.
+        assert self._windows_after([{}, {"tool": "codex"}]) == [{}, {"tool": "codex"}]
+
+    def test_version_is_stamped_to_three(self):
+        raw = _migrate_2_to_3({"version": 2, "projects": []})
+        assert raw["version"] == 3
 
 
 class TestExampleConfigMatchesFactory:
