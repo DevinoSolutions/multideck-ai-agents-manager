@@ -34,16 +34,12 @@ if TYPE_CHECKING:
 
     from multideck.platform import Platform
 
-# A stale record stops meaning what it says: an agent can't be "working" for
-# half an hour without a state write (hooks fire every turn), and a
-# needs-input prompt older than an hour has usually been answered in the
-# window itself. Promoted from cli/session_picker.py, which now shares these.
+# Default staleness windows — overridable via settings.attention config keys.
 STALENESS_S: dict[str, float] = {
     agent_state.WORKING: 1800.0,
     agent_state.NEEDS_INPUT: 3600.0,
 }
 
-# Sort order: the more a state needs the user, the earlier it sorts.
 _URGENCY: dict[str, int] = {
     agent_state.NEEDS_INPUT: 0,
     agent_state.ERROR: 1,
@@ -52,9 +48,6 @@ _URGENCY: dict[str, int] = {
     agent_state.IDLE: 4,
 }
 
-# Push-style renderers must not re-fire while a session sits in the same
-# state across polls; transitions() only reports changes, and this debounce
-# additionally suppresses rapid flapping back into the same state.
 DEBOUNCE_S = 300.0
 
 
@@ -95,9 +88,13 @@ class AttentionEngine:
         self,
         name_by_cwd: dict[str, str] | None = None,
         now: Callable[[], float] = time.time,
+        staleness: dict[str, float] | None = None,
+        debounce_s: float = DEBOUNCE_S,
     ) -> None:
         self._name_by_cwd = dict(name_by_cwd or {})
         self._now = now
+        self._staleness = staleness if staleness is not None else dict(STALENESS_S)
+        self._debounce_s = debounce_s
         self._last_state: dict[str, str] = {}
         self._last_fired: dict[tuple[str, str], float] = {}
 
@@ -118,7 +115,7 @@ class AttentionEngine:
             )
             age = max(0.0, now - ts)
             state = raw_state
-            stale_after = STALENESS_S.get(state)
+            stale_after = self._staleness.get(state)
             if stale_after is not None and age > stale_after:
                 state = agent_state.IDLE
             views.append(
@@ -160,11 +157,11 @@ class AttentionEngine:
 
     def should_fire(self, cwd: str, state: str) -> bool:
         """Debounce gate for push renderers (toast/ntfy): at most one firing
-        per (session, state) every DEBOUNCE_S seconds."""
+        per (session, state) every debounce_s seconds."""
         key = (cwd, state)
         now = self._now()
         last = self._last_fired.get(key)
-        if last is not None and (now - last) < DEBOUNCE_S:
+        if last is not None and (now - last) < self._debounce_s:
             return False
         self._last_fired[key] = now
         return True

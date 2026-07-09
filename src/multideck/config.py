@@ -51,16 +51,26 @@ class SSHConfig:
 
 @dataclass
 class AttentionSettings:
-    """Which attention renderers the daemon runs (see multideck.attention).
+    """Which attention renderers the daemon runs, plus timing knobs.
 
     toast/ntfy default off: toast needs the optional winotify extra and ntfy
     needs a MULTIDECK_NTFY_TOPIC env var — off-by-default keeps a fresh
-    config from warning about capabilities that aren't wired yet."""
+    config from warning about capabilities that aren't wired yet.
+
+    Timing defaults are the hardcoded values from before P3-10 promoted them;
+    all are in seconds except ``debounce_s`` which gates push-renderer
+    re-fire. Absent keys parse to their defaults, so existing v2 configs
+    work unchanged."""
 
     badge: bool = True
     flash: bool = True
     toast: bool = False
     ntfy: bool = False
+    poll_interval_s: float = 2.0
+    staleness_working_s: float = 1800.0
+    staleness_needs_input_s: float = 3600.0
+    debounce_s: float = 300.0
+    state_ttl_days: int = 14
 
 
 @dataclass
@@ -176,12 +186,26 @@ def _parse_ssh(raw: dict[str, object]) -> SSHConfig:
     return SSHConfig(shell=_str(raw, "shell", "bash -lc"))
 
 
+def _float(raw: dict[str, object], key: str, default: float) -> float:
+    value = raw.get(key, default)
+    if isinstance(value, bool):
+        return default
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
+
+
 def _parse_attention(raw: dict[str, object]) -> AttentionSettings:
     return AttentionSettings(
         badge=_bool(raw, "badge", True),
         flash=_bool(raw, "flash", True),
         toast=_bool(raw, "toast", False),
         ntfy=_bool(raw, "ntfy", False),
+        poll_interval_s=_float(raw, "pollIntervalS", 2.0),
+        staleness_working_s=_float(raw, "stalenessWorkingS", 1800.0),
+        staleness_needs_input_s=_float(raw, "stalenessNeedsInputS", 3600.0),
+        debounce_s=_float(raw, "debounceS", 300.0),
+        state_ttl_days=_int(raw, "stateTtlDays", 14),
     )
 
 
@@ -224,6 +248,11 @@ def settings_to_dict(settings: Settings) -> dict[str, object]:
             "flash": settings.attention.flash,
             "toast": settings.attention.toast,
             "ntfy": settings.attention.ntfy,
+            "pollIntervalS": settings.attention.poll_interval_s,
+            "stalenessWorkingS": settings.attention.staleness_working_s,
+            "stalenessNeedsInputS": settings.attention.staleness_needs_input_s,
+            "debounceS": settings.attention.debounce_s,
+            "stateTtlDays": settings.attention.state_ttl_days,
         },
         "tools": dict(settings.tools),
     }
@@ -344,7 +373,17 @@ _ALLOWED_SETTINGS_KEYS = {
     "tools",
 }
 _ALLOWED_SSH_KEYS = {"shell"}
-_ALLOWED_ATTENTION_KEYS = {"badge", "flash", "toast", "ntfy"}
+_ALLOWED_ATTENTION_KEYS = {
+    "badge",
+    "flash",
+    "toast",
+    "ntfy",
+    "pollIntervalS",
+    "stalenessWorkingS",
+    "stalenessNeedsInputS",
+    "debounceS",
+    "stateTtlDays",
+}
 _ALLOWED_PROJECT_KEYS = {
     "path",
     "group",
