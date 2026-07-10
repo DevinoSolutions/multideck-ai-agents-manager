@@ -32,8 +32,10 @@
 
 ## Quick Start
 
+> **Available once `v1.0.0` is published to PyPI.** Until then, [install from source](#install-from-source).
+
 ```bash
-pip install multideck
+pip install multideck          # or: uv tool install multideck
 multideck
 ```
 
