@@ -6,6 +6,41 @@ readme = "README.md"
 license = "AGPL-3.0"
 requires-python = ">=3.10"
 dependencies = ["click>=8.0", "pydantic-settings>=2.14"]
+keywords = [
+  "terminal",
+  "tiling",
+  "window-manager",
+  "multiplexer",
+  "cli",
+  "ai-agents",
+  "claude",
+  "codex",
+  "productivity",
+  "workflow",
+]
+# License is declared once, via the SPDX `license` field above — hatchling emits
+# it as PEP 639 `License-Expression: AGPL-3.0` (Metadata-Version 2.4). A redundant
+# `License ::` trove classifier is intentionally omitted: PEP 639 deprecates
+# license classifiers in favor of the expression, and declaring both is the
+# deprecated shape newer packaging tools reject. The rest is descriptive metadata.
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development",
+  "Topic :: Terminals :: Terminal Emulators/X Terminals",
+  "Topic :: Utilities",
+]
 
 [project.optional-dependencies]
 sentry = ["sentry-sdk>=2"]
@@ -15,6 +50,12 @@ dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "pytest-cov>=5.0", "ty==0.0.
 
 [project.scripts]
 multideck = "multideck.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/DevinoSolutions/multideck-ai-agents-manager"
+Repository = "https://github.com/DevinoSolutions/multideck-ai-agents-manager"
+Issues = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/issues"
+Changelog = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/releases"
 
 [build-system]
 requires = ["hatchling"]
