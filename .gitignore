@@ -5,9 +5,10 @@ multideck.config.json
 # Any extra named configs you keep around
 *.local.json
 
-# Python build artifacts
-dist/
-build/
+# Python build artifacts (anchored to repo root: `dist/` unanchored also
+# swallowed the tests/dist/ packaged-install test tier).
+/dist/
+/build/
 *.egg-info/
 __pycache__/
 *.pyc

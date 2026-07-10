@@ -114,17 +114,25 @@ jobs:
         if: steps.ssh_setup.outcome != 'success'
         run: echo "::warning title=SSH e2e skipped::setup-ssh-server failed; needs_ssh tests did not run"
 
-  wheel-install-smoke:
-    name: "Wheel Build + Install Smoke Test"
-    timeout-minutes: 10
-    runs-on: ubuntu-latest
+  packaged-install:
+    name: "Packaged Install (${{ matrix.os }})"
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
           python-version: "3.12"
+      # pytest orchestrates the tier (build wheel -> pristine venv -> real entry
+      # point); `build` is the wheel builder, installed separately as CI's old
+      # smoke job did. No virtual displays here by design: the window-spawn test
+      # skips on hosted runners; the wheel build, import sweep, virgin first-run
+      # and socket-real serve tests run everywhere -- already more than the old
+      # ubuntu-only --help/--version smoke.
+      - run: pip install -e ".[dev]"
       - run: pip install build
-      - run: python -m build
-      - run: pip install dist/multideck-*.whl
-      - run: multideck --help
-      - run: multideck --version
+      - run: pytest tests/dist/ -v -m dist
