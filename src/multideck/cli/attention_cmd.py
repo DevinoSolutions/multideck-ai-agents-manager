@@ -155,11 +155,17 @@ def _plan_renderers(
             renderers.append(attention.FlashRenderer(plat))
     elif att_cfg.badge or att_cfg.flash:
         warnings.append("window badges/flash aren't supported on this OS")
+    # notifyOnDone widens ONLY the two push channels (toast/ntfy) to also fire
+    # on a done transition; flash/badge above are unaffected. With both off,
+    # this set is computed but never reaches a renderer — notifyOnDone no-ops.
+    push_states = attention.push_states(att_cfg.notify_on_done)
     if att_cfg.toast:
-        renderers.append(attention.ToastRenderer(engine))
+        renderers.append(attention.ToastRenderer(engine, push_states))
     if att_cfg.ntfy:
         if ntfy_topic:
-            renderers.append(attention.NtfyRenderer(engine, str(ntfy_topic)))
+            renderers.append(
+                attention.NtfyRenderer(engine, str(ntfy_topic), push_states)
+            )
         else:
             warnings.append(
                 "attention.ntfy is on but MULTIDECK_NTFY_TOPIC is not set "

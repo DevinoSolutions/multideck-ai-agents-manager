@@ -169,9 +169,20 @@ class AttentionEngine:
 
 # --- Renderers ---------------------------------------------------------------
 
-# States that warrant an interruption (flash/toast/ntfy). done is deliberately
-# badge-only: "your turn" is worth a glance, not a page.
+# States that always warrant an interruption (flash/toast/ntfy). done is
+# deliberately excluded here: taskbar flash stays needs-input/error only
+# ("your turn" is worth a glance, not a page). The toast/ntfy push channels can
+# opt in to done via settings.attention.notifyOnDone (see push_states).
 PUSH_STATES = frozenset({agent_state.NEEDS_INPUT, agent_state.ERROR})
+
+
+def push_states(notify_on_done: bool) -> frozenset[str]:
+    """The states the toast/ntfy renderers fire on. needs-input/error always
+    page; ``done`` joins the set only when ``notifyOnDone`` is on — "an agent
+    finished" is the fleet signal most worth a phone push, but off by default so
+    a busy fleet isn't a stream of completion pings. Flash/badge are unaffected;
+    this widens only the two push channels, and only when they're enabled."""
+    return PUSH_STATES | {agent_state.DONE} if notify_on_done else PUSH_STATES
 
 
 class Renderer(Protocol):
@@ -276,18 +287,22 @@ class FlashRenderer:
 
 
 class ToastRenderer:
-    """Windows toast on needs-input/error transitions. winotify is the
-    optional [toast] extra — enabled-but-missing logs one install tip and
-    stays quiet after (same optional-dep doctrine as qrcode/sentry-sdk)."""
+    """Windows toast on push-state transitions (needs-input/error, plus done
+    when ``notifyOnDone`` widens ``states``). winotify is the optional [toast]
+    extra — enabled-but-missing logs one install tip and stays quiet after
+    (same optional-dep doctrine as qrcode/sentry-sdk)."""
 
-    def __init__(self, engine: AttentionEngine) -> None:
+    def __init__(
+        self, engine: AttentionEngine, states: frozenset[str] = PUSH_STATES
+    ) -> None:
         self._engine = engine
+        self._states = states
         self._tip_logged = False
 
     def render(self, views: list[SessionView], transitions: list[Transition]) -> None:
         for t in transitions:
             v = t.view
-            if v.state not in PUSH_STATES:
+            if v.state not in self._states:
                 continue
             if not self._engine.should_fire(v.cwd, f"toast:{v.state}"):
                 continue
@@ -314,18 +329,25 @@ class ToastRenderer:
 
 
 class NtfyRenderer:
-    """POSTs needs-input/error transitions to an ntfy topic URL (from
+    """POSTs push-state transitions (needs-input/error, plus done when
+    ``notifyOnDone`` widens ``states``) to an ntfy topic URL (from
     MULTIDECK_NTFY_TOPIC). Failures are logged WARNINGs — an unreachable
     notification host must not take the attention loop down."""
 
-    def __init__(self, engine: AttentionEngine, topic_url: str) -> None:
+    def __init__(
+        self,
+        engine: AttentionEngine,
+        topic_url: str,
+        states: frozenset[str] = PUSH_STATES,
+    ) -> None:
         self._engine = engine
         self._topic = topic_url
+        self._states = states
 
     def render(self, views: list[SessionView], transitions: list[Transition]) -> None:
         for t in transitions:
             v = t.view
-            if v.state not in PUSH_STATES:
+            if v.state not in self._states:
                 continue
             if not self._engine.should_fire(v.cwd, f"ntfy:{v.state}"):
                 continue
