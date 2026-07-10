@@ -107,6 +107,50 @@ class MacOSPlatform(Platform):
                 return {"process": proc_name, "window": win_name}
         return None
 
+    def snapshot_windows(self) -> dict[str, object]:
+        # {title: {"process","window"}} for every visible window in one System
+        # Events pass -- the handle shape move_window consumes, and the resolver
+        # the launch-path tiling (tiling.place_windows) calls. Without this
+        # override the ABC default `{}` made tiling a silent no-op on macOS.
+        # Each record is emitted `proc<TAB>title` on its own line so a title
+        # containing ':' or ', ' (every 'md:' window) parses intact -- unlike
+        # find_window's comma/colon split. Requires Automation permission for
+        # the invoking process; when TCC blocks it osascript fails and this
+        # returns {} (tiling then no-ops, matching the pre-override default).
+        script = """
+        set out to {}
+        tell application "System Events"
+            repeat with proc in (every process whose visible is true)
+                set procName to name of proc
+                try
+                    repeat with w in (every window of proc)
+                        try
+                            set end of out to procName & tab & (name of w)
+                        end try
+                    end repeat
+                end try
+            end repeat
+        end tell
+        set AppleScript's text item delimiters to linefeed
+        return out as text
+        """
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        titles: dict[str, object] = {}
+        for line in result.stdout.splitlines():
+            if "\t" not in line:
+                continue
+            proc_name, win_name = line.split("\t", 1)
+            win_name = win_name.strip()
+            if win_name:
+                titles[win_name] = {"process": proc_name.strip(), "window": win_name}
+        return titles
+
     def move_window(self, handle: object, rect: Rect) -> None:
         if not isinstance(handle, dict):
             return
