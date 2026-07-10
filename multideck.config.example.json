@@ -21,6 +21,7 @@
       "flash": true,
       "toast": false,
       "ntfy": false,
+      "notifyOnDone": false,
       "pollIntervalS": 2.0,
       "stalenessWorkingS": 1800.0,
       "stalenessNeedsInputS": 3600.0,

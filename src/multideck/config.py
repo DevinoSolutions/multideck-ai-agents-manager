@@ -57,6 +57,11 @@ class AttentionSettings:
     needs a MULTIDECK_NTFY_TOPIC env var — off-by-default keeps a fresh
     config from warning about capabilities that aren't wired yet.
 
+    ``notify_on_done`` is opt-in (default off): when on, a session entering
+    ``done`` pushes through whichever of toast/ntfy is enabled — "an agent
+    finished" is the fleet signal most worth a phone push. With both toast and
+    ntfy off it does nothing (it only widens what those two channels fire on).
+
     Timing defaults are the hardcoded values from before P3-10 promoted them;
     all are in seconds except ``debounce_s`` which gates push-renderer
     re-fire. Absent keys parse to their defaults, so existing v2 configs
@@ -66,6 +71,7 @@ class AttentionSettings:
     flash: bool = True
     toast: bool = False
     ntfy: bool = False
+    notify_on_done: bool = False
     poll_interval_s: float = 2.0
     staleness_working_s: float = 1800.0
     staleness_needs_input_s: float = 3600.0
@@ -222,6 +228,7 @@ def _parse_attention(raw: dict[str, object]) -> AttentionSettings:
         flash=_bool(raw, "flash", True),
         toast=_bool(raw, "toast", False),
         ntfy=_bool(raw, "ntfy", False),
+        notify_on_done=_bool(raw, "notifyOnDone", False),
         poll_interval_s=_float(raw, "pollIntervalS", 2.0),
         staleness_working_s=_float(raw, "stalenessWorkingS", 1800.0),
         staleness_needs_input_s=_float(raw, "stalenessNeedsInputS", 3600.0),
@@ -269,6 +276,7 @@ def settings_to_dict(settings: Settings) -> dict[str, object]:
             "flash": settings.attention.flash,
             "toast": settings.attention.toast,
             "ntfy": settings.attention.ntfy,
+            "notifyOnDone": settings.attention.notify_on_done,
             "pollIntervalS": settings.attention.poll_interval_s,
             "stalenessWorkingS": settings.attention.staleness_working_s,
             "stalenessNeedsInputS": settings.attention.staleness_needs_input_s,
@@ -399,6 +407,7 @@ _ALLOWED_ATTENTION_KEYS = {
     "flash",
     "toast",
     "ntfy",
+    "notifyOnDone",
     "pollIntervalS",
     "stalenessWorkingS",
     "stalenessNeedsInputS",

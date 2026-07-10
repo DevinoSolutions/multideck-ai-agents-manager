@@ -657,6 +657,103 @@ class TestNtfyRenderer:
         assert "ntfy push failed" in caplog.text
 
 
+class TestPushStates:
+    """push_states() is the single source of truth for which states the two
+    push channels fire on: needs-input/error always, done only when opted in."""
+
+    def test_default_is_needs_input_and_error_only(self):
+        assert attention.push_states(False) == attention.PUSH_STATES
+        assert agent_state.DONE not in attention.push_states(False)
+
+    def test_notify_on_done_adds_done_and_keeps_the_rest(self):
+        widened = attention.push_states(True)
+        assert agent_state.DONE in widened
+        # done is ADDED, not swapped in — needs-input/error still page.
+        assert widened >= attention.PUSH_STATES
+
+
+class TestNotifyOnDone:
+    """P6 opt-in push-on-done: with the widened fire-set, a working->done
+    transition pushes exactly once (the shared debounce eats an immediate
+    repeat); the default fire-set stays silent on the same transition. Fires on
+    the TRANSITION only — the renderers already act on transitions, not on a
+    record that merely sits in done."""
+
+    def _fake_winotify(self, monkeypatch):
+        msgs: list[str] = []
+
+        class _FakeNotification:
+            def __init__(self, app_id, title, msg):
+                msgs.append(msg)
+
+            def show(self):
+                pass
+
+        fake_mod = types.ModuleType("winotify")
+        fake_mod.Notification = _FakeNotification
+        monkeypatch.setitem(sys.modules, "winotify", fake_mod)
+        return msgs
+
+    def test_toast_fires_exactly_once_on_done_when_enabled(self, monkeypatch):
+        msgs = self._fake_winotify(monkeypatch)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.ToastRenderer(engine, attention.push_states(True))
+        v = _view("api", "/a", agent_state.DONE)
+
+        r.render([v], [_trans(v, agent_state.WORKING)])  # transition INTO done
+        r.render([v], [_trans(v, agent_state.WORKING)])  # immediate repeat
+
+        # one push; the debounce (toast:done key) suppressed the repeat.
+        assert msgs == ["done — waiting on you"]
+
+    def test_toast_silent_on_done_by_default(self, monkeypatch):
+        msgs = self._fake_winotify(monkeypatch)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.ToastRenderer(engine)  # default fire-set excludes done
+        v = _view("api", "/a", agent_state.DONE)
+
+        r.render([v], [_trans(v, agent_state.WORKING)])
+
+        assert msgs == []
+
+    def test_ntfy_fires_exactly_once_on_done_when_enabled(self, monkeypatch):
+        seen: list = []
+
+        class _FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            seen.append((req.data, req.get_method()))
+            return _FakeResp()
+
+        monkeypatch.setattr(attention.urllib.request, "urlopen", fake_urlopen)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.NtfyRenderer(
+            engine, "https://ntfy.example.com/topic", attention.push_states(True)
+        )
+        v = _view("api", "/a", agent_state.DONE)
+
+        r.render([v], [_trans(v, agent_state.WORKING)])
+        r.render([v], [_trans(v, agent_state.WORKING)])
+
+        assert seen == [(b"api: done", "POST")]  # once; repeat debounced
+
+    def test_ntfy_silent_on_done_by_default(self, monkeypatch):
+        def fake_urlopen(req, timeout=None):
+            raise AssertionError("must not POST on done with the default fire-set")
+
+        monkeypatch.setattr(attention.urllib.request, "urlopen", fake_urlopen)
+        engine = AttentionEngine(now=FakeClock(1000.0))
+        r = attention.NtfyRenderer(engine, "https://ntfy.example.com/topic")
+        v = _view("api", "/a", agent_state.DONE)
+
+        r.render([v], [_trans(v, agent_state.WORKING)])  # no POST -> no raise
+
+
 class TestRunAttentionLoop:
     def test_ticks_render_heartbeat_and_sleep_between(self, state_dir):
         _write_record(state_dir, "/a", agent_state.WORKING, 999.0)
