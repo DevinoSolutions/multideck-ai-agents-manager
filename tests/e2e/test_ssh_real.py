@@ -407,7 +407,36 @@ class TestAttachOverRealSsh:
 
             hotkey_pre = listener_pid()
 
+        # Windows Terminal cold start races attach's two rapid `wt -w new`
+        # spawns into ONE merged window (observed live in CI run 3: tiling
+        # found neither title within its budget and only the second md: title
+        # ever existed as a top-level window). A real user attaches with a
+        # warm terminal broker; give the test the same reality: open one
+        # throwaway window first and hold it open across the attach run. Its
+        # non-md title is invisible to attach's md-name tiling, and cleanup
+        # closes it with everything else.
+        warm_title = f"mdwarm-{unique}"
+        subprocess.Popen(
+            [
+                "wt",
+                "-w",
+                "new",
+                "--title",
+                warm_title,
+                "--suppressApplicationTitle",
+                "--",
+                "cmd",
+                "/c",
+                "ping",
+                "-n",
+                "900",
+                "127.0.0.1",
+            ]
+        )
+        warm_ok = _wait_until(lambda: warm_title in plat.snapshot_windows(), timeout=45)
+
         try:
+            assert warm_ok, "Windows Terminal never opened the pre-warm window"
             rc, out, err = _run_to_files(
                 [
                     sys.executable,
@@ -481,7 +510,7 @@ class TestAttachOverRealSsh:
                 f"port {upload_port}\nattach stdout:\n{out}"
             )
         finally:
-            leftovers = _close_windows_and_verify_gone(plat, titles)
+            leftovers = _close_windows_and_verify_gone(plat, [*titles, warm_title])
             killed = psmux_mod.kill_servers([name_a, name_b])
             _kill_upload_server(upload_port)
             with suppress(ImportError):
