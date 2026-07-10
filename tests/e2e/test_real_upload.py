@@ -147,6 +147,7 @@ class _Serve:
         # log/pid artifacts, last connect errors) IS the diagnosis.
         elapsed = time.monotonic() - started
         state_before_kill = self.proc.poll()
+        wedge = self._wedge_probes()  # must run while the child is still stuck
         self.proc.kill()
         stdout, stderr = self.proc.communicate(timeout=30)
         pytest.fail(
@@ -155,8 +156,29 @@ class _Serve:
             f"proc.poll() before kill: {state_before_kill!r} (None = still running)\n"
             f"last health-check errors: {self.health_errors[-3:]}\n"
             f"{self._diagnostics()}\n"
+            f"{wedge}"
             f"stdout:\n{stdout}\nstderr:\n{stderr}"
         )
+
+    def _wedge_probes(self) -> str:
+        """macOS wedge forensics, captured BEFORE the kill: who owns the port
+        (lsof) and the still-stuck child's native stack (sample). On other
+        platforms this contributes nothing."""
+        if sys.platform != "darwin":
+            return ""
+        sections: list[str] = []
+        for label, cmd, keep in (
+            ("lsof", ["lsof", "-nP", f"-iTCP:{self.port}"], 30),
+            ("sample", ["sample", str(self.proc.pid), "2"], 170),
+        ):
+            try:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                out = (r.stdout or "") + (r.stderr or "")
+            except (OSError, subprocess.SubprocessError) as exc:
+                out = f"<{label} failed: {exc}>"
+            head = "\n".join(out.splitlines()[:keep])
+            sections.append(f"--- {label} ---\n{head}")
+        return "\n".join(sections) + "\n"
 
     def _diagnostics(self) -> str:
         """Child-side facts from the redirected home: the upload log (where
