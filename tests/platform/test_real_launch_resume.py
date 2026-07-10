@@ -417,10 +417,12 @@ def test_go_resumes_claude_most_recent_sessions_win(tmp_path, cleanup_registry):
     assert by[sid_old] == [], "oldest session must not be resumed (most-recent-wins)"
     assert f"claude --resume {sid_new}" in by[sid_new][0]["cl"]
     assert f"claude --resume {sid_mid}" in by[sid_mid][0]["cl"]
-    # Creation order pins the most-recent session to the first window.
-    assert by[sid_new][0]["ft"] < by[sid_mid][0]["ft"], (
-        "most-recent session must map to the first-launched window"
-    )
+    # No creation-order assertion here: wt's single-instance delegation
+    # queues/batches window creation, so child cmd.exe creation times are racy
+    # at ms granularity (~10ms inversions observed on CI run 29107968160).
+    # Windows asserts the resumed-session SET (each exactly once, correct
+    # uuids, oldest never); the exact per-window mapping stays pinned on the
+    # Linux leg via title -> pid -> /proc cmdline.
 
     # Safety: the real spawn reached OUR benign shim (never the real claude).
     _wait_until(lambda: len(_marker_args(marker, "claude")) == 2, timeout=15)
@@ -480,7 +482,10 @@ def test_go_resumes_codex_most_recent_sessions_win(tmp_path, cleanup_registry):
     assert by[sid_other] == [], "session from a different cwd must not resume"
     assert f"codex resume {sid_new}" in by[sid_new][0]["cl"]
     assert f"codex resume {sid_mid}" in by[sid_mid][0]["cl"]
-    assert by[sid_new][0]["ft"] < by[sid_mid][0]["ft"]
+    # No creation-order assertion: wt's single-instance delegation makes
+    # creation-time ordering racy (~10ms inversions observed on CI run
+    # 29107968160); Windows asserts the resumed-session SET, and the exact
+    # per-window mapping stays pinned on the Linux leg via /proc cmdline.
 
     _wait_until(lambda: len(_marker_args(marker, "codex")) == 2, timeout=15)
     joined = "\n".join(_marker_args(marker, "codex"))
