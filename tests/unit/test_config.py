@@ -290,6 +290,21 @@ class TestAttentionSettings:
         load_config(path)
         assert "settings.attention.bogus" in capsys.readouterr().err
 
+    def test_notify_on_done_defaults_off(self, tmp_config):
+        # Opt-in: an absent notifyOnDone parses to False (push-on-done is off).
+        path = tmp_config({"version": SCHEMA_VERSION, "projects": [{"path": "api"}]})
+        assert load_config(path).settings.attention.notify_on_done is False
+
+    def test_notify_on_done_parses(self, tmp_config):
+        path = tmp_config(
+            {
+                "version": SCHEMA_VERSION,
+                "settings": {"attention": {"notifyOnDone": True}},
+                "projects": [{"path": "api"}],
+            }
+        )
+        assert load_config(path).settings.attention.notify_on_done is True
+
 
 class TestPathResolution:
     def test_resolve_relative(self, tmp_config):

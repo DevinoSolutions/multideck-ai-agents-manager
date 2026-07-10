@@ -98,6 +98,13 @@ _SETTINGS_FIELD_DOCS: list[tuple[str, str, str, str]] = [
         "`false`",
         "Push needs-input/error to an ntfy topic (set `MULTIDECK_NTFY_TOPIC`).",
     ),
+    (
+        "attention.notifyOnDone",
+        "boolean",
+        "`false`",
+        "Also push toast/ntfy when an agent finishes (enters `done`). Opt-in; "
+        "does nothing unless `toast` or `ntfy` is on.",
+    ),
 ]
 
 

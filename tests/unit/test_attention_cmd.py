@@ -326,3 +326,47 @@ class TestIntervalConfigResolution:
     ):
         poll = self._run_poll_interval(runner, monkeypatch, tmp_path, tmp_config, [])
         assert poll == 9.0
+
+
+class TestPlanRenderersNotifyOnDone:
+    """settings.attention.notifyOnDone threads through _plan_renderers into the
+    toast/ntfy fire-set — and ONLY those two channels. With both push channels
+    off, the flag reaches no renderer (it no-ops)."""
+
+    def _plan(self, att):
+        from multideck import attention
+
+        fp = FakePlatform(supports_attention=True)
+        engine = attention.AttentionEngine()
+        return attention_cmd._plan_renderers(
+            att, fp, engine, "https://ntfy.example.com/topic"
+        )
+
+    def _push_renderers(self, renderers):
+        from multideck import attention
+
+        return [
+            r
+            for r in renderers
+            if isinstance(r, (attention.ToastRenderer, attention.NtfyRenderer))
+        ]
+
+    def test_enabled_widens_toast_and_ntfy_to_done(self):
+        att = config.AttentionSettings(toast=True, ntfy=True, notify_on_done=True)
+        renderers, _ = self._plan(att)
+        push = self._push_renderers(renderers)
+        assert len(push) == 2  # toast + ntfy
+        assert all(agent_state.DONE in r._states for r in push)
+
+    def test_default_leaves_done_out_of_push_set(self):
+        att = config.AttentionSettings(toast=True, ntfy=True)  # notify_on_done off
+        renderers, _ = self._plan(att)
+        push = self._push_renderers(renderers)
+        assert len(push) == 2
+        assert all(agent_state.DONE not in r._states for r in push)
+
+    def test_noop_when_both_push_channels_off(self):
+        att = config.AttentionSettings(toast=False, ntfy=False, notify_on_done=True)
+        renderers, _ = self._plan(att)
+        # notifyOnDone widens nothing: there is no toast/ntfy renderer to widen.
+        assert self._push_renderers(renderers) == []
