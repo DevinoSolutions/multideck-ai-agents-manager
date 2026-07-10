@@ -38,7 +38,19 @@ runs:
           UserKnownHostsFile ~/.ssh/known_hosts_mdtest
         EOF
         chmod 600 ~/.ssh/config
-        sudo service ssh restart
+        # ubuntu-24.04 runners socket-activate ssh: systemd itself listens on
+        # 22 and sshd_config's Port is ignored, so 2222 was never bound
+        # (observed live: "connect to host localhost port 2222: Connection
+        # refused"). Disable the socket so sshd binds Port 2222 itself, then
+        # prove something is actually listening before smoking.
+        sudo systemctl disable --now ssh.socket 2>/dev/null || true
+        sudo systemctl daemon-reload
+        sudo systemctl restart ssh || sudo service ssh restart
+        for _ in $(seq 1 20); do
+          ss -tln | grep -q ':2222 ' && break
+          sleep 0.5
+        done
+        ss -tln | grep -q ':2222 ' || { echo "sshd is not listening on 2222"; sudo systemctl status ssh --no-pager || true; exit 1; }
         echo "MDTEST_SSH_PORT=2222" >> "$GITHUB_ENV"
         echo "MDTEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
         echo "MDTEST_SSH_HOST=mdssh" >> "$GITHUB_ENV"
@@ -102,7 +114,22 @@ runs:
         $pub = Get-Content "$sshDir\id_test.pub"
         $adminKeyFile = "$env:ProgramData\ssh\administrators_authorized_keys"
         Add-Content -Path $adminKeyFile -Value $pub
+        icacls $adminKeyFile /setowner "BUILTIN\Administrators"
         icacls $adminKeyFile /inheritance:r /grant "SYSTEM:(R)" /grant "BUILTIN\Administrators:(R)"
+
+        # The administrators_authorized_keys route rejected pubkey auth on a
+        # live runner ("Permission denied (publickey,...)"). Comment the
+        # `Match Group administrators` block out so the standard per-user
+        # ~/.ssh/authorized_keys applies to admin accounts too (the admin
+        # file above stays as belt and braces), and log at DEBUG3 to
+        # ProgramData\ssh\logs\sshd.log so any future rejection is readable.
+        $sshdConf = "$env:ProgramData\ssh\sshd_config"
+        (Get-Content $sshdConf) `
+          -replace '^Match Group administrators', '#Match Group administrators' `
+          -replace '^(\s*)AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys', '$1#AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys' |
+          Set-Content $sshdConf
+        Add-Content -Path $sshdConf -Value "`nSyslogFacility LOCAL0`nLogLevel DEBUG3"
+        Add-Content -Path "$sshDir\authorized_keys" -Value $pub
 
         # psmux for the attach-over-SSH flagship leg (pinned). The choco shim
         # dir is already on the machine PATH, so sshd sessions resolve it
@@ -139,8 +166,14 @@ runs:
 
         # Fatal smokes: the wire, then multideck and psmux resolving inside a
         # real non-interactive sshd session (the machine-PATH contract above).
+        # On failure, replay with -vvv and dump the sshd DEBUG3 log so the
+        # rejection reason is in the CI log, not a guessing game.
         ssh -o BatchMode=yes mdssh whoami
-        if ($LASTEXITCODE -ne 0) { throw "ssh mdssh whoami failed" }
+        if ($LASTEXITCODE -ne 0) {
+          ssh -vvv -o BatchMode=yes mdssh whoami
+          Get-Content "$env:ProgramData\ssh\logs\sshd.log" -Tail 150 -ErrorAction SilentlyContinue
+          throw "ssh mdssh whoami failed"
+        }
         ssh -o BatchMode=yes mdssh "multideck --version"
         if ($LASTEXITCODE -ne 0) { throw "multideck not resolvable in sshd sessions" }
         ssh -o BatchMode=yes mdssh "where psmux"
