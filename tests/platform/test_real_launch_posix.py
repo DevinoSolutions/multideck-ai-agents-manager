@@ -242,17 +242,18 @@ def _xdotool_ids(title: str) -> list[str]:
     return r.stdout.split()
 
 
-def _display_geometry() -> _Rect:
-    r = subprocess.run(
-        ["xdotool", "getdisplaygeometry"],
-        capture_output=True,
-        text=True,
-        timeout=5,
-        check=False,
+def _screen_bounds(monitors) -> _Rect:
+    """Union of the monitor rectangles -- the region compute_grid tiles into,
+    and the correct on-screen envelope for the tiled windows. NB: on Xvfb,
+    ``xdotool getdisplaygeometry`` reports the primary RANDR monitor (e.g.
+    1920x1080), not the full 5760x2160 root, so it under-reports a multi-cell
+    virtual screen and must not be used as the bound."""
+    return _Rect(
+        min(m.x for m in monitors),
+        min(m.y for m in monitors),
+        max(m.x + m.w for m in monitors),
+        max(m.y + m.h for m in monitors),
     )
-    parts = r.stdout.split()
-    w, h = int(parts[0]), int(parts[1])
-    return _Rect(0, 0, w, h)
 
 
 def _client_rect(wid: str) -> _Rect:
@@ -411,7 +412,7 @@ def test_go_launches_real_tiled_xterms_linux(tmp_path, linux_cleanup, capsys):
 
     # 2. On-screen geometry lands in the computed cells. Log the raw readback +
     #    frame extents so the tolerances are auditable from the CI log.
-    screen = _display_geometry()
+    screen = _screen_bounds(monitors)
     id_a, id_b = _xdotool_ids(title_a)[0], _xdotool_ids(title_b)[0]
     rect_a, rect_b = _client_rect(id_a), _client_rect(id_b)
     _real_stdout(capsys, f"screen={screen} frame_extents_a={_frame_extents(id_a)}")
@@ -442,31 +443,37 @@ def test_go_launches_real_tiled_xterms_linux(tmp_path, linux_cleanup, capsys):
 
 
 def _system_events_ok() -> bool:
-    """Cheap preflight: can this process script System Events at all? On hosted
-    runners TCC usually blocks it (osascript errors), which is our gate."""
-    r = subprocess.run(
-        ["osascript", "-e", 'tell application "System Events" to count processes'],
-        capture_output=True,
-        text=True,
-        timeout=15,
-        check=False,
-    )
-    return r.returncode == 0 and r.stdout.strip().isdigit()
+    """Cheap preflight: can this process script System Events at all?"""
+    out = _osascript('tell application "System Events" to count processes', 15)
+    return out is not None and out.strip().isdigit()
+
+
+def _osascript(script: str, timeout: float) -> str | None:
+    """Run an osascript snippet; return stdout, or None if it errored OR HUNG
+    past ``timeout``. A blocked TCC consent prompt manifests as a hang (osascript
+    never returns) -- catching TimeoutExpired here is what keeps every macOS-leg
+    Apple-event call from surfacing as an uncaught failure instead of a clean,
+    honest skip. Every osascript on this leg goes through here."""
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return None
+    return r.stdout if r.returncode == 0 else None
 
 
 def _terminal_scriptable() -> bool:
     """Can this process drive Terminal.app via Apple events? A SEPARATE TCC
     bucket from System Events -- launch uses ``tell application "Terminal" to do
-    script``. Bounded by its own timeout so a blocked/hung consent prompt fails
-    fast here instead of sinking ~a minute into a --go that launches nothing."""
-    r = subprocess.run(
-        ["osascript", "-e", 'tell application "Terminal" to count windows'],
-        capture_output=True,
-        text=True,
-        timeout=20,
-        check=False,
-    )
-    return r.returncode == 0 and r.stdout.strip().isdigit()
+    script``. A blocked/hung consent prompt returns None here (bounded), so we
+    fail fast instead of sinking ~a minute into a --go that launches nothing."""
+    out = _osascript('tell application "Terminal" to count windows', 20)
+    return out is not None and out.strip().isdigit()
 
 
 def _macos_geometry(proc: str, win: str) -> _Rect | None:
@@ -478,14 +485,10 @@ def _macos_geometry(proc: str, win: str) -> _Rect | None:
         f'return ((item 1 of p) as text) & "," & ((item 2 of p) as text) & "," '
         f'& ((item 1 of s) as text) & "," & ((item 2 of s) as text)'
     )
-    r = subprocess.run(
-        ["osascript", "-e", script],
-        capture_output=True,
-        text=True,
-        timeout=10,
-        check=False,
-    )
-    m = re.match(r"\s*(-?\d+),(-?\d+),(-?\d+),(-?\d+)", r.stdout.strip())
+    out = _osascript(script, 10)
+    if out is None:
+        return None
+    m = re.match(r"\s*(-?\d+),(-?\d+),(-?\d+),(-?\d+)", out.strip())
     if not m:
         return None
     x, y, w, h = int(m[1]), int(m[2]), int(m[3]), int(m[4])
@@ -514,9 +517,7 @@ def _macos_close(plat, titles: list[str]) -> list[str]:
             f"return text items of t\n"
             f"end splitTty"
         )
-        subprocess.run(
-            ["osascript", "-e", script], capture_output=True, timeout=15, check=False
-        )
+        _osascript(script, 15)  # best-effort; None (hang/error) is fine here
     snap = plat.snapshot_windows()
     return [t for t in titles if t in snap]
 
@@ -556,12 +557,7 @@ def test_go_launches_real_tiled_terminals_macos(tmp_path, capsys):
     slots = compute_grid(monitors, 2, 1)
     if len(slots) < 2:
         pytest.skip("display cannot host a 2x1 grid (DPI floor collapsed it)")
-    screen = _Rect(
-        min(m.x for m in monitors),
-        min(m.y for m in monitors),
-        max(m.x + m.w for m in monitors),
-        max(m.y + m.h for m in monitors),
-    )
+    screen = _screen_bounds(monitors)
 
     unique = uuid.uuid4().hex[:10]
     cfg, titles, home = _write_two_window_config(tmp_path, unique)
