@@ -871,9 +871,36 @@ class TestBindAddresses:
             def server_close(self):
                 pass
 
-        monkeypatch.setattr(mod, "ThreadingHTTPServer", _FakeServer)
+        # run_server constructs _NoFqdnHTTPServer (the no-reverse-DNS subclass).
+        monkeypatch.setattr(mod, "_NoFqdnHTTPServer", _FakeServer)
 
         with pytest.raises(KeyboardInterrupt):
             mod.run_server(port=0)
 
         assert constructed == [("127.0.0.1", 0)]  # loopback only, never 0.0.0.0
+
+    def test_server_bind_never_reverse_resolves(self, monkeypatch):
+        """Pin the macOS-wedge fix: server_bind must not call socket.getfqdn.
+
+        HTTPServer.server_bind's getfqdn(host) goes through mDNSResponder on
+        macOS and was observed blocking forever on CI -- socket bound, listen()
+        never reached, clients hanging. _NoFqdnHTTPServer records the bind host
+        verbatim; a regression back to the stdlib bind trips the bomb below.
+        """
+        import socket
+
+        import multideck.upload_server as mod
+
+        def _bomb(name: str = "") -> str:
+            raise AssertionError(
+                "server_bind must never reverse-resolve (macOS mdns wedge)"
+            )
+
+        monkeypatch.setattr(socket, "getfqdn", _bomb)
+        srv = mod._NoFqdnHTTPServer(("127.0.0.1", 0), mod.UploadHandler)
+        try:
+            assert srv.server_name == "127.0.0.1"
+            assert srv.server_port == srv.server_address[1]
+            assert srv.server_port != 0
+        finally:
+            srv.server_close()
