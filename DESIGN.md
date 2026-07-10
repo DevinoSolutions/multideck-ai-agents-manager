@@ -507,6 +507,26 @@ when this happens instead of pretending otherwise. Multi-monitor placement
 logic is covered by `FakePlatform` unit tests only. A real multi-monitor CI
 story (self-hosted runner or a working RANDR emulation) is next-cycle work.
 
+**macOS has no window-over-SSH e2e coverage (documented limitation,
+2026-07-10):** the real-SSH e2e tier (`tests/e2e/test_ssh_real.py`, over the
+live loopback sshd `.github/actions/setup-ssh-server` provisions) proves the
+non-interactive attach control channel (`ssh <target> "multideck up --json"`)
+on all three OSes, the full `multideck attach` workflow — remote bring-up,
+psmux-session survival past the ssh session, real `wt` windows, tiling,
+`serve --ensure` survivor — on Windows, and launch.py's nested remote quoting
+(`xterm → ssh -t → bash -lc 'cd … && cmd'`) on Linux. macOS window legs emit
+a `::warning` and skip, for two stacked reasons: Terminal automation is
+TCC-blocked on hosted runners (same wall as the tests/platform macOS render
+leg), and `platform/macos.py::launch_terminal`'s ssh branch embeds the
+`ssh -t … "…"` string — double quotes and all — inside an AppleScript
+`do script "…"` literal, which is unverified on real hardware and looks
+quoting-hostile. Verifying (and, if broken, fixing) the macOS
+ssh+Terminal.app path needs a real Mac; until then the skip is loud, never a
+green pass. The macOS `setup-ssh-server` step exports `MDTEST_SSH_HOST` only
+when its wire smoke actually passes, so a flaky hosted-runner sshd degrades
+to a loud skip of the real-wire tests instead of a red job (the dry-run ssh
+tests keep running either way).
+
 **Nine findings carried open into the next audit cycle** (deliberately
 triaged out of the fix pass that produced this document, not overlooked):
 

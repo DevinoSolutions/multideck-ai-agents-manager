@@ -1,5 +1,12 @@
 name: Setup SSH Server
-description: Start a local SSH server for e2e testing
+description: >-
+  Start a local SSH server for e2e testing. Exports MDTEST_SSH_PORT and
+  MDTEST_SSH_KEY (raw wire), plus MDTEST_SSH_HOST: an `mdssh` alias in the
+  real ~/.ssh/config so plain `ssh mdssh <cmd>` -- the exact shape the
+  product's attach flow and launch ssh branch send, no -p/-i arguments --
+  works non-interactively. Sessions arriving through sshd never see
+  GITHUB_PATH, so each OS also plumbs the hosted-toolcache `multideck`
+  console script into the PATH that sshd sessions actually get.
 
 runs:
   using: composite
@@ -13,10 +20,54 @@ runs:
         cat ~/.ssh/id_test.pub >> ~/.ssh/authorized_keys
         chmod 600 ~/.ssh/authorized_keys
         sudo sed -i 's/#Port 22/Port 2222/' /etc/ssh/sshd_config
-        sudo service ssh start
+        # Non-interactive `ssh mdssh "multideck ..."` sessions get sshd's own
+        # PATH, not GITHUB_PATH. Two independent plumbings (run 2 proved the
+        # appended-directive one insufficient alone on ubuntu-24.04 --
+        # "multideck: command not found" over the wire):
+        # 1) symlink the console script into /usr/local/bin, which is on
+        #    every default sshd PATH;
+        # 2) per-user environment file, enabled via a drop-in that sorts
+        #    lexically first (sshd_config.d is Included at the TOP of
+        #    sshd_config and first-match wins, so a distro drop-in can beat
+        #    a directive appended at the bottom of the main file).
+        sudo ln -sf "$(command -v multideck)" /usr/local/bin/multideck
+        printf 'PermitUserEnvironment yes\n' | sudo tee /etc/ssh/sshd_config.d/00-mdtest.conf > /dev/null
+        echo "PermitUserEnvironment yes" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+        echo "PATH=$PATH" > ~/.ssh/environment
+        chmod 600 ~/.ssh/environment
+        # The host alias the real-SSH e2e tier dials -- exactly what a user
+        # would put in ~/.ssh/config for a remote multideck host.
+        cat >> ~/.ssh/config <<EOF
+        Host mdssh
+          HostName localhost
+          Port 2222
+          IdentityFile ~/.ssh/id_test
+          IdentitiesOnly yes
+          StrictHostKeyChecking no
+          UserKnownHostsFile ~/.ssh/known_hosts_mdtest
+        EOF
+        chmod 600 ~/.ssh/config
+        # ubuntu-24.04 runners socket-activate ssh: systemd itself listens on
+        # 22 and sshd_config's Port is ignored, so 2222 was never bound
+        # (observed live: "connect to host localhost port 2222: Connection
+        # refused"). Disable the socket so sshd binds Port 2222 itself, then
+        # prove something is actually listening before smoking.
+        sudo systemctl disable --now ssh.socket 2>/dev/null || true
+        sudo systemctl daemon-reload
+        sudo systemctl restart ssh || sudo service ssh restart
+        for _ in $(seq 1 20); do
+          ss -tln | grep -q ':2222 ' && break
+          sleep 0.5
+        done
+        ss -tln | grep -q ':2222 ' || { echo "sshd is not listening on 2222"; sudo systemctl status ssh --no-pager || true; exit 1; }
         echo "MDTEST_SSH_PORT=2222" >> "$GITHUB_ENV"
         echo "MDTEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
+        echo "MDTEST_SSH_HOST=mdssh" >> "$GITHUB_ENV"
         ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_test -p 2222 localhost whoami
+        # Fatal smokes for the real-SSH tier: the alias itself, then the
+        # installed console script resolving inside a non-interactive session.
+        ssh -o BatchMode=yes mdssh whoami
+        ssh -o BatchMode=yes mdssh "multideck --version"
 
     - name: macOS - Setup OpenSSH
       if: runner.os == 'macOS'
@@ -29,12 +80,35 @@ runs:
         sudo systemsetup -setremotelogin on
         sudo sed -i '' 's/^#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config 2>/dev/null || true
         sudo sed -i '' 's/^PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config 2>/dev/null || true
+        echo "PermitUserEnvironment yes" | sudo tee -a /etc/ssh/sshd_config > /dev/null
+        echo "PATH=$PATH" > ~/.ssh/environment
+        chmod 600 ~/.ssh/environment
+        cat >> ~/.ssh/config <<EOF
+        Host mdssh
+          HostName localhost
+          Port 22
+          IdentityFile ~/.ssh/id_test
+          IdentitiesOnly yes
+          StrictHostKeyChecking no
+          UserKnownHostsFile ~/.ssh/known_hosts_mdtest
+        EOF
+        chmod 600 ~/.ssh/config
         sudo launchctl stop com.openssh.sshd 2>/dev/null || true
         sudo launchctl start com.openssh.sshd 2>/dev/null || true
         sleep 2
         echo "MDTEST_SSH_PORT=22" >> "$GITHUB_ENV"
         echo "MDTEST_SSH_KEY=$HOME/.ssh/id_test" >> "$GITHUB_ENV"
         ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.ssh/id_test localhost whoami || echo "SSH smoke-check failed (non-fatal in CI)"
+        # Remote Login on hosted macOS runners is best-effort (the smoke above
+        # has a history of flaking); export the alias -- gating the real-wire
+        # tests -- only when the wire demonstrably works, so the dry-run ssh
+        # tests keep running either way and a dead wire skips loudly instead
+        # of failing red or passing silently.
+        if ssh -o BatchMode=yes mdssh whoami && ssh -o BatchMode=yes mdssh "multideck --version"; then
+          echo "MDTEST_SSH_HOST=mdssh" >> "$GITHUB_ENV"
+        else
+          echo "::warning title=macOS SSH wire unavailable::mdssh alias smoke failed; real-wire SSH e2e tests will skip on macOS (dry-run ssh tests still run)"
+        fi
 
     - name: Windows - Setup OpenSSH
       if: runner.os == 'Windows'
@@ -45,11 +119,78 @@ runs:
         Set-Service -Name sshd -StartupType Automatic
         $sshDir = "$env:USERPROFILE\.ssh"
         if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir | Out-Null }
-        ssh-keygen -t ed25519 -f "$sshDir\id_test" -N '""'
+        # -N "" (NOT the old -N '""' hack): under pwsh 7.3+ Standard argument
+        # passing, '""' reaches ssh-keygen as a literal two-character
+        # passphrase, silently encrypting the key -- BatchMode clients then
+        # fail to sign ("we did not send a packet, disable method"; observed
+        # live, run 2026-07-10). Verify the key is truly passphrase-free.
+        ssh-keygen -t ed25519 -f "$sshDir\id_test" -N ""
+        ssh-keygen -y -P "" -f "$sshDir\id_test" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "id_test is passphrase-protected (keygen quoting regression)" }
         $pub = Get-Content "$sshDir\id_test.pub"
         $adminKeyFile = "$env:ProgramData\ssh\administrators_authorized_keys"
         Add-Content -Path $adminKeyFile -Value $pub
+        icacls $adminKeyFile /setowner "BUILTIN\Administrators"
         icacls $adminKeyFile /inheritance:r /grant "SYSTEM:(R)" /grant "BUILTIN\Administrators:(R)"
+
+        # The administrators_authorized_keys route rejected pubkey auth on a
+        # live runner ("Permission denied (publickey,...)"). Comment the
+        # `Match Group administrators` block out so the standard per-user
+        # ~/.ssh/authorized_keys applies to admin accounts too (the admin
+        # file above stays as belt and braces), and log at DEBUG3 to
+        # ProgramData\ssh\logs\sshd.log so any future rejection is readable.
+        $sshdConf = "$env:ProgramData\ssh\sshd_config"
+        (Get-Content $sshdConf) `
+          -replace '^Match Group administrators', '#Match Group administrators' `
+          -replace '^(\s*)AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys', '$1#AuthorizedKeysFile __PROGRAMDATA__/ssh/administrators_authorized_keys' |
+          Set-Content $sshdConf
+        Add-Content -Path $sshdConf -Value "`nSyslogFacility LOCAL0`nLogLevel DEBUG3"
+        Add-Content -Path "$sshDir\authorized_keys" -Value $pub
+
+        # psmux for the attach-over-SSH flagship leg (pinned). The choco shim
+        # dir is already on the machine PATH, so sshd sessions resolve it
+        # after the restart below.
+        choco install psmux -y --version=3.3.6 --no-progress
+        if ($LASTEXITCODE -ne 0) { throw "choco install psmux failed" }
+
+        # Incoming sshd sessions inherit the MACHINE PATH, not GITHUB_PATH
+        # (which only reaches workflow steps): export the hosted Python and
+        # its Scripts dir (where pip put multideck.exe) machine-wide, then
+        # restart sshd so new sessions pick the refreshed environment up.
+        $scripts = python -c "import sysconfig; print(sysconfig.get_path('scripts'))"
+        $pyhome = python -c "import sys, os; print(os.path.dirname(sys.executable))"
+        $mp = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+        [Environment]::SetEnvironmentVariable('Path', "$mp;$pyhome;$scripts", 'Machine')
+
+        # Client-side alias: plain `ssh mdssh` (the product sends no -p/-i).
+        $cfgLines = @(
+          'Host mdssh',
+          '  HostName localhost',
+          '  Port 22',
+          "  IdentityFile $(($sshDir -replace '\\','/'))/id_test",
+          '  IdentitiesOnly yes',
+          '  StrictHostKeyChecking no',
+          "  UserKnownHostsFile $(($sshDir -replace '\\','/'))/known_hosts_mdtest"
+        )
+        Add-Content -Path "$sshDir\config" -Value ($cfgLines -join "`n")
+
         Restart-Service sshd
+        Start-Sleep -Seconds 2
         echo "MDTEST_SSH_PORT=22" >> $env:GITHUB_ENV
         echo "MDTEST_SSH_KEY=$sshDir\id_test" >> $env:GITHUB_ENV
+        echo "MDTEST_SSH_HOST=mdssh" >> $env:GITHUB_ENV
+
+        # Fatal smokes: the wire, then multideck and psmux resolving inside a
+        # real non-interactive sshd session (the machine-PATH contract above).
+        # On failure, replay with -vvv and dump the sshd DEBUG3 log so the
+        # rejection reason is in the CI log, not a guessing game.
+        ssh -o BatchMode=yes mdssh whoami
+        if ($LASTEXITCODE -ne 0) {
+          ssh -vvv -o BatchMode=yes mdssh whoami
+          Get-Content "$env:ProgramData\ssh\logs\sshd.log" -Tail 150 -ErrorAction SilentlyContinue
+          throw "ssh mdssh whoami failed"
+        }
+        ssh -o BatchMode=yes mdssh "multideck --version"
+        if ($LASTEXITCODE -ne 0) { throw "multideck not resolvable in sshd sessions" }
+        ssh -o BatchMode=yes mdssh "where psmux"
+        if ($LASTEXITCODE -ne 0) { throw "psmux not resolvable in sshd sessions" }
