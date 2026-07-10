@@ -296,8 +296,8 @@ CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
     <tr>
       <td><strong>Packaging</strong></td>
       <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
-      <td>Linux</td>
-      <td>Build wheel, install from wheel, <code>multideck --help</code> and <code>--version</code> smoke test</td>
+      <td>Windows / macOS / Linux</td>
+      <td>Build wheel, install into a pristine no-extras venv, drive the real installed <code>multideck</code> entry point: version/help, dev-dep import sweep, virgin first-run, socket-real serve, optional-extra degradation, and a real window spawn (win32)</td>
     </tr>
   </tbody>
 </table>
@@ -309,6 +309,7 @@ pip install -e ".[dev]"
 pytest tests/unit/ -q                        # fast, safe anywhere
 pytest tests/e2e/ -m "e2e and not needs_ssh" # subprocess dry-runs; no SSH server needed
 pytest tests/platform/ -v -m platform        # real monitors/terminals — CI-grade env only
+pip install build && pytest tests/dist/ -m dist  # wheel -> pristine venv -> real installed entry point
 python scripts/check.py                      # the quality gate: ruff + custom lint + ty + compileall + vulture + pytest w/ coverage
 ```
 
