@@ -72,6 +72,24 @@ _UPLOAD_DIR = Path.home() / ".multideck" / "uploads"
 # operability ceiling on the hot path.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
+# --- Rejected-request drain (P4-02) -----------------------------------------
+# Windows failure mode this guards: when the handler sends an early 4xx and
+# closes while unread request-body bytes still sit in the socket's receive
+# buffer, the OS emits a TCP RST -- so the client (the phone upload page) sees a
+# connection reset instead of our JSON error envelope, and the reject tests
+# flake for the same reason. Every reject-before-read path therefore drains the
+# pending body first, then closes the connection.
+#
+# The drain is bounded so a lying, garbage, or endless Content-Length can never
+# make the handler read forever: at most _DRAIN_CAP_BYTES are discarded, in
+# _DRAIN_CHUNK_BYTES blocks, with a short per-read timeout that stops us waiting
+# on a client which declared more than it actually sent. The cap mirrors the
+# upload ceiling but is its OWN constant -- tuning MAX_UPLOAD_BYTES (or a test
+# lowering it to force a 413) must never quietly unbound the drain.
+_DRAIN_CAP_BYTES = MAX_UPLOAD_BYTES
+_DRAIN_CHUNK_BYTES = 64 * 1024
+_DRAIN_TIMEOUT_S = 0.5
+
 # In-session upload feedback: a paste's progress shows in the SAME md:<project>
 # window it landed in, via the psmux (tmux) status line -- never drawn into the
 # agent pane. tmux 3.3 renders these UTF-8 glyphs intact.
@@ -683,6 +701,7 @@ class UploadHandler(BaseHTTPRequestHandler):
         log = get_logger("upload")
         parsed = urlparse(self.path)
         if parsed.path != "/upload":
+            self._drain_request_body()  # reject-before-read: avoid a Windows RST
             self._reject("POST", parsed.path)
             return
 
@@ -717,9 +736,11 @@ class UploadHandler(BaseHTTPRequestHandler):
             try:
                 declared = int(self.headers.get("Content-Length", 0))
             except (TypeError, ValueError):
+                self._drain_request_body()
                 self._json_response({"ok": False, "error": "Bad Content-Length"}, 400)
                 return
             if declared > MAX_UPLOAD_BYTES:
+                self._drain_request_body()
                 self._json_response({"ok": False, "error": "File too large"}, 413)
                 return
 
@@ -801,6 +822,42 @@ class UploadHandler(BaseHTTPRequestHandler):
                         _FLASH_NO_MS,
                         style=_MSG_RED,
                     )
+
+    def _drain_request_body(self) -> None:
+        """Discard the pending request body (bounded) before an early error
+        response, and mark the connection to close.
+
+        See the module-level "Rejected-request drain" note: on Windows an
+        undrained body plus a socket close triggers a TCP RST, so the client
+        sees a connection reset instead of our JSON error envelope. Bounded by
+        ``_DRAIN_CAP_BYTES`` with a short per-read timeout so a lying, garbage,
+        or endless Content-Length can never make us read forever; the connection
+        is closed afterward so a partial drain is never reused as a next request.
+        """
+        self.close_connection = True
+        try:
+            declared = int(self.headers.get("Content-Length", ""))
+        except (TypeError, ValueError):
+            # Unparseable/absent length: best-effort drain up to the cap or EOF.
+            declared = _DRAIN_CAP_BYTES
+        remaining = max(0, min(declared, _DRAIN_CAP_BYTES))
+        if not remaining:
+            return
+        prev_timeout = self.connection.gettimeout()
+        self.connection.settimeout(_DRAIN_TIMEOUT_S)
+        try:
+            while remaining > 0:
+                chunk = self.rfile.read(min(_DRAIN_CHUNK_BYTES, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+        except OSError:
+            # Read timeout (nothing more is pending) or a reset mid-drain -- we
+            # have pulled off what we can, which is enough to land the response.
+            pass
+        finally:
+            with contextlib.suppress(OSError):
+                self.connection.settimeout(prev_timeout)
 
     def _json_response(self, data: dict[str, object], status: int = 200) -> None:
         body = json.dumps(data).encode()
