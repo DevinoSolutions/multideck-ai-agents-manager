@@ -32,6 +32,7 @@ ROOT_ALLOWLIST = frozenset(
         "package-lock.json",
         "pyproject.toml",
         "README.md",
+        "RELEASING.md",
         "uv.lock",
     }
 )
