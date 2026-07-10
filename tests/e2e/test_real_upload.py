@@ -67,7 +67,7 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _health_ok(port: int) -> bool:
+def _health_ok(port: int, errors: list[str] | None = None) -> bool:
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=2)
         try:
@@ -77,7 +77,9 @@ def _health_ok(port: int) -> bool:
             return resp.status == 200 and json.loads(body).get("ok") is True
         finally:
             conn.close()
-    except (OSError, ValueError):
+    except (OSError, ValueError) as exc:
+        if errors is not None:
+            errors.append(f"{time.monotonic():.1f}s {type(exc).__name__}: {exc}")
         return False
 
 
@@ -87,6 +89,7 @@ class _Serve:
 
     def __init__(self, tmp_path):
         self.unique = uuid.uuid4().hex[:10]
+        self.health_errors: list[str] = []
         self.title = f"mdrl-up-{self.unique}"  # also the psmux session name
         self.home = tmp_path / "home"
         self.home.mkdir()
@@ -136,13 +139,49 @@ class _Serve:
         )
 
     def wait_ready(self) -> None:
-        if not _wait_until(lambda: _health_ok(self.port), timeout=30):
-            self.proc.kill()
-            stdout, stderr = self.proc.communicate(timeout=30)
-            pytest.fail(
-                f"serve never became healthy on 127.0.0.1:{self.port}\n"
-                f"stdout:\n{stdout}\nstderr:\n{stderr}"
-            )
+        started = time.monotonic()
+        if _wait_until(lambda: _health_ok(self.port, self.health_errors), timeout=30):
+            return
+        # Permanent rich failure report -- when a real server fails to come up
+        # the child's own observable state (exit code, redirected ~/.multideck
+        # log/pid artifacts, last connect errors) IS the diagnosis.
+        elapsed = time.monotonic() - started
+        state_before_kill = self.proc.poll()
+        self.proc.kill()
+        stdout, stderr = self.proc.communicate(timeout=30)
+        pytest.fail(
+            f"serve never became healthy on 127.0.0.1:{self.port} "
+            f"after {elapsed:.1f}s\n"
+            f"proc.poll() before kill: {state_before_kill!r} (None = still running)\n"
+            f"last health-check errors: {self.health_errors[-3:]}\n"
+            f"{self._diagnostics()}\n"
+            f"stdout:\n{stdout}\nstderr:\n{stderr}"
+        )
+
+    def _diagnostics(self) -> str:
+        """Child-side facts from the redirected home: the upload log (where
+        run_server logs 'listening'/'cannot bind'), the pid file, and the
+        ~/.multideck tree."""
+        md = self.home / ".multideck"
+        try:
+            tree = sorted(str(p.relative_to(md)) for p in md.rglob("*"))
+        except OSError as exc:
+            tree = [f"<unlistable: {exc}>"]
+        pid_file = md / f"upload_server-{self.port}.pid"
+        try:
+            pid_text = pid_file.read_text(encoding="utf-8").strip()
+        except OSError:
+            pid_text = "<absent>"
+        log_file = md / "logs" / "upload.log"
+        try:
+            log_text = log_file.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            log_text = f"<unreadable: {exc}>"
+        return (
+            f"~/.multideck tree: {tree}\n"
+            f"pid file {pid_file.name}: {pid_text}\n"
+            f"upload.log:\n{log_text or '<empty>'}"
+        )
 
     def connect(self, timeout: float = 60) -> http.client.HTTPConnection:
         return http.client.HTTPConnection("127.0.0.1", self.port, timeout=timeout)
