@@ -23,6 +23,7 @@ flag; no daemon is started.
 
 import json
 import os
+import socketserver
 import subprocess
 import sys
 import threading
@@ -87,9 +88,20 @@ class _NtfyReceiver(BaseHTTPRequestHandler):
         """Keep the pytest console clean; the recorder list is the evidence."""
 
 
+class _ReceiverServer(ThreadingHTTPServer):
+    """Receiver with http.server's reverse-DNS server_bind skipped -- the same
+    macOS mDNSResponder wedge multideck's own _NoFqdnHTTPServer guards
+    against (socket.getfqdn can block seconds-to-forever on macOS runners)."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = str(self.server_address[0])
+        self.server_port = int(self.server_address[1])
+
+
 @pytest.fixture
 def ntfy_receiver():
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _NtfyReceiver)
+    server = _ReceiverServer(("127.0.0.1", 0), _NtfyReceiver)
     server.received = []
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

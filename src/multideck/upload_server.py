@@ -7,6 +7,7 @@ import html
 import json
 import os
 import re
+import socketserver
 import subprocess
 import sys
 import threading
@@ -882,6 +883,27 @@ class UploadHandler(BaseHTTPRequestHandler):
         get_logger("upload").debug(fmt, *args)
 
 
+class _NoFqdnHTTPServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer minus http.server's reverse-DNS ``server_bind``.
+
+    ``HTTPServer.server_bind`` resolves ``self.server_name`` via
+    ``socket.getfqdn(host)`` -- a reverse-DNS lookup that macOS routes through
+    mDNSResponder (``gethostbyaddr`` -> ``mdns_hostbyaddr``) and that can block
+    INDEFINITELY when that daemon is slow or unresponsive. Observed wedged
+    forever on macOS CI: the socket was bound but ``listen()`` was never
+    reached, and macOS silently drops SYNs to a bound-unlistened port, so every
+    client saw a hang (never a refusal) while the server looked alive. This
+    server never uses ``server_name`` (no CGI; the ``Server:`` header comes
+    from ``version_string()``), so the bind host is recorded verbatim and the
+    resolver is never consulted.
+    """
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = str(self.server_address[0])
+        self.server_port = int(self.server_address[1])
+
+
 def _bind_addresses(host: str | None) -> list[str]:
     """Addresses run_server should bind.
 
@@ -916,7 +938,7 @@ def run_server(
     bound_addrs: list[str] = []
     for addr in _bind_addresses(host):
         try:
-            servers.append(ThreadingHTTPServer((addr, port), UploadHandler))
+            servers.append(_NoFqdnHTTPServer((addr, port), UploadHandler))
             bound_addrs.append(addr)
         except OSError as e:
             log.warning("upload server: cannot bind %s:%d (%s)", addr, port, e)
