@@ -50,9 +50,16 @@ def _child_env(home: Path) -> dict[str, str]:
     the developer's real ``%APPDATA%\\multideck\\config.json``. The e2e/platform
     tests dodge this by always passing ``--config``; the virgin-first-run tests
     here exercise the fallback, so they must pin the config base too.
+
+    ``PYTHONPATH``/``PYTHONHOME`` are stripped as well: inherited into the
+    pristine venv's interpreter they would splice dev paths back into
+    ``sys.path`` and silently void the tier's core guarantee.
     """
     env = {
-        k: v for k, v in os.environ.items() if not k.upper().startswith("MULTIDECK_")
+        k: v
+        for k, v in os.environ.items()
+        if not k.upper().startswith("MULTIDECK_")
+        and k.upper() not in ("PYTHONPATH", "PYTHONHOME")
     }
     home_s = str(home)
     drive, tail = os.path.splitdrive(home_s)
@@ -113,10 +120,20 @@ _IMPORT_SWEEP = dedent(
     """Import every module in the installed multideck package on base deps only.
 
     Run INSIDE the pristine venv. A module that quietly imports a dev/optional
-    package (sentry_sdk / winotify / qrcode / pytest / ...) fails here. The one
-    sanctioned exception is multideck.hotkey, which raises ImportError off-win32
-    BY DESIGN and must import cleanly ON win32 -- pinned explicitly, not
-    blanket-skipped.
+    package (sentry_sdk / winotify / qrcode / pytest / ...) fails here. Two
+    sanctioned platform-gated exceptions, deliberately asymmetric:
+
+    * multideck.hotkey -- documented CONTRACT: MUST raise ImportError off-win32
+      and MUST import cleanly on win32. Pinned in both directions below;
+      importing cleanly off-win32 would be a regression.
+    * multideck.platform.windows -- TOLERATED off-win32 only: its top-level
+      `from ctypes import WINFUNCTYPE, ...` fails on POSIX ctypes incidentally,
+      and only win32's get_platform() ever imports it. NOT a contract -- if it
+      later becomes importable everywhere, that is fine, not a failure. On
+      win32 the walk still enforces that it imports.
+
+    Everything else stays strict: platform/macos.py and platform/linux.py must
+    import on every OS.
     """
     import importlib
     import pkgutil
@@ -126,14 +143,17 @@ _IMPORT_SWEEP = dedent(
 
     failures = []
 
+    # ImportError tolerated off-win32 (see docstring for the asymmetry).
+    _TOLERATED_OFF_WIN32 = {"multideck.hotkey", "multideck.platform.windows"}
+
 
     def _record(name, exc):
         if (
-            name == "multideck.hotkey"
+            name in _TOLERATED_OFF_WIN32
             and sys.platform != "win32"
             and isinstance(exc, ImportError)
         ):
-            return  # by design
+            return  # sanctioned platform gating, not a dep leak
         failures.append((name, repr(exc)))
 
 

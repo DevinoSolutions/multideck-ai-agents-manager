@@ -46,8 +46,13 @@ _WM_CLOSE = 0x0010
 
 
 def _child_env(home: Path) -> dict[str, str]:
+    # PYTHONPATH/PYTHONHOME stripped too: inherited into the pristine venv's
+    # interpreter they would splice dev paths back into sys.path.
     env = {
-        k: v for k, v in os.environ.items() if not k.upper().startswith("MULTIDECK_")
+        k: v
+        for k, v in os.environ.items()
+        if not k.upper().startswith("MULTIDECK_")
+        and k.upper() not in ("PYTHONPATH", "PYTHONHOME")
     }
     home_s = str(home)
     drive, tail = os.path.splitdrive(home_s)
@@ -179,7 +184,6 @@ def test_installed_go_launches_one_real_md_window(
                 "layout": {"columns": 1, "rows": 1},
                 "settings": {
                     "defaultTool": "probe",
-                    "settleSeconds": 1,
                     "launchDelayMs": 400,
                     "psmux": False,
                     "uploadServer": False,
