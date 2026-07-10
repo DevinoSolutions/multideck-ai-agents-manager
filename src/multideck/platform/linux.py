@@ -107,6 +107,57 @@ class LinuxPlatform(Platform):
 
         return None
 
+    def snapshot_windows(self) -> dict[str, object]:
+        # {title: window-id} for every managed window, in one pass. `wmctrl -l`
+        # emits `<id> <desktop> <host> <title>`; that id round-trips straight
+        # back into move_window's `wmctrl -i -r`. This is the resolver the
+        # launch-path tiling (tiling.place_windows) calls -- without it the ABC
+        # default `{}` made every window "not found" and tiling a silent no-op
+        # on Linux. Needs a running window manager to populate the EWMH client
+        # list; with none, wmctrl returns nothing and the xdotool fallback (or,
+        # failing that, `{}`) takes over.
+        titles: dict[str, object] = {}
+        if shutil.which("wmctrl"):
+            result = subprocess.run(
+                ["wmctrl", "-l"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            for line in result.stdout.splitlines():
+                parts = line.split(None, 3)
+                if len(parts) < 4:
+                    continue
+                wid, _, _, win_title = parts
+                titles[win_title] = wid
+        if titles:
+            return titles
+
+        # WM-less / empty-client-list fallback: enumerate visible named windows
+        # via xdotool (works without EWMH). Decimal xdotool ids also parse under
+        # `wmctrl -i -r` (strtoul base 0), so they round-trip into move_window.
+        if shutil.which("xdotool"):
+            search = subprocess.run(
+                ["xdotool", "search", "--onlyvisible", "--name", "."],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            for wid in search.stdout.split():
+                name = subprocess.run(
+                    ["xdotool", "getwindowname", wid],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                    check=False,
+                )
+                win_title = name.stdout.strip()
+                if win_title:
+                    titles[win_title] = wid
+        return titles
+
     def move_window(self, handle: object, rect: Rect) -> None:
         if not handle:
             return

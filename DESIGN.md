@@ -134,14 +134,19 @@ None of these imports any other `multideck` module (`style.py` imports
 - **`platform/` (ABC + per-OS backends)** — `Platform` declares the
   cross-platform contract via `@abstractmethod` (`set_dpi_aware`,
   `list_monitors`, `find_window`, `move_window`, `launch_terminal`,
-  `launch_vscode`) plus concrete-with-safe-default methods any backend may
-  leave unoverridden: `snapshot_windows` (default `{}`),
-  `launch_psmux_session`/`attach_psmux` (default `raise
-  NotImplementedError("psmux is only supported on Windows")`), and the
+  `launch_vscode`) plus concrete-with-safe-default methods a backend may
+  leave unoverridden: `launch_psmux_session`/`attach_psmux` (default `raise
+  NotImplementedError("psmux is only supported on Windows")`) and the
   capability probes `supports_psmux()`/`supports_hotkey()` (both default
-  `False`). All three backends implement the six abstract methods;
-  **only `WindowsPlatform`** overrides the psmux methods and capability
-  probes — `LinuxPlatform`/`MacOSPlatform` inherit those ABC defaults as-is.
+  `False`). `snapshot_windows` also carries an ABC default (`{}`), but **all
+  three backends now override it** — Windows via `EnumWindows`, Linux via
+  `wmctrl -l` (xdotool fallback), macOS via a tab-delimited System Events pass
+  — because it is the window resolver `tiling.place_windows` calls to find the
+  handles it moves; the bare `{}` default silently disabled the launch-path
+  auto-tiling on Linux/macOS (every window resolved as "not found"). All three
+  backends implement the six abstract methods; **only `WindowsPlatform`**
+  overrides the psmux methods and capability probes —
+  `LinuxPlatform`/`MacOSPlatform` inherit those ABC defaults as-is.
   `find_window`'s `mode` parameter is typed `Literal["exact", "contains"]`
   on the ABC and all three implementations, and each implementation raises
   `ValueError` on an unrecognized mode string before any OS dispatch, so a

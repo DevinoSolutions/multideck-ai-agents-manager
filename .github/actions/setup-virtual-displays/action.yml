@@ -4,15 +4,29 @@ description: Create multi-monitor virtual display environments for CI
 runs:
   using: composite
   steps:
-    - name: Linux - Start Xvfb with virtual monitors
+    - name: Linux - Start Xvfb + window manager with virtual monitors
       if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update -q
-        sudo apt-get install -yq xvfb xdotool wmctrl x11-xserver-utils
+        # openbox: a lightweight EWMH window manager -- REQUIRED for wmctrl's
+        # move/resize (`-e`) and its `-l` client list to take effect. Without a
+        # WM those silently no-op, so real-render tiling could never move a
+        # window. x11-utils: provides xprop, used by the real-render tests to
+        # read _NET_FRAME_EXTENTS and tolerate the WM's decorations.
+        sudo apt-get install -yq xvfb xdotool wmctrl x11-xserver-utils x11-utils openbox
         Xvfb :99 -screen 0 5760x2160x24 &
         sleep 2
         export DISPLAY=:99
+        # Start the WM on :99 and give it a moment to claim the root window /
+        # advertise EWMH support before anything queries it.
+        openbox &
+        sleep 2
+        if wmctrl -m; then
+          echo "Window manager active on :99 ($(wmctrl -m | sed -n 's/^Name: //p'))"
+        else
+          echo "::warning title=No window manager::openbox did not start on :99; wmctrl move/resize will no-op and the real-render tiling tests will skip"
+        fi
         # Best-effort: hosted-runner Xvfb does not reliably materialize RANDR
         # VIRTUAL monitors (verified 2026-07-07 — see DESIGN.md Known debt).
         # Warn loudly instead of failing; multi-monitor placement logic is
