@@ -124,6 +124,114 @@ class TestParseMultipart:
         assert _parse_multipart(FakeHandler()) == ({}, {})
 
 
+class _DrainConn:
+    """Socket stand-in exposing only the timeout knobs the drain touches."""
+
+    def __init__(self):
+        self._timeout = None
+
+    def gettimeout(self):
+        return self._timeout
+
+    def settimeout(self, value):
+        self._timeout = value
+
+
+class _DrainReader:
+    """rfile stand-in: yields buffered bytes, then (opt-in) signals "nothing
+    more pending" the way a timed-out blocking socket read does -- by raising."""
+
+    def __init__(self, data: bytes, *, raise_when_empty: bool = False):
+        self._buf = io.BytesIO(data)
+        self.consumed = 0
+        self._raise_when_empty = raise_when_empty
+
+    def read(self, n: int) -> bytes:
+        chunk = self._buf.read(n)
+        if not chunk and self._raise_when_empty:
+            raise TimeoutError  # socket.timeout is an OSError subclass
+        self.consumed += len(chunk)
+        return chunk
+
+
+class _DrainHandler:
+    """Carries only the attributes _drain_request_body reads and writes."""
+
+    def __init__(self, reader: _DrainReader, content_length: str | None):
+        self.close_connection = False
+        self.rfile = reader
+        self.connection = _DrainConn()
+        self.headers = (
+            {} if content_length is None else {"Content-Length": content_length}
+        )
+
+
+class TestDrainRequestBody:
+    """P4-02: the bounded body-drain that lets an early 4xx land cleanly rather
+    than as a Windows TCP RST. It must never read past the cap, and must tolerate
+    an absent/garbage Content-Length without blocking or propagating."""
+
+    def _drain(self, reader: _DrainReader, content_length: str | None) -> _DrainHandler:
+        handler = _DrainHandler(reader, content_length)
+        # Call unbound: _drain_request_body only touches the stubbed attributes.
+        UploadHandler._drain_request_body(handler)
+        return handler
+
+    def test_reads_at_most_the_cap(self, monkeypatch):
+        # Feed a source far larger than the cap: consumption must stop at the cap.
+        import multideck.upload_server as mod
+
+        monkeypatch.setattr(mod, "_DRAIN_CAP_BYTES", 100)
+        reader = _DrainReader(b"x" * 500)
+        handler = self._drain(reader, str(500))
+
+        assert reader.consumed == 100  # bounded -- never the full 500
+        assert handler.close_connection is True
+
+    def test_tolerates_garbage_content_length(self, monkeypatch):
+        import multideck.upload_server as mod
+
+        monkeypatch.setattr(mod, "_DRAIN_CAP_BYTES", 100)
+        reader = _DrainReader(b"y" * 20)
+        handler = self._drain(reader, "not-a-number")
+
+        assert reader.consumed == 20  # drained all available, then hit EOF
+        assert handler.close_connection is True
+
+    def test_tolerates_absent_content_length(self, monkeypatch):
+        import multideck.upload_server as mod
+
+        monkeypatch.setattr(mod, "_DRAIN_CAP_BYTES", 100)
+        reader = _DrainReader(b"z" * 15)
+        handler = self._drain(reader, None)  # no Content-Length header at all
+
+        assert reader.consumed == 15
+        assert handler.close_connection is True
+
+    def test_stops_on_read_timeout(self, monkeypatch):
+        # A blocking socket that times out mid-drain (client declared more than
+        # it sent and holds the connection open) raises OSError -- swallowed.
+        import multideck.upload_server as mod
+
+        monkeypatch.setattr(mod, "_DRAIN_CAP_BYTES", 100)
+        reader = _DrainReader(b"w" * 5, raise_when_empty=True)
+        handler = self._drain(reader, "garbage")
+
+        assert reader.consumed == 5
+        assert handler.close_connection is True
+
+    def test_zero_length_is_noop(self, monkeypatch):
+        import multideck.upload_server as mod
+
+        monkeypatch.setattr(mod, "_DRAIN_CAP_BYTES", 100)
+        reader = _DrainReader(b"unused", raise_when_empty=True)
+        handler = self._drain(reader, "0")
+
+        assert reader.consumed == 0  # nothing declared -> nothing read
+        assert handler.close_connection is True
+        assert handler.connection.gettimeout() is None  # socket never touched
+
+
 class TestUploadServerIntegration:
     @pytest.fixture(autouse=True)
     def _server(self, tmp_path, monkeypatch):
@@ -396,6 +504,9 @@ class TestUploadServerIntegration:
     def test_rejects_oversized_body(self, monkeypatch):
         # F-D3-002: a body over the cap is rejected before it's fully read
         # into memory, so a malicious/oversized upload can't exhaust RAM.
+        # P4-02: the reject drains the pending body first, so the client
+        # deterministically reads the 413 + JSON envelope instead of a Windows
+        # TCP RST ("connection reset") -- no retries, no flake.
         import multideck.upload_server as mod
 
         monkeypatch.setattr(mod, "MAX_UPLOAD_BYTES", 10)
@@ -424,13 +535,18 @@ class TestUploadServerIntegration:
             },
         )
         resp = conn.getresponse()
-        resp.read()
         assert resp.status == 413
+        data = json.loads(resp.read())  # body arrives intact, not a reset
+        assert data["ok"] is False
+        assert "large" in data["error"].lower()
 
     def test_rejects_bad_content_length(self):
         # Sibling of the oversized-body guard: a non-numeric Content-Length
         # reaching do_POST used to propagate an uncaught ValueError (dropped
         # connection); it now gets a clean 400 before any body is read.
+        # P4-02: the reject drains the (garbage-length) body first, so the
+        # client deterministically reads the 400 + JSON envelope rather than a
+        # Windows TCP RST -- no retries, no flake.
         conn = self._conn()
         conn.request(
             "POST",
@@ -442,8 +558,10 @@ class TestUploadServerIntegration:
             },
         )
         resp = conn.getresponse()
-        resp.read()
         assert resp.status == 400
+        data = json.loads(resp.read())  # body arrives intact, not a reset
+        assert data["ok"] is False
+        assert "Content-Length" in data["error"]
 
     def test_get_handler_crash_returns_500_and_logs(self, monkeypatch, caplog):
         # P2-03: an unexpected error inside a GET handler must become a clean
