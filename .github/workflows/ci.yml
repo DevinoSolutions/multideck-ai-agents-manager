@@ -83,6 +83,17 @@ jobs:
         uses: ./.github/actions/setup-virtual-displays
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
+      # kitty + alacritty drive the terminal-fallback tier's beyond-default
+      # emulator matrix (test_real_terminal_fallbacks.py); the mesa DRI/GLX/EGL
+      # runtime lets these GPU terminals open a window under headless Xvfb
+      # (paired with LIBGL_ALWAYS_SOFTWARE=1 in the test's child env).
+      - name: Install fallback terminal emulators (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends \
+            kitty alacritty libgl1-mesa-dri libglx-mesa0 libegl-mesa0
       - run: pytest tests/platform/ -v -m platform
 
   end-to-end:
