@@ -294,11 +294,17 @@ def test_per_window_tool_override_launches_real_tiled_windows(
     )
 
     # 1. Both REAL windows exist with the exact expected md: titles.
+    #    Slow/overloaded CI VMs can take far longer than a couple of seconds to
+    #    actually materialize the wt windows (observed CI flake: window title
+    #    "not found"). Poll window enumeration ~1s up to a generous 90s deadline,
+    #    exiting the instant both titles are visible -- the assertion below stays
+    #    exactly as strict (both windows must be present, no tolerance added).
     handles = _wait_until(
         lambda: (
             (h := _snapshot_md_handles(plat, [title_a, title_b])) and len(h) == 2 and h
         ),
-        timeout=20,
+        timeout=90,
+        interval=1.0,
     )
     assert handles, (
         f"expected windows {title_a!r} and {title_b!r}; md: windows visible: "
