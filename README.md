@@ -5,6 +5,16 @@
   One command. Every tool. Every monitor.
 </p>
 
+<!--
+  DEMO: docs/media/demo.gif — hero recording goes here.
+  Record `multideck --go` fanning terminals out across the monitors, auto-tiling them
+  into the grid, and an attention badge flipping to [!] when an agent needs input.
+  Target ~800px wide, under 10MB. See docs/media/README.md for the shot list.
+  Until it's recorded, the ASCII multi-monitor diagram below is the visual stand-in —
+  keep it here; do NOT add a broken <img> link before the GIF exists.
+-->
+
+
 <p align="center">
   <a href="https://pypi.org/project/multideck"><img src="https://img.shields.io/pypi/v/multideck?color=3776AB&label=pypi" alt="PyPI version" /></a>
   <a href="https://pypi.org/project/multideck"><img src="https://img.shields.io/pypi/dm/multideck?color=blue" alt="PyPI downloads" /></a>
@@ -174,7 +184,7 @@ Or skip the menu with flags:
 | `multideck up [--json] [-g <group>]` | Host side: ensure a persistent psmux session per project. |
 | `multideck attach <host>` | From another PC: bring host sessions up over SSH, tile locally, Alt+V uploads. |
 | `multideck watch` | Live table of every agent session, most-urgent first; press a row number to focus that window. |
-| `multideck attention [-d] [--stop]` | Attention daemon: badges window titles with agent state, flashes the taskbar on needs-input/error, optional toast/ntfy push (`settings.attention`). |
+| `multideck attention [-d] [--stop]` | Attention daemon: badges window titles with agent state, flashes the taskbar on needs-input/error, optional toast/ntfy push (`settings.attention`). Badges/flash/toast are Windows-only; ntfy push is cross-platform — see [Platform support](#platform-support). |
 | `multideck status [--json]` | Session + daemon health (incl. an `agents` state list in `--json`). Exit codes: 0 healthy, 1 config error, 3 degraded. |
 | `multideck down [--all] [--server]` | Stop sessions; `--all`/`--server` also stop the upload server (and listener). |
 | `multideck serve [--host <addr>]` | Run the mobile upload server (see below). |
@@ -182,6 +192,39 @@ Or skip the menu with flags:
 | `multideck termius` | Generate an SSH config entry that opens the session picker. |
 | `multideck hotkey` | Run the Alt+V clipboard-upload listener standalone (Windows). |
 | `multideck config <subcommand>` | Edit config from the CLI — 14 subcommands incl. `migrate`; see `multideck config --help`. |
+
+## Platform support
+
+Launching, tiling, and the mobile/notification plumbing run on all three OSes. A few power-user features are Windows-only because they lean on Win32 primitives with no cross-platform equivalent wired up yet. This table is the honest contract — every cell is derived from the capability probes in `src/multideck/platform/`, not from aspiration.
+
+| Feature | Windows | macOS | Linux |
+| --- | :---: | :---: | :---: |
+| Launch + auto-tile across monitors | Yes | Yes | Yes |
+| `watch` live fleet table | Yes | Yes | Yes |
+| `attention` title badges + taskbar flash | Yes | No | No |
+| Desktop toast (`settings.attention.toast`) | Yes | No | No |
+| ntfy phone push (`settings.attention.ntfy`) | Yes | Yes | Yes |
+| Persistent psmux sessions (`up` / `sessions` / `attach`) | Yes | No | No |
+| Global Alt+V clipboard-image hotkey | Yes | No | No |
+| Mobile upload server (`serve` / `mobile`) | Yes | Yes | Yes |
+
+Notes:
+
+- **Badges, flash, and toast** are gated on `Platform.supports_attention_signals()`, which returns `True` only in `platform/windows.py`. On macOS/Linux the daemon prints `window badges/flash aren't supported on this OS` and those renderers stay off. Toast additionally uses the Windows-only `winotify` (`[toast]` extra). **ntfy push is cross-platform** — it is stdlib `urllib` over HTTP — so phone notifications work on every OS.
+- **Persistent psmux sessions and the Alt+V hotkey** are gated on `supports_psmux()` / `supports_hotkey()` (also Windows-only). Off Windows the psmux entry points raise `NotImplementedError` and importing `hotkey` raises `ImportError`.
+- The **mobile upload server** itself (serving the PWA over loopback + Tailscale and receiving images) runs everywhere; auto-pasting the uploaded path into a *live* agent session uses psmux, so that last hop is Windows-only. Likewise, `watch`'s table renders on every OS but its press-a-number-to-focus action uses the same Windows-only window primitives.
+
+## Where agent states come from
+
+`multideck watch`, `multideck attention`, and `multideck status --json` do not poll your agents directly. They read per-session **state records** — `working`, `needs-input`, `done`, `error`, `idle` — that your coding agent writes through its lifecycle hooks: Claude Code hooks and Codex's `notify` hook. Until those hooks are wired, the state store stays empty and `multideck watch` shows an empty table.
+
+The companion [`ai-agent-notifier`](https://www.npmjs.com/package/ai-agent-notifier) package (same authors) installs those hooks for you across Claude Code, Codex, and Cursor:
+
+```bash
+npx ai-agent-notifier setup
+```
+
+The setup wizard detects your installed agents and wires the hooks; restart your agents to activate. After that, `multideck watch` and `multideck attention -d` light up as your agents change state.
 
 ## Configuration
 

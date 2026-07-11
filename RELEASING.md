@@ -70,21 +70,29 @@ From an up-to-date `main` (or a release branch that will be merged):
    version = "X.Y.Z"
    ```
 
-2. **Refresh the lock** — `uv.lock` records the project's own version, so a
+2. **Stamp the changelog.** `CHANGELOG.md` ships the pending release under a
+   `## [X.Y.Z] - UNRELEASED` heading. Replace `UNRELEASED` with the release date
+   and update the matching link reference at the bottom of the file:
+
+   ```text
+   ## [X.Y.Z] - YYYY-MM-DD
+   ```
+
+3. **Refresh the lock** — `uv.lock` records the project's own version, so a
    version bump changes it and CI's `uv lock --check` will fail if it drifts:
 
    ```bash
    uv lock
    ```
 
-3. **Commit** both files:
+4. **Commit** all three files:
 
    ```bash
-   git add pyproject.toml uv.lock
+   git add pyproject.toml uv.lock CHANGELOG.md
    git commit -m "chore(release): vX.Y.Z"
    ```
 
-4. **Tag and push.** The tag (`vX.Y.Z`) is what triggers the pipeline — push the
+5. **Tag and push.** The tag (`vX.Y.Z`) is what triggers the pipeline — push the
    commit first, then the tag:
 
    ```bash
@@ -103,6 +111,10 @@ That's it. On the tag push the workflow will:
    to PyPI via Trusted Publishing (no token).
 4. **github-release** — creates a GitHub Release for the tag with
    auto-generated notes and the built artifacts attached.
+
+The `github-release` job publishes GitHub's **auto-generated** notes — no manual
+release step is required. For a curated changelog, edit the Release after the run
+finishes and paste in the matching `CHANGELOG.md` section.
 
 > Pre-release tags work too: a PEP 440 pre-release version (e.g. `1.1.0rc1`,
 > tagged `v1.1.0rc1`) matches `v*`, and PyPI/`pip` treat it as a pre-release.

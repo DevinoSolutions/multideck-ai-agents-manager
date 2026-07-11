@@ -55,7 +55,7 @@ multideck = "multideck.cli:main"
 Homepage = "https://github.com/DevinoSolutions/multideck-ai-agents-manager"
 Repository = "https://github.com/DevinoSolutions/multideck-ai-agents-manager"
 Issues = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/issues"
-Changelog = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/releases"
+Changelog = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/blob/main/CHANGELOG.md"
 
 [build-system]
 requires = ["hatchling"]
