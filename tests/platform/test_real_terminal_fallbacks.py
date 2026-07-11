@@ -14,8 +14,8 @@ real process ended up owning the launched window.
 Linux legs (ride the existing Xvfb + openbox platform-integration job; skip
 cleanly when DISPLAY is absent):
 
-* **per-emulator render + sole-selection** (``kitty``/``alacritty``/``xterm``).
-  A restricted-PATH bin dir exposes ONLY that emulator plus the honest minimal
+* **per-emulator render + sole-selection** (``alacritty``/``xterm``). A
+  restricted-PATH bin dir exposes ONLY that emulator plus the honest minimal
   set of binaries the launch path actually shells out to (derived from source:
   ``xrandr`` for monitor detection, ``wmctrl``+``xdotool`` for the tiling
   snapshot/move, ``sh`` which every emulator execs, ``sleep`` which keeps the
@@ -26,25 +26,32 @@ cleanly when DISPLAY is absent):
   it, and the window geometry centres into the ``grid.compute_grid`` cell. For
   ``xterm`` (last in the chain) sole-discovery additionally proves the chain
   falls all the way THROUGH kitty/alacritty/gnome/konsole to the tail.
-* **chain precedence** (two restricted-PATH configs). With kitty+alacritty+xterm
-  all on PATH the window is owned by kitty; with alacritty+xterm (no kitty) it
-  is owned by alacritty. This pins the documented ``which`` order — only the
-  winner needs to render, the losers merely need their binary discoverable.
+* **chain precedence** (restricted-PATH config). With alacritty+xterm both on
+  PATH the window is owned by the higher-priority alacritty, not xterm. This
+  pins the documented ``which`` order — only the winner needs to render, the
+  loser merely needs its binary discoverable.
 
 gnome-terminal and konsole are deliberately OUT of the matrix: both use a
 client/server (daemon) model, so the launched window is owned by
 ``gnome-terminal-server`` / the konsole daemon while the ``gnome-terminal`` /
 ``konsole`` client exits immediately — which breaks the title → pid → comm
 evidence this tier is built on — and both need a session D-Bus that is fragile
-to fabricate on a headless runner. kitty and alacritty are single-process (the
+to fabricate on a headless runner. alacritty and xterm are single-process (the
 launched binary owns the window), so the pid→comm proof is exact.
 
-kitty and alacritty are GPU/OpenGL terminals; under headless Xvfb they need a
-software-GL stack (mesa llvmpipe, ``LIBGL_ALWAYS_SOFTWARE=1`` in the child env).
-Whether a given hosted runner can drive them headlessly is decided by a
-preflight probe — a runner that cannot open the emulator at all yields a loud
-GitHub ``::warning`` + skip (never a silent green), exactly like the macOS TCC
-legs; a runner that CAN open it must then satisfy every multideck assertion.
+kitty is the chain's FIRST entry but is likewise out of the matrix: confirmed
+on CI, it cannot obtain an OpenGL context under a hosted headless Xvfb even with
+mesa software-GL, so it can never open a window there — its chain position is
+simply unreachable to a headless real-render proof (a finding, not a shipped
+perpetual skip), and its font deps trigger fc-cache churn that slows the sibling
+real-render tests, so it is not installed at all.
+
+alacritty is a GPU/OpenGL terminal; under headless Xvfb it needs a software-GL
+stack (mesa llvmpipe, ``LIBGL_ALWAYS_SOFTWARE=1`` in the child env). Whether a
+given hosted runner can drive it headlessly is decided by a preflight probe — a
+runner that cannot open it at all yields a loud GitHub ``::warning`` + skip
+(never a silent green), exactly like the macOS TCC legs; a runner that CAN open
+it must then satisfy every multideck assertion.
 
 Windows leg (rides the existing windows platform-integration job): the honest
 finding is that there is NO non-wt fallback. ``platform/windows.py::
@@ -97,26 +104,17 @@ pytestmark = pytest.mark.platform
 _EDGE_TOL = 200
 
 # The Linux terminal chain, verbatim from platform/linux.py::launch_terminal.
-# The matrix is the single-process subset (see module docstring); gnome-terminal
-# and konsole are intentionally excluded.
+# The matrix is the headless-renderable single-process subset (see module
+# docstring): gnome-terminal/konsole (daemon-owned windows) and kitty (no GL
+# context under hosted Xvfb) are excluded.
 _CHAIN_ORDER = ("kitty", "alacritty", "gnome-terminal", "konsole", "xterm")
-_MATRIX = ("kitty", "alacritty", "xterm")
+_MATRIX = ("alacritty", "xterm")
 
-# The exact argv each emulator is launched with, mirrored from
+# The exact argv each renderable-matrix emulator is launched with, mirrored from
 # platform/linux.py::launch_terminal. Used ONLY by the preflight capability
 # probe; the real assertions always go through multideck's own launch_terminal
 # via `multideck --go`.
 _EMULATOR_ARGV = {
-    "kitty": lambda title, cwd, cmd: [
-        "kitty",
-        "--title",
-        title,
-        "--directory",
-        cwd,
-        "sh",
-        "-c",
-        cmd,
-    ],
     "alacritty": lambda title, cwd, cmd: [
         "alacritty",
         "--title",
@@ -613,29 +611,10 @@ def test_go_renders_and_selects_emulator_linux(
     )
 
 
-def test_chain_prefers_kitty_over_alacritty_and_xterm_linux(
-    tmp_path, linux_cleanup, capsys
-):
-    """Precedence config #1: kitty + alacritty + xterm all discoverable → the
-    chain's first entry (kitty) wins. Only kitty needs to render; alacritty and
-    xterm merely need their binaries on PATH for the ``which`` walk."""
-    _linux_ready()
-    for em in ("kitty", "alacritty", "xterm"):
-        if not shutil.which(em):
-            pytest.skip(f"{em} not installed: needed for the precedence config")
-    _launch_and_assert_owner(
-        tmp_path,
-        capsys,
-        linux_cleanup,
-        on_path=["kitty", "alacritty", "xterm"],
-        winner="kitty",
-        losers=("alacritty", "xterm"),
-    )
-
-
 def test_chain_prefers_alacritty_over_xterm_linux(tmp_path, linux_cleanup, capsys):
-    """Precedence config #2: alacritty + xterm discoverable, kitty absent → the
-    higher-priority alacritty wins over xterm."""
+    """Precedence: alacritty + xterm both discoverable → the higher-priority
+    alacritty wins over xterm. Only the winner (alacritty) needs to render; the
+    loser (xterm) merely needs its binary on PATH for the ``which`` walk."""
     _linux_ready()
     for em in ("alacritty", "xterm"):
         if not shutil.which(em):
