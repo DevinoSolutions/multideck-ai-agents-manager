@@ -9,9 +9,11 @@ from typing import Literal
 from multideck.grid import MonitorRect, Rect
 from multideck.log import get_logger
 from multideck.platform import (
+    WT_NOT_FOUND_MESSAGE,
     Platform,
     PsmuxWindowOpts,
     TerminalLaunchOpts,
+    TerminalNotFoundError,
     VSCodeLaunchOpts,
     find_psmux,
 )
@@ -212,7 +214,13 @@ class WindowsPlatform(Platform):
         else:
             args.extend(["--", "cmd", "/k", opts.command])
 
-        subprocess.Popen(args)
+        try:
+            subprocess.Popen(args)
+        except FileNotFoundError as exc:
+            # wt is a hard dependency: turn the raw FileNotFoundError into a
+            # typed, actionable error the launch shell surfaces as one clean
+            # line (never a traceback). We fail fast -- no console fallback.
+            raise TerminalNotFoundError(WT_NOT_FOUND_MESSAGE) from exc
 
     def launch_vscode(self, opts: VSCodeLaunchOpts) -> None:
         args = ["cmd", "/c", opts.command]

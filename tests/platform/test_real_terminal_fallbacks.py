@@ -58,15 +58,20 @@ preflight probe still guards the render (a runner that cannot open xterm at all
 yields a loud GitHub ``::warning`` + skip, never a silent green).
 
 Windows leg (rides the existing windows platform-integration job): the honest
-finding is that there is NO non-wt fallback. ``platform/windows.py::
-launch_terminal`` is wt-only and ``cli/doctor.py`` states outright that without
-wt "nothing can launch". With wt removed from the child PATH, real
-``multideck --go`` reaches the launch phase (the grid banner prints), then
-``subprocess.Popen(["wt", ...])`` raises ``FileNotFoundError``; the process
-exits non-zero, no ``md:`` window is ever created, and the tool shim never runs.
-``test_go_no_wt_creates_no_window_win`` PINS that reality so a future console
-fallback (a candidate DESIGN.md ledger item — see the PR body) would break this
-pin and force a conscious update, rather than shipping unnoticed.
+finding is that there is NO non-wt fallback — multideck fails fast with
+actionable guidance rather than launching a degraded console window (TF-W-001).
+``platform/windows.py::launch_terminal`` is wt-only; its
+``subprocess.Popen(["wt", ...])`` catches the missing-wt ``FileNotFoundError``
+and re-raises a typed ``TerminalNotFoundError`` carrying an install hint
+(``winget install Microsoft.WindowsTerminal``), which the launch shell prints as
+one clean stderr line — NO raw traceback. ``cli/doctor.py`` carries the same
+install hint in its terminal check. With wt removed from the child PATH, real
+``multideck --go`` reaches the launch phase (the grid banner prints), then aborts
+non-zero with that hint; no ``md:`` window is ever created and the tool shim
+never runs. ``test_go_no_wt_creates_no_window_win`` PINS this contract so a
+future console fallback (a candidate DESIGN.md ledger item — see the PR body)
+would break the pin and force a conscious update, rather than shipping
+unnoticed.
 
 Isolation & safety (hard rails): every child gets a fully redirected HOME
 (``HOME``/``XDG_*`` on POSIX; ``HOME``/``USERPROFILE``/``HOMEDRIVE``/
@@ -663,11 +668,13 @@ def _close_md_windows(name: str) -> None:
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows no-wt leg is win32-only")
 def test_go_no_wt_creates_no_window_win(tmp_path, capsys):
-    """PIN the wt hard-dependency: with wt removed from the child PATH, real
-    ``multideck --go`` reaches the launch phase then fails at the wt Popen —
-    non-zero exit, FileNotFoundError from launch_terminal, NO md: window, and
-    the tool shim never runs. There is no console fallback (see cli/doctor.py
-    "nothing can launch"); this pins that reality until one is added."""
+    """PIN the wt hard-dependency + its clean-failure contract (TF-W-001): with
+    wt removed from the child PATH, real ``multideck --go`` reaches the launch
+    phase then aborts with a CLEAN, ACTIONABLE error — non-zero exit, the
+    ``winget install Microsoft.WindowsTerminal`` install hint on stderr/stdout,
+    and NO raw traceback — creating NO md: window and never running the tool
+    shim. There is still no console fallback (multideck fails fast with guidance,
+    by design); this pins that reality until one is deliberately added."""
     from multideck.platform import get_platform as _gp
 
     monitors = _gp().list_monitors()
@@ -709,13 +716,16 @@ def test_go_no_wt_creates_no_window_win(tmp_path, capsys):
 
         rc, out, err = _run_go(cfg, env, tmp_path)
 
-        # 1. The launch failed (non-zero), specifically at the wt terminal spawn.
+        # 1. The launch failed (non-zero) with a CLEAN, actionable message --
+        #    the winget install hint -- and NOT a raw FileNotFoundError
+        #    traceback. The hint may land on stderr or stdout; accept either.
         assert rc != 0, f"--go unexpectedly succeeded without wt\nstdout:\n{out}"
-        assert "FileNotFoundError" in err, (
-            f"expected FileNotFoundError from the wt Popen; stderr:\n{err}"
+        combined = out + err
+        assert "winget install Microsoft.WindowsTerminal" in combined, (
+            f"expected the actionable wt-install hint; stdout:\n{out}\nstderr:\n{err}"
         )
-        assert "launch_terminal" in err, (
-            f"failure was not in launch_terminal; stderr:\n{err}"
+        assert "Traceback (most recent call last)" not in err, (
+            f"a raw traceback leaked to stderr instead of a clean error; stderr:\n{err}"
         )
 
         # 2. No md: window was ever created (poll a beat to be sure none appears).
