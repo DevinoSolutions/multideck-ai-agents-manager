@@ -91,6 +91,33 @@ class TestWindowsCapabilities:
         assert WindowsPlatform().supports_hotkey() is True
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="WindowsPlatform binds windll at import"
+)
+class TestWindowsLaunchTerminal:
+    """TF-W-001: a missing `wt` must surface as a typed, actionable error rather
+    than a raw FileNotFoundError traceback. launch_terminal catches the Popen
+    FileNotFoundError and re-raises TerminalNotFoundError carrying the winget
+    install hint, preserving the original error as its cause."""
+
+    def test_missing_wt_raises_actionable_terminal_not_found(self, monkeypatch):
+        from multideck.platform import TerminalLaunchOpts, TerminalNotFoundError
+        from multideck.platform.windows import WindowsPlatform
+
+        def _no_wt(*_args, **_kwargs):
+            raise FileNotFoundError(2, "The system cannot find the file specified")
+
+        monkeypatch.setattr("multideck.platform.windows.subprocess.Popen", _no_wt)
+
+        with pytest.raises(TerminalNotFoundError) as excinfo:
+            WindowsPlatform().launch_terminal(
+                TerminalLaunchOpts(title="md:proj", cwd=".", command="claude")
+            )
+
+        assert "winget install Microsoft.WindowsTerminal" in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, FileNotFoundError)
+
+
 # --- find_window mode contract (LS-B-005) -----------------------------------
 # mode is a Literal["exact", "contains"]; a typo'd mode must fail loudly
 # instead of silently reporting "not found".

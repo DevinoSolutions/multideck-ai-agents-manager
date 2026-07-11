@@ -18,6 +18,7 @@ from multideck.platform import (
     Platform,
     PsmuxWindowOpts,
     TerminalLaunchOpts,
+    TerminalNotFoundError,
     VSCodeLaunchOpts,
     get_platform,
 )
@@ -139,7 +140,15 @@ def run_multideck(config: MultideckConfig, opts: RunOpts) -> int:
     if base_dir:
         base_dir = _expand_base_dir(base_dir)
 
-    result = _launch_projects(plat, config, opts, projects, base_dir)
+    try:
+        result = _launch_projects(plat, config, opts, projects, base_dir)
+    except TerminalNotFoundError as exc:
+        # The OS terminal emulator is missing (e.g. Windows Terminal not
+        # installed). Surface the actionable install hint as one clean line --
+        # no traceback -- and abort, mirroring the no-monitors failure shape.
+        log.exception("terminal launcher unavailable; aborting")
+        click.echo(f"  {style('✗', fg='red')} {exc}", err=True)
+        return 2
 
     _start_psmux_and_upload(plat, config, opts, result)
 

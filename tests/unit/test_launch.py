@@ -30,7 +30,7 @@ from multideck.launch import (
     eligible_psmux_projects,
     run_multideck,
 )
-from multideck.platform import PsmuxWindowOpts
+from multideck.platform import PsmuxWindowOpts, TerminalNotFoundError
 from tests.conftest import FakePlatform
 
 
@@ -174,6 +174,36 @@ class TestRunMultideckCharacterization:
         assert rc == 0
         assert fp.launched_terminals == []
         assert (555, Rect(x=0, y=0, w=960, h=1080)) in fp.moved
+
+    def test_terminal_not_found_aborts_with_hint(
+        self, monkeypatch, tmp_path, fake_sleep, capsys
+    ):
+        # TF-W-001: when launch_terminal raises TerminalNotFoundError (e.g. wt
+        # not installed), run_multideck aborts cleanly -- rc 2, the actionable
+        # install hint on stderr, and no tiling -- never a raw traceback.
+        fp = FakePlatform()
+
+        def _boom(_opts):
+            raise TerminalNotFoundError(
+                "Windows Terminal (wt) not found -- install: "
+                "winget install Microsoft.WindowsTerminal, then re-run."
+            )
+
+        monkeypatch.setattr(fp, "launch_terminal", _boom)
+        monkeypatch.setattr("multideck.launch.get_platform", lambda: fp)
+        cfg = MultideckConfig(
+            projects=[ProjectConfig(path=str(tmp_path), tool="claude", title="proj")],
+            settings=Settings(
+                tools={"claude": "claude --continue"}, default_tool="claude"
+            ),
+        )
+
+        rc = run_multideck(cfg, RunOpts())
+
+        assert rc == 2
+        err = capsys.readouterr().err
+        assert "winget install Microsoft.WindowsTerminal" in err
+        assert fp.moved == []  # aborted before the tiling phase
 
 
 class TestTileTargets:

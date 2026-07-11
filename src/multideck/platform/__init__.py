@@ -31,6 +31,27 @@ class VSCodeLaunchOpts:
     command: str = "code"
 
 
+# The install instruction shared by every "Windows Terminal is missing" surface,
+# so the guidance the user sees stays identical wherever it appears: it is
+# composed into WT_NOT_FOUND_MESSAGE (raised on the launch path) and reused
+# verbatim by cli/doctor.py's terminal check.
+WT_INSTALL_HINT = (
+    "winget install Microsoft.WindowsTerminal (or from the Microsoft Store)"
+)
+
+WT_NOT_FOUND_MESSAGE = (
+    "Windows Terminal (wt) not found — multideck needs it to launch project "
+    f"windows. Install: {WT_INSTALL_HINT}, then re-run."
+)
+
+
+class TerminalNotFoundError(RuntimeError):
+    """The OS terminal emulator multideck shells out to for project windows is
+    not installed / not on PATH. Its message is user-facing and actionable (an
+    install hint); the launch path prints that message in place of a raw
+    traceback and fails fast -- there is no degraded-window fallback."""
+
+
 class Platform(ABC):
     @abstractmethod
     def set_dpi_aware(self) -> None: ...

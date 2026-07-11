@@ -94,6 +94,7 @@ def _check_agent_tools(cfg: MultideckConfig | None) -> CheckResult:
 
 def _check_terminal() -> CheckResult:
     from multideck.platform import (  # heavy subsystem: in-body per policy
+        WT_INSTALL_HINT,
         find_psmux,
         get_platform,
     )
@@ -102,7 +103,11 @@ def _check_terminal() -> CheckResult:
         wt = shutil.which("wt")
         psmux = find_psmux()
         if not wt:
-            return (FAIL, "Windows Terminal (wt) not on PATH — nothing can launch")
+            return (
+                FAIL,
+                "Windows Terminal (wt) not on PATH — nothing can launch. "
+                f"Install: {WT_INSTALL_HINT}",
+            )
         if get_platform().supports_psmux() and not psmux:
             return (WARN, "psmux not found — `up`/`attach` sessions unavailable")
         return (OK, "wt found" + (", psmux found" if psmux else ""))
