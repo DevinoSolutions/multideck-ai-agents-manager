@@ -11,47 +11,51 @@ emulator is to make exactly that emulator (and, for the precedence tests, a
 chosen subset) the discoverable one on a RESTRICTED PATH, then read back which
 real process ended up owning the launched window.
 
-Linux legs (ride the existing Xvfb + openbox platform-integration job; skip
+Linux leg (rides the existing Xvfb + openbox platform-integration job; skips
 cleanly when DISPLAY is absent):
 
-* **per-emulator render + sole-selection** (``alacritty``/``xterm``). A
-  restricted-PATH bin dir exposes ONLY that emulator plus the honest minimal
-  set of binaries the launch path actually shells out to (derived from source:
-  ``xrandr`` for monitor detection, ``wmctrl``+``xdotool`` for the tiling
-  snapshot/move, ``sh`` which every emulator execs, ``sleep`` which keeps the
-  window alive, and the benign ``mdtool`` shim). Real ``multideck --go`` then:
-  the window exists (xdotool), its title parses via ``titles.parse_title`` to
-  the uuid project name, the owning process (title → pid → ``/proc/<pid>/comm``)
-  IS that emulator, the shim marker proves the tool command really ran inside
-  it, and the window geometry centres into the ``grid.compute_grid`` cell. For
-  ``xterm`` (last in the chain) sole-discovery additionally proves the chain
-  falls all the way THROUGH kitty/alacritty/gnome/konsole to the tail.
-* **chain precedence** (restricted-PATH config). With alacritty+xterm both on
-  PATH the window is owned by the higher-priority alacritty, not xterm. This
-  pins the documented ``which`` order — only the winner needs to render, the
-  loser merely needs its binary discoverable.
+* **chain-tail render + selection** (``xterm``). A restricted-PATH bin dir
+  exposes ONLY xterm plus the honest minimal set of binaries the launch path
+  actually shells out to (derived from source: ``xrandr`` for monitor
+  detection, ``wmctrl``+``xdotool`` for the tiling snapshot/move, ``sh`` which
+  every emulator execs, ``sleep`` which keeps the window alive, and the benign
+  ``mdtool`` shim). kitty/alacritty/gnome-terminal/konsole are all made
+  UNdiscoverable on that PATH (asserted), so real ``multideck --go`` must fall
+  the whole ``shutil.which`` chain THROUGH to its tail — and it does: the window
+  exists (xdotool), its title parses via ``titles.parse_title`` to the uuid
+  project name, the owning process (title → pid → ``/proc/<pid>/comm``) IS
+  xterm, the shim marker proves the tool command really ran inside it, and the
+  window geometry centres into the ``grid.compute_grid`` cell. This exercises
+  the SELECTION chain + owner-process identity that the #45/#47 xterm tiers
+  never did (they run with the full ambient PATH and never assert which real
+  process owns the window).
 
-gnome-terminal and konsole are deliberately OUT of the matrix: both use a
-client/server (daemon) model, so the launched window is owned by
-``gnome-terminal-server`` / the konsole daemon while the ``gnome-terminal`` /
-``konsole`` client exits immediately — which breaks the title → pid → comm
-evidence this tier is built on — and both need a session D-Bus that is fragile
-to fabricate on a headless runner. alacritty and xterm are single-process (the
-launched binary owns the window), so the pid→comm proof is exact.
+Every OTHER chain entry proved untestable on THIS infrastructure — a hosted
+runner's headless Xvfb, sharing one CI job with the sibling real-render tests —
+for reasons recorded as findings (candidate DESIGN.md ledger items; see the PR
+body) rather than worked around with something fragile:
 
-kitty is the chain's FIRST entry but is likewise out of the matrix: confirmed
-on CI, it cannot obtain an OpenGL context under a hosted headless Xvfb even with
-mesa software-GL, so it can never open a window there — its chain position is
-simply unreachable to a headless real-render proof (a finding, not a shipped
-perpetual skip), and its font deps trigger fc-cache churn that slows the sibling
-real-render tests, so it is not installed at all.
+* **kitty** (chain-first) cannot obtain an OpenGL context under headless Xvfb
+  even with mesa software-GL — confirmed on CI, it never opens a window.
+* **alacritty** is a GPU/OpenGL terminal too; making it render needs
+  ``libgl1-mesa-dri`` → libLLVM (~100 MB). Installing that immediately before
+  the pytest step churns the runner page cache enough to push the sibling
+  real-render tests' first xterm past their tight (<=6s) window-materialization
+  deadline (``--go`` returns 0 but the windows miss it) — reproduced 4x on CI.
+  Those sibling tests are out of this tier's fence and MUST stay green, so the
+  emulator apt-install was removed entirely and alacritty stays out.
+* **gnome-terminal / konsole** use a client/server (daemon) model — the window
+  is owned by ``gnome-terminal-server`` / the konsole daemon while the client
+  exits immediately (breaking the title → pid → comm evidence) — and need a
+  session D-Bus that is fragile to fabricate on a headless runner.
 
-alacritty is a GPU/OpenGL terminal; under headless Xvfb it needs a software-GL
-stack (mesa llvmpipe, ``LIBGL_ALWAYS_SOFTWARE=1`` in the child env). Whether a
-given hosted runner can drive it headlessly is decided by a preflight probe — a
-runner that cannot open it at all yields a loud GitHub ``::warning`` + skip
-(never a silent green), exactly like the macOS TCC legs; a runner that CAN open
-it must then satisfy every multideck assertion.
+Net: beyond-default terminal RENDER on a hosted headless runner is unreachable
+without either heavy GPU-emulation deps that destabilise the shared job or a
+real GPU / self-hosted runner. xterm is the one chain member that renders on
+Xvfb with zero added install, so the Linux leg proves the SELECTION mechanism
+there; the Windows leg carries the tier's headline finding. A per-emulator
+preflight probe still guards the render (a runner that cannot open xterm at all
+yields a loud GitHub ``::warning`` + skip, never a silent green).
 
 Windows leg (rides the existing windows platform-integration job): the honest
 finding is that there is NO non-wt fallback. ``platform/windows.py::
@@ -104,28 +108,19 @@ pytestmark = pytest.mark.platform
 _EDGE_TOL = 200
 
 # The Linux terminal chain, verbatim from platform/linux.py::launch_terminal.
-# The matrix is the headless-renderable single-process subset (see module
-# docstring): gnome-terminal/konsole (daemon-owned windows) and kitty (no GL
-# context under hosted Xvfb) are excluded.
+# The matrix is xterm only — the one chain member that renders on headless Xvfb
+# with zero added install; kitty/alacritty (GPU/GL) and gnome-terminal/konsole
+# (daemon-owned windows) are excluded (see module docstring for the full why).
+# _CHAIN_ORDER stays complete so the restricted-PATH test can assert none of the
+# higher-priority entries are discoverable (i.e. the chain really fell to xterm).
 _CHAIN_ORDER = ("kitty", "alacritty", "gnome-terminal", "konsole", "xterm")
-_MATRIX = ("alacritty", "xterm")
+_MATRIX = ("xterm",)
 
-# The exact argv each renderable-matrix emulator is launched with, mirrored from
+# The exact argv each matrix emulator is launched with, mirrored from
 # platform/linux.py::launch_terminal. Used ONLY by the preflight capability
 # probe; the real assertions always go through multideck's own launch_terminal
 # via `multideck --go`.
 _EMULATOR_ARGV = {
-    "alacritty": lambda title, cwd, cmd: [
-        "alacritty",
-        "--title",
-        title,
-        "--working-directory",
-        cwd,
-        "-e",
-        "sh",
-        "-c",
-        cmd,
-    ],
     "xterm": lambda title, cwd, cmd: [
         "xterm",
         "-T",
@@ -592,10 +587,11 @@ def _launch_and_assert_owner(
 def test_go_renders_and_selects_emulator_linux(
     emulator, tmp_path, linux_cleanup, capsys
 ):
-    """Sole-discoverable render proof: with ONLY ``emulator`` on the launch
-    path, real ``multideck --go`` opens a real window owned by it, correctly
-    titled, with the shim command running inside, tiled into its grid cell. For
-    xterm this also proves the chain falls through to its tail."""
+    """Chain-tail render + selection: with ONLY ``emulator`` (xterm) discoverable
+    on the launch PATH — every higher-priority chain entry asserted absent — real
+    ``multideck --go`` falls the ``shutil.which`` chain through to it and opens a
+    real window owned by it, correctly titled (parsed by ``titles.parse_title``),
+    with the shim command running inside, tiled into its ``compute_grid`` cell."""
     monitors, slots = _linux_ready()
     if not shutil.which(emulator):
         pytest.skip(f"{emulator} not installed on this runner")
@@ -608,24 +604,6 @@ def test_go_renders_and_selects_emulator_linux(
         assert_geometry=True,
         monitors=monitors,
         slots=slots,
-    )
-
-
-def test_chain_prefers_alacritty_over_xterm_linux(tmp_path, linux_cleanup, capsys):
-    """Precedence: alacritty + xterm both discoverable → the higher-priority
-    alacritty wins over xterm. Only the winner (alacritty) needs to render; the
-    loser (xterm) merely needs its binary on PATH for the ``which`` walk."""
-    _linux_ready()
-    for em in ("alacritty", "xterm"):
-        if not shutil.which(em):
-            pytest.skip(f"{em} not installed: needed for the precedence config")
-    _launch_and_assert_owner(
-        tmp_path,
-        capsys,
-        linux_cleanup,
-        on_path=["alacritty", "xterm"],
-        winner="alacritty",
-        losers=("xterm",),
     )
 
 
