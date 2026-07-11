@@ -340,9 +340,13 @@ def test_serve_ensure_idempotent_then_survivor(tmp_path):
         # i.e. the product's loopback+Tailscale default (never the LAN wildcard;
         # no Tailscale on CI -> loopback only). The health probe is on 127.0.0.1
         # either way.
+        # A killed DIRECT-child serve lingers as a POSIX zombie whose pid still
+        # answers os.kill(_, 0), so pid_alive would lie here -- the socket
+        # (health) is the zombie-immune authority for "the server is gone" (and
+        # it is exactly what status/_upload_state check). The zombie is reaped by
+        # first.wait() in the finally.
         _kill_pid(pid_a)
-        assert _wait_until(lambda: not pid_alive(pid_a), 30)
-        assert _wait_until(lambda: not _health_ok(w.port), 15)
+        assert _wait_until(lambda: not _health_ok(w.port), 30)
 
         rc = _run_detaching(
             ["--config", str(w.cfg), "serve", "--ensure", "-p", str(w.port)],
@@ -362,7 +366,6 @@ def test_serve_ensure_idempotent_then_survivor(tmp_path):
             _kill_pid(first.pid)
             with contextlib.suppress(subprocess.TimeoutExpired):
                 first.wait(timeout=30)
-        _kill_pid(pid_a)
         _kill_pid(survivor_pid)
         for f in (out_f, err_f):
             if f is not None:
@@ -580,7 +583,12 @@ def test_down_all_stops_serve_and_attention_scoped_to_home(tmp_path):
             # stop_daemon only unlinks after re-confirming death, and because the
             # kill is async that re-check often loses the race -- so we assert
             # "no LIVE daemon remains", not "the pid file was removed".
-            assert _wait_until(lambda: not pid_alive(serve_pid), 30), "serve survived"
+            # Serve is a DIRECT child here, so a POSIX SIGTERM leaves a zombie
+            # whose pid still answers os.kill(_, 0); the socket (health) is the
+            # zombie-immune authority for serve death (_serve reaps proc in its
+            # finally). The attention daemon is DETACHED (reparented to init and
+            # reaped), so its pid_alive stays accurate below.
+            assert _wait_until(lambda: not _health_ok(w.port), 30), "serve survived"
             assert _wait_until(
                 lambda: _read_pid(att_pidfile) is None or not pid_alive(daemon_pid),
                 30,
