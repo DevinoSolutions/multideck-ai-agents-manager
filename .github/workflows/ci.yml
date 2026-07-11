@@ -84,19 +84,21 @@ jobs:
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
       # alacritty drives the terminal-fallback tier's beyond-default emulator
-      # matrix (test_real_terminal_fallbacks.py); the mesa DRI/GLX/EGL runtime
-      # lets this GPU terminal open a window under headless Xvfb (paired with
-      # LIBGL_ALWAYS_SOFTWARE=1 in the child env). kitty is deliberately NOT
-      # installed: it cannot obtain a GL context under hosted Xvfb (confirmed on
-      # CI) and its font deps trigger fc-cache churn that slows the sibling
-      # real-render tests' window materialization.
+      # matrix (test_real_terminal_fallbacks.py). libgl1/libegl1 (glvnd loaders)
+      # plus the mesa GLX/EGL/DRI impls give it a software-GL context under
+      # headless Xvfb (paired with LIBGL_ALWAYS_SOFTWARE=1 in the child env).
+      # INSTALL-ONLY, no `apt-get update`: the sibling install-terminals step
+      # (which the neighbouring real-render tests tolerate) also installs without
+      # a refresh, and setup-virtual-displays' lists are still warm — a second
+      # refresh's I/O churn immediately before pytest was slowing those tests'
+      # tight (<=6s) window-materialization deadline. kitty is excluded (it
+      # cannot obtain a GL context under hosted Xvfb, confirmed on CI).
       - name: Install fallback terminal emulators (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends \
-            alacritty libgl1-mesa-dri libglx-mesa0 libegl-mesa0
+            alacritty libgl1 libegl1 libgl1-mesa-dri libglx-mesa0 libegl-mesa0
       - run: pytest tests/platform/ -v -m platform
 
   end-to-end:
