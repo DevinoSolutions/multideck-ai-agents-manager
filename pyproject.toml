@@ -1,19 +1,24 @@
 [project]
 name = "multideck"
 version = "1.0.0"
-description = "Open every project in its own terminal and auto-tile across all monitors"
+description = "Launch each project's AI coding agent in its own terminal, auto-tiled across every monitor"
 readme = "README.md"
 license = "AGPL-3.0"
 requires-python = ">=3.10"
 dependencies = ["click>=8.0", "pydantic-settings>=2.14"]
 keywords = [
   "terminal",
+  "windows-terminal",
   "tiling",
+  "multi-monitor",
   "window-manager",
   "multiplexer",
+  "dpi-aware",
   "cli",
   "ai-agents",
+  "coding-agents",
   "claude",
+  "claude-code",
   "codex",
   "productivity",
   "workflow",
@@ -27,6 +32,8 @@ classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Environment :: Console",
   "Intended Audience :: Developers",
+  "Intended Audience :: System Administrators",
+  "Natural Language :: English",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
   "Operating System :: MacOS",
@@ -38,6 +45,7 @@ classifiers = [
   "Programming Language :: Python :: 3.14",
   "Programming Language :: Python :: 3 :: Only",
   "Topic :: Software Development",
+  "Topic :: System :: Systems Administration",
   "Topic :: Terminals :: Terminal Emulators/X Terminals",
   "Topic :: Utilities",
 ]
@@ -53,6 +61,7 @@ multideck = "multideck.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/DevinoSolutions/multideck-ai-agents-manager"
+Documentation = "https://github.com/DevinoSolutions/multideck-ai-agents-manager#readme"
 Repository = "https://github.com/DevinoSolutions/multideck-ai-agents-manager"
 Issues = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/issues"
 Changelog = "https://github.com/DevinoSolutions/multideck-ai-agents-manager/blob/main/CHANGELOG.md"
