@@ -123,7 +123,7 @@ jobs:
 
   publish:
     name: "Publish to PyPI (Trusted Publishing)"
-    needs: [build, smoke]
+    needs: [build, smoke, sdist-smoke]
     # Tag-push ONLY. workflow_dispatch (the dry-run path) is structurally
     # excluded here, so a dispatch can never publish — regardless of the
     # dry_run input. `!inputs.dry_run` is a defensive second gate.
