@@ -373,7 +373,7 @@ A bare `pytest` collects **all** tiers, including tests that enumerate real moni
 
 ```bash
 git clone https://github.com/DevinoSolutions/multideck-ai-agents-manager.git
-cd multideck-ai-agent
+cd multideck-ai-agents-manager
 pip install -e .
 ```
 
