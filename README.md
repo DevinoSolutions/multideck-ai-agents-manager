@@ -18,7 +18,7 @@
 <p align="center">
   <a href="https://pypi.org/project/multideck"><img src="https://img.shields.io/pypi/v/multideck?color=3776AB&label=pypi" alt="PyPI version" /></a>
   <a href="https://pypi.org/project/multideck"><img src="https://img.shields.io/pypi/dm/multideck?color=blue" alt="PyPI downloads" /></a>
-  <a href="https://github.com/DevinoSolutions/multideck-ai-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0" /></a>
+  <a href="https://github.com/DevinoSolutions/multideck-ai-agents-manager/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License: AGPL-3.0" /></a>
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10+" /></a>
   <img src="https://img.shields.io/badge/dependencies-click-success" alt="Minimal Dependencies" />
 </p>
@@ -322,25 +322,25 @@ CLI agents run over SSH. VS Code/Cursor projects open via Remote-SSH.
   <tbody>
     <tr>
       <td><strong>Unit</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
       <td>Windows / macOS / Linux<br/>Python 3.10 -- 3.14</td>
       <td>Config parsing, grid computation, title generation, session resume, discovery, grouping (15 matrix jobs)</td>
     </tr>
     <tr>
       <td><strong>Platform</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
       <td>Windows / macOS / Linux</td>
       <td>Real monitor detection (ctypes/Swift/xrandr), real window find+move, real terminal launch, DPI scaling</td>
     </tr>
     <tr>
       <td><strong>E2E</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
       <td>Windows / macOS / Linux</td>
       <td>Full CLI dry-run, config loading, group filtering, SSH project handling, vscode/cursor tool alias, multi-window</td>
     </tr>
     <tr>
       <td><strong>Packaging</strong></td>
-      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agent/actions/workflows/ci.yml/badge.svg?branch=feat/python-rewrite" alt="CI" /></a></td>
+      <td align="center"><a href="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml"><img src="https://github.com/DevinoSolutions/multideck-ai-agents-manager/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a></td>
       <td>Windows / macOS / Linux</td>
       <td>Build wheel, install into a pristine no-extras venv, drive the real installed <code>multideck</code> entry point: version/help, dev-dep import sweep, virgin first-run, socket-real serve, optional-extra degradation, and a real window spawn (win32)</td>
     </tr>
@@ -372,8 +372,8 @@ A bare `pytest` collects **all** tiers, including tests that enumerate real moni
 ## Install from source
 
 ```bash
-git clone https://github.com/DevinoSolutions/multideck-ai-agent.git
-cd multideck-ai-agent
+git clone https://github.com/DevinoSolutions/multideck-ai-agents-manager.git
+cd multideck-ai-agents-manager
 pip install -e .
 ```
 
