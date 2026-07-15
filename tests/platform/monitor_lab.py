@@ -709,12 +709,18 @@ class MonitorLab:
                 f"modes={_list_modes(device)}"
             )
 
-        if dpi_percent != 100:
-            ok = _set_dpi(device, dpi_percent)
-            self._log(
-                f"set_dpi {device} -> {dpi_percent}% ok={ok} raw={_dpi_probe(device)}"
-            )
-            time.sleep(1.5)
+        # Always set DPI EXPLICITLY, including 100%. A fresh virtual panel does
+        # not reliably default to 100%: Windows picks a "recommended" scale from
+        # the panel's reported size, and a 1440p/4K virtual monitor added after
+        # the first one defaults to 125%+. Relying on that default made a
+        # requested 100% monitor read back as 125% (doctor-replay triple). An
+        # explicit set to 100 forces the minimum step and is a no-op when the
+        # panel already sits there.
+        ok = _set_dpi(device, dpi_percent)
+        self._log(
+            f"set_dpi {device} -> {dpi_percent}% ok={ok} raw={_dpi_probe(device)}"
+        )
+        time.sleep(1.5)
         return device
 
     def set_resolution(self, device: str, width: int, height: int) -> bool:
