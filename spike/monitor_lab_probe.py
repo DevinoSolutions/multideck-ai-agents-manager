@@ -318,6 +318,25 @@ def apply_pending_display_changes() -> None:
     emit("attach_apply", ret_code=ret, ok=(ret == 0))
 
 
+# distinct (w, h) per virtual monitor — the "layout zoo" seed for Q3
+RES_TARGETS = [(1920, 1080), (2560, 1440), (1280, 720), (3840, 2160)]
+
+
+def attach_parsec_displays(count: int) -> list[str]:
+    """Extend the desktop onto `count` parsec virtual displays and position each
+    at a distinct resolution. Returns the now-active parsec device names."""
+    _guard("force-extend", force_extend_desktop)
+    time.sleep(2.0)
+    present = _parsec_devices(active_only=False)
+    x = 1024  # start right of the runner's default 1024x768 primary
+    for dev, (w, h) in zip(present[:count], RES_TARGETS):
+        _guard(f"attach {dev}", lambda d=dev, w=w, h=h, xx=x: attach_display(d, w, h, xx))
+        x += w
+    _guard("apply", apply_pending_display_changes)
+    time.sleep(3.0)
+    return _parsec_devices(active_only=True)
+
+
 def set_resolution(device: str, w: int, h: int) -> None:
     dm = DEVMODEW()
     dm.dmSize = ctypes.sizeof(DEVMODEW)
@@ -758,21 +777,12 @@ def cmd_parsec_battery(count: int) -> int:
 
     # IddCx monitors can arrive "connected" but inactive on a headless runner;
     # force the desktop to extend onto them, then explicitly attach+position
-    # any that are still inactive (this doubles as the Q3 per-monitor res set).
-    _guard("force-extend", force_extend_desktop)
-    time.sleep(2.0)
+    # each (this doubles as the Q3 per-monitor resolution set).
     present = _parsec_devices(active_only=False)
     emit("parsec_present", devices=present)
-    targets = [(1920, 1080), (2560, 1440), (1280, 720), (3840, 2160)]
-    x = 1024  # start to the right of the runner's default 1024x768 primary
-    for dev, (w, h) in zip(present, targets):
-        _guard(f"attach {dev}", lambda d=dev, w=w, h=h, xx=x: attach_display(d, w, h, xx))
-        x += w
-    _guard("apply", apply_pending_display_changes)
-    time.sleep(3.0)
+    parsec_active = attach_parsec_displays(count)
 
     _guard("dump-after-add", lambda: full_dump("after-parsec-add"))
-    parsec_active = _parsec_devices(active_only=True)
     emit("parsec_devices", active=parsec_active, present=present, added_indices=added)
     marker(
         f"Q2 RESULT: {'PASS' if parsec_active else 'FAIL'} — "
@@ -780,7 +790,7 @@ def cmd_parsec_battery(count: int) -> int:
     )
 
     marker("Q3 CONFIRM DIFFERENT RESOLUTIONS PER VIRTUAL MONITOR")
-    res_targets = dict(zip(present, targets))
+    res_targets = dict(zip(present, RES_TARGETS))
     for dev in parsec_active:
         w, h = res_targets.get(dev, (2560, 1440))
         _guard(f"setres {dev}", lambda d=dev, w=w, h=h: set_resolution(d, w, h))
@@ -814,15 +824,100 @@ def cmd_parsec_hold(count: int, seconds: int) -> int:
     for _ in range(count):
         idx = vdd_add(handle)
         added.append(idx)
-        time.sleep(1.0)
-    time.sleep(4.0)
-    emit("parsec_hold_ready", added=added, devices=_parsec_devices())
+        time.sleep(2.0)
+    time.sleep(2.0)
+    active = attach_parsec_displays(count)
+    emit("parsec_hold_ready", added=added, devices=active)
     full_dump("hold-ready")
     time.sleep(seconds)
     for idx in added:
         vdd_remove(handle, idx)
     pinger.stop()
     kernel32.CloseHandle(ctypes.c_void_p(handle))
+    return 0
+
+
+def _window_rect(hwnd: object) -> list[int]:
+    r = wintypes.RECT()
+    user32.GetWindowRect(hwnd, byref(r))
+    return [r.left, r.top, r.right, r.bottom]
+
+
+def cmd_place_check() -> int:
+    """Q5: drive multideck's OWN monitor + grid pipeline over the live (virtual)
+    topology and place a REAL wt window into a grid slot on a virtual monitor.
+    Assumes a separate `parsec-hold` process is keeping the displays attached."""
+    import shutil
+    import subprocess
+
+    from multideck.grid import compute_grid
+    from multideck.platform import get_platform
+
+    plat = get_platform()
+    plat.set_dpi_aware()
+    mons = plat.list_monitors()
+    for i, m in enumerate(mons):
+        emit("place_monitor", index=i, x=m.x, y=m.y, w=m.w, h=m.h,
+             primary=m.is_primary, scale=m.scale_factor)
+    virt = [m for m in mons if not m.is_primary]
+    if not virt:
+        marker("Q5 RESULT: FAIL — no non-primary (virtual) monitor present")
+        return 1
+    target = virt[0]
+    mons_sorted = sorted(mons, key=lambda m: m.x)
+    tidx = mons_sorted.index(target)
+    slots = compute_grid(mons, 2, 1)
+    for s in slots:
+        emit("place_grid_slot", monitor_index=s.monitor_index, x=s.x, y=s.y,
+             w=s.w, h=s.h, label=s.label)
+    tslots = [s for s in slots if s.monitor_index == tidx]
+    if not tslots:
+        marker("Q5 RESULT: FAIL — grid produced no slot on the virtual monitor")
+        return 1
+    slot = tslots[0]
+
+    if not shutil.which("wt"):
+        marker("Q5 RESULT: PARTIAL — monitors+grid proven; wt not on PATH so no real window")
+        return 0
+
+    title = "md:spikeq5"
+    subprocess.Popen(
+        ["wt", "-w", "new", "--title", title, "--suppressApplicationTitle",
+         "--", "cmd", "/k", "rem spikeq5"]
+    )
+    hwnd = None
+    for _ in range(60):
+        hwnd = plat.find_window(title)
+        if hwnd:
+            break
+        time.sleep(1.0)
+    if not hwnd:
+        marker("Q5 RESULT: PARTIAL — monitors+grid proven; wt window never appeared")
+        return 0
+    plat.move_window(hwnd, slot)
+    time.sleep(1.5)
+    rect = _window_rect(hwnd)
+    cx, cy = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+    inside = (
+        target.x <= cx <= target.x + target.w
+        and target.y <= cy <= target.y + target.h
+    )
+    emit("place_result", rect=rect, center=[cx, cy], slot=[slot.x, slot.y, slot.w, slot.h],
+         monitor=[target.x, target.y, target.w, target.h], inside=inside)
+    # cleanup: close the window + any lingering rem process
+    user32.PostMessageW(hwnd, 0x0010, 0, 0)  # WM_CLOSE
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command",
+         "Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" | "
+         "Where-Object { $_.CommandLine -like '*rem spikeq5*' } | "
+         "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"],
+        capture_output=True,
+    )
+    marker(
+        f"Q5 RESULT: {'PASS' if inside else 'FAIL'} — real wt window center "
+        f"({cx:.0f},{cy:.0f}) {'INSIDE' if inside else 'OUTSIDE'} virtual monitor "
+        f"[{target.x},{target.y},{target.w}x{target.h}]"
+    )
     return 0
 
 
@@ -852,6 +947,7 @@ def main(argv: list[str]) -> int:
     ph = sub.add_parser("parsec-hold")
     ph.add_argument("--count", type=int, default=2)
     ph.add_argument("--seconds", type=int, default=60)
+    sub.add_parser("place-check")
 
     args = p.parse_args(argv)
     if args.cmd == "baseline":
@@ -870,6 +966,8 @@ def main(argv: list[str]) -> int:
         return cmd_parsec_battery(args.count)
     if args.cmd == "parsec-hold":
         return cmd_parsec_hold(args.count, args.seconds)
+    if args.cmd == "place-check":
+        return cmd_place_check()
     return 1
 
 

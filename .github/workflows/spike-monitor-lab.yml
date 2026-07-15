@@ -116,15 +116,18 @@ jobs:
         run: |
           Write-Host "=== Q5 REAL LAUNCH ON VIRTUAL MONITOR ==="
           $probe = "spike\monitor_lab_probe.py"
-          # background holder keeps 1 virtual display alive for 90s
-          $hold = Start-Process -FilePath "python" -ArgumentList @($probe,"parsec-hold","--count","1","--seconds","90") -PassThru -NoNewWindow -RedirectStandardOutput "$env:RUNNER_TEMP\hold.log"
-          Start-Sleep -Seconds 10
+          # Background holder adds + attaches 2 virtual displays and keeps them
+          # alive (ping < 100ms) for 120s while the foreground place-check drives
+          # multideck's real monitor + grid + move_window pipeline onto them.
+          $hold = Start-Process -FilePath "python" -ArgumentList @($probe,"parsec-hold","--count","2","--seconds","120") -PassThru -NoNewWindow -RedirectStandardOutput "$env:RUNNER_TEMP\hold.log"
+          Start-Sleep -Seconds 20
           Write-Host "--- holder log so far ---"
           if (Test-Path "$env:RUNNER_TEMP\hold.log") { Get-Content "$env:RUNNER_TEMP\hold.log" }
-          Write-Host "--- topology while held ---"
+          Write-Host "--- topology while held (multideck's own view) ---"
           python $probe enumerate --tag q5-held
+          Write-Host "--- place a REAL wt window on a virtual monitor via multideck ---"
+          python $probe place-check
           if ($hold -and -not $hold.HasExited) { Stop-Process -Id $hold.Id -Force }
-          Write-Host "=== Q5 RESULT: see topology above (multideck launch wiring deferred to a later iteration) ==="
 
       - name: "Cleanup: remove parsec driver (best effort)"
         if: always()
