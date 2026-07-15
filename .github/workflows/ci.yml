@@ -141,7 +141,9 @@ jobs:
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
       - name: Run e2e tests
-        run: pytest tests/e2e/ -v -m "e2e and not needs_ssh"
+        # needs_tailscale is excluded here exactly like needs_ssh: it runs only
+        # in the dedicated `tailnet` job, which joins a live Tailscale node.
+        run: pytest tests/e2e/ -v -m "e2e and not needs_ssh and not needs_tailscale"
       - name: Setup SSH server
         id: ssh_setup
         uses: ./.github/actions/setup-ssh-server
@@ -235,3 +237,60 @@ jobs:
           tests/platform/test_monitor_lab_tiling.py
           tests/platform/test_doctor_replay.py
           -m monitor_lab -q
+
+  tailnet:
+    name: "Tailnet (ubuntu-latest)"
+    # NOT a required check by design (same posture as monitor-lab / browser-upload):
+    # joins a REAL, ephemeral, tag-scoped Tailscale node and exercises tailnet.py's
+    # live `tailscale` probes plus `multideck serve`'s Tailscale-facing default bind.
+    # The node evaporates when the job ends; the tier skips cleanly on a dev box
+    # (no MDTEST_TAILSCALE / no tailscale binary) so nobody must ever join a tailnet
+    # on their own machine to run it.
+    #
+    # ONE-TIME USER SETUP (the job is inert until these exist, and stays GREEN
+    # meanwhile -- it detects the missing secrets and skips loudly, never fails a
+    # fork or a PR):
+    #   1. Tailscale admin console -> Settings -> OAuth clients -> Generate a client
+    #      with the `auth_keys` write scope, attached to the tag `tag:ci`.
+    #   2. Add an ACL tag definition so the tag can exist, e.g. in the tailnet
+    #      policy file:  "tagOwners": { "tag:ci": ["autogroup:admin"] }
+    #   3. Add two GitHub Actions repo secrets:
+    #        TS_OAUTH_CLIENT_ID  = the OAuth client id
+    #        TS_OAUTH_SECRET     = the OAuth client secret
+    #   Once those three are in place the job goes fully live with NO code change.
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # Secrets can't be read in a job-level `if:`; surface their presence as a
+      # step output so every Tailscale-dependent step gates on it. Absent (forks,
+      # or before the one-time setup above) -> loud ::warning, job stays green.
+      - name: Check for Tailscale OAuth secrets
+        id: ts_secrets
+        env:
+          TS_OAUTH_CLIENT_ID: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        run: |
+          if [ -z "$TS_OAUTH_CLIENT_ID" ]; then
+            echo "::warning title=Tailnet tier skipped::TS_OAUTH_CLIENT_ID / TS_OAUTH_SECRET are not set; the real-tailnet tests did not run. See the job comment for the one-time OAuth + ACL tag + secrets setup. Not a green pass of that coverage."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Ephemeral tagged node: OAuth + a `tag:ci` tag makes the node ephemeral
+      # automatically (it deregisters when the runner disconnects at job end).
+      - name: Connect to Tailscale
+        if: steps.ts_secrets.outputs.present == 'true'
+        uses: tailscale/github-action@780049a30b6ff5c378a9e7b389d15ece7a204888  # v4.1.3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+      - name: Run tailnet tier (real Tailscale node)
+        if: steps.ts_secrets.outputs.present == 'true'
+        env:
+          MDTEST_TAILSCALE: "1"
+        run: pytest tests/e2e/test_tailnet_real.py -v -m "e2e and needs_tailscale"
