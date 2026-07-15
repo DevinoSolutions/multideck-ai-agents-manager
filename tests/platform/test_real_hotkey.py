@@ -372,9 +372,9 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        assert _wait_until(lambda: _http_ok(f"{server_url}/", name), timeout=60), (
-            f"upload server never listed session {name!r}"
-        )
+        assert _wait_until(
+            lambda: _http_ok(f"{server_url}/api/sessions", name), timeout=60
+        ), f"upload server never listed session {name!r} on /api/sessions"
 
         # 3. The REAL listener, spawned with the product's exact argv
         #    (cli/background._maybe_start_hotkey builds this same command).
