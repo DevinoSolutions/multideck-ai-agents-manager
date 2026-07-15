@@ -602,6 +602,33 @@ only substitution is the multiplexer *binary's name*, and the deliverable under
 test (the file transfer + on-disk write) is 100% real. The upload server's
 no-token loopback bind is exercised as-is; no auth was added.
 
+**Real-tailnet coverage (2026-07-15):** `tailnet.py` (`ip4` / `magicdns_host`
+/ `probe` — the single owner of every `tailscale` CLI probe) and the
+Tailscale-facing half of `multideck serve`'s default bind
+(`upload_server._bind_addresses`) had only ever been unit-mocked: no test had
+ever run the real `tailscale` binary or proven the server listens on the
+machine's Tailscale IPv4. `tests/e2e/test_tailnet_real.py` (marker
+`needs_tailscale`, CI-only, gated on `MDTEST_TAILSCALE=1`) closes that gap
+against a REAL node: the dedicated, non-required `tailnet` ubuntu job joins an
+ephemeral, tag-scoped Tailscale node via `tailscale/github-action` (SHA-pinned,
+OAuth + `tag:ci`), and the tests assert `tailnet.ip4()` equals real `tailscale
+ip -4` (and is a genuine 100.64.0.0/10 CGNAT address), `probe()` reports the
+live node, `magicdns_host()` equals real `tailscale status --json`
+`Self.DNSName`, `_bind_addresses(None)` is exactly `["127.0.0.1", <ts ip>]`
+(never the wildcard), and a real `multideck serve` with no `--host` answers
+`/health` on both loopback and the Tailscale IP while leaving the LAN wildcard
+provably unbound (a fresh socket still binds the runner's own LAN IP on that
+port). *Deliberate operational note:* the OAuth secrets
+(`TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET`) are user-side setup that does not
+exist yet — the job detects their absence and skips **loudly** (`::warning`,
+job stays green) so forks and pre-setup PRs are never failed and a skip is
+never mistaken for real coverage; once the secrets (plus an ACL `tag:ci`
+stanza) are added it goes fully live with zero code change. Locally the tier
+skips (no `MDTEST_TAILSCALE`, no live node) — nobody joins a tailnet on a dev
+box to run it, the same never-on-a-dev-box posture as `needs_ssh` /
+`monitor_lab`. The upload server's no-token loopback+tailnet bind is exercised
+as-is; no auth was added and the default bind logic was not touched.
+
 **Nine findings carried open into the next audit cycle** (deliberately
 triaged out of the fix pass that produced this document, not overlooked):
 
