@@ -136,9 +136,6 @@ def test_first_run_discovery_writes_valid_config(tmp_path):
     )
 
     env = _child_env(home)
-    # config_base(): APPDATA/multideck on win32, XDG_CONFIG_HOME/multideck on
-    # POSIX — both point HOME-ward here, so the wizard writes under tmp.
-    expected_config = home / "multideck" / "config.json"
 
     pty = _spawn(env, work)
     try:
@@ -155,9 +152,15 @@ def test_first_run_discovery_writes_valid_config(tmp_path):
         pty.close()
 
     assert status == 0, f"non-zero exit\n{pty.transcript}"
-    assert expected_config.is_file(), (
-        f"first-run wizard wrote no config at {expected_config}\n{pty.transcript}"
+    # config_base() differs per OS (APPDATA on win32, XDG_CONFIG_HOME on Linux,
+    # ~/Library/Application Support on macOS) — all rooted under the redirected
+    # HOME here, so locate the written config rather than assuming one layout.
+    written = [p for p in home.rglob("config.json") if p.parent.name == "multideck"]
+    assert len(written) == 1, (
+        f"expected exactly one written config under {home}, got {written}\n"
+        f"{pty.transcript}"
     )
+    expected_config = written[0]
     data = json.loads(expected_config.read_text(encoding="utf-8"))
     assert data.get("projects"), "written config has no projects"
     # Prove it parses through the real typed loader, not just as raw JSON.
