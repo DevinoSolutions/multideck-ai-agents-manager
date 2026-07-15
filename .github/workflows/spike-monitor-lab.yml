@@ -56,66 +56,49 @@ jobs:
           python spike/monitor_lab_probe.py baseline
 
       # ------------------------------------------------------------------ Q1
-      - name: "Q1: Install parsec-vdd driver (signed, non-interactive)"
+      - name: "Q1: Install parsec-vdd driver (silent installer)"
         id: parsec_install
         continue-on-error: true
         run: |
           $ErrorActionPreference = "Stop"
           Write-Host "=== Q1 PARSEC-VDD INSTALL ==="
+          # The portable zip ships the driver as a self-contained silent
+          # installer (parsec-vdd-x.exe) + the WPF app; the driver files
+          # (mm.inf/mm.cat/nefcon) are bundled INSIDE the installer, so we run
+          # its NSIS `/S` silent mode rather than the loose-file nefcon path.
           $url = "https://github.com/nomi-san/parsec-vdd/releases/download/v0.45.1/ParsecVDisplay-v0.45-portable.zip"
           $zip = "$env:RUNNER_TEMP\parsec.zip"
           $dst = "$env:RUNNER_TEMP\parsec"
           Invoke-WebRequest -Uri $url -OutFile $zip
           Expand-Archive -Path $zip -DestinationPath $dst -Force
           Write-Host "--- extracted tree ---"
-          Get-ChildItem -Recurse $dst | Select-Object FullName | ForEach-Object { $_.FullName }
+          Get-ChildItem -Recurse $dst | ForEach-Object { $_.FullName }
 
-          $nefcon = (Get-ChildItem -Recurse $dst -Filter "nefconw.exe" | Select-Object -First 1).FullName
-          $inf    = (Get-ChildItem -Recurse $dst -Filter "mm.inf"      | Select-Object -First 1).FullName
-          if (-not $nefcon) { throw "nefconw.exe not found in portable zip" }
-          if (-not $inf)    { throw "mm.inf not found in portable zip" }
-          Write-Host "nefconw: $nefcon"
-          Write-Host "inf:     $inf"
-          $driverDir = Split-Path $inf
+          $installer = (Get-ChildItem -Recurse $dst -Filter "parsec-vdd-*.exe" | Select-Object -First 1).FullName
+          if (-not $installer) { throw "parsec-vdd installer not found in portable zip" }
+          Write-Host "installer: $installer"
+          Write-Host "--- installer signature ---"
+          $sig = Get-AuthenticodeSignature $installer
+          Write-Host ("status={0} signer={1}" -f $sig.Status, $sig.SignerCertificate.Subject)
 
-          # --- record signature + defensively trust the publisher ----------
-          $signed = Get-ChildItem -Recurse $driverDir -Include *.dll,*.sys,*.cat |
-                    ForEach-Object { Get-AuthenticodeSignature $_.FullName } |
-                    Where-Object { $_.SignerCertificate }
-          Write-Host "--- driver signatures ---"
-          $signed | ForEach-Object {
-            Write-Host ("{0}: status={1} signer={2}" -f (Split-Path $_.Path -Leaf), $_.Status, $_.SignerCertificate.Subject)
-          }
-          $cert = ($signed | Select-Object -First 1).SignerCertificate
-          if ($cert) {
-            $cer = "$env:RUNNER_TEMP\parsec_pub.cer"
-            [IO.File]::WriteAllBytes($cer, $cert.Export('Cert'))
-            certutil -addstore -f "TrustedPublisher" $cer | Out-Null
-            certutil -addstore -f "Root" $cer | Out-Null
-            Write-Host "publisher cert imported into TrustedPublisher + Root (defensive)"
-          }
+          Write-Host "--- running silent install (/S) ---"
+          $p = Start-Process -FilePath $installer -ArgumentList "/S" -PassThru -Wait
+          Write-Host "installer exit: $($p.ExitCode)"
+          Start-Sleep -Seconds 8
 
-          $guid = "4D36E968-E325-11CE-BFC1-08002BE10318"
-          $hwid = "Root\Parsec\VDA"
-
-          Write-Host "--- nefconw remove (ignore failure) ---"
-          & $nefcon --remove-device-node --hardware-id $hwid --class-guid $guid
-          Write-Host "remove exit: $LASTEXITCODE"
-
-          Write-Host "--- nefconw create-device-node ---"
-          & $nefcon --create-device-node --class-name Display --class-guid $guid --hardware-id $hwid
-          Write-Host "create exit: $LASTEXITCODE"
-
-          Write-Host "--- nefconw install-driver ---"
-          & $nefcon --install-driver --inf-path $inf
-          Write-Host "install exit: $LASTEXITCODE"
-
-          Start-Sleep -Seconds 5
-          Write-Host "--- pnputil /enum-drivers (parsec) ---"
-          pnputil /enum-drivers | Select-String -Context 0,6 -Pattern "mm.inf" | ForEach-Object { $_.ToString() }
-          Write-Host "--- pnputil /enum-devices (parsec) ---"
-          pnputil /enum-devices /connected 2>$null | Select-String -Context 0,4 -Pattern "Parsec" | ForEach-Object { $_.ToString() }
-          Write-Host "=== Q1 RESULT: parsec install step completed (see exit codes + enum above) ==="
+          Write-Host "--- pnputil /enum-drivers (parsec/mm.inf) ---"
+          $drv = pnputil /enum-drivers
+          $drv | Select-String -Context 1,6 -Pattern "Parsec|mm\.inf" | ForEach-Object { $_.ToString() }
+          Write-Host "--- PnP entities named Parsec ---"
+          Get-CimInstance Win32_PnPEntity | Where-Object { $_.Name -like "*Parsec*" -or $_.Name -like "*Virtual Display*" } |
+            ForEach-Object { Write-Host ("PnP: {0} | status={1} | id={2}" -f $_.Name, $_.Status, $_.DeviceID) }
+          Write-Host "--- driver store signature for the installed .cat ---"
+          Get-ChildItem "C:\Windows\System32\DriverStore\FileRepository" -Recurse -Filter "mm.cat" -ErrorAction SilentlyContinue |
+            Select-Object -First 1 | ForEach-Object {
+              $s = Get-AuthenticodeSignature $_.FullName
+              Write-Host ("cat={0} status={1} signer={2}" -f $_.FullName, $s.Status, $s.SignerCertificate.Subject)
+            }
+          Write-Host "=== Q1 RESULT: parsec silent install completed (installer exit + enum above) ==="
 
       # -------------------------------------------------------------- Q2-Q4
       - name: "Q2-Q4: Add displays, enumerate, set resolutions + DPI"
