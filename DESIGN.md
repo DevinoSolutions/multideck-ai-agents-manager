@@ -629,6 +629,31 @@ box to run it, the same never-on-a-dev-box posture as `needs_ssh` /
 `monitor_lab`. The upload server's no-token loopback+tailnet bind is exercised
 as-is; no auth was added and the default bind logic was not touched.
 
+**Long-run daemon-stability soak (2026-07-15):** closes the "every daemon test
+runs for seconds — no soak / long-run stability" honesty gap. `tests/e2e/test_soak.py`
+(marker `soak`, CI-only, gated on `MDTEST_SOAK=1`) stands up a REAL
+`serve --host 127.0.0.1` + a REAL detached `attention -d --interval 1` and drives
+a continuous churn loop for `MDTEST_SOAK_SECONDS` (default 1500s == ~25 min of
+active soak, inside a ≤45-min job budget): agent-state records rewritten every
+couple seconds across the whole real state vocabulary, plus periodic real
+multipart POST /upload + GET /health round-trips. Invariants are sampled
+THROUGHOUT and again at the end — heartbeat mtime keeps advancing and never ages
+past `log.HEARTBEAT_MAX_AGE`; /health serves and an upload is accepted
+byte-identical on disk at minute 25 as at minute 1; both recorded pids survive;
+process RSS never runs away (stdlib sampling — `/proc/<pid>/status` on Linux,
+`GetProcessMemoryInfo` via ctypes on Windows, `ps` elsewhere — flagged only when
+end > 1.8× start AND absolute growth > 64 MiB, a leak guard not a benchmark);
+`RotatingFileHandler` keeps ≤ `backupCount+1` bounded files per logger; and the
+state store's TTL sweep never destroys the fresh records. It rides a dedicated
+nightly workflow (`.github/workflows/soak.yml`, `schedule` + `workflow_dispatch`)
+on ubuntu-latest and windows-latest — non-required by design (same posture as
+monitor-lab / browser-upload). *Honest gap (small, deliberate):* the upload-accept
+path needs a valid multiplexer session, so — like the browser tier's `tmux`-as-`psmux`
+symlink — the soak drops a no-op `psmux` shim on the child PATH (exits 0 for
+`has-session`/`send-keys`); the file is still genuinely parsed from the multipart
+body and written to disk by the product before inject, only the multiplexer
+behind the session id is faked.
+
 **Ten findings carried open into the next audit cycle** (deliberately
 triaged out of the fix pass that produced this document, not overlooked):
 

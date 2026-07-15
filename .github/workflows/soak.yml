@@ -1,0 +1,57 @@
+name: Soak (nightly)
+
+# Long-run daemon-stability soak: stands up a REAL `multideck serve` + a REAL
+# detached `attention -d` and hammers them with sustained state/upload/health
+# churn for ~25 minutes, asserting heartbeat freshness, upload acceptance, pid
+# survival, bounded RSS, bounded log rotation, and TTL-sweep safety throughout.
+#
+# NOT a required check by design (same posture as monitor-lab / browser-upload):
+# it deliberately runs for tens of minutes, so it rides a dedicated nightly
+# schedule plus on-demand dispatch rather than every push/PR. Two legs:
+# ubuntu-latest (cheapest, the POSIX daemon path) and windows-latest (where the
+# attention badge/flash renderers and the SendInput chain actually ship).
+
+on:
+  schedule:
+    # 07:00 UTC — a quiet hour, well clear of the working-day CI peak.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+    inputs:
+      soak_seconds:
+        description: "Active soak duration in seconds (default 1500 == 25 min)."
+        required: false
+        default: "1500"
+
+permissions:
+  contents: read
+
+concurrency:
+  # One soak at a time per ref: a manual dispatch never races the nightly run.
+  group: soak-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  soak:
+    name: "Soak (${{ matrix.os }})"
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      MDTEST_SOAK: "1"
+      # Dispatch supplies soak_seconds; the scheduled run has no inputs, so fall
+      # back to the full 25-minute default.
+      MDTEST_SOAK_SECONDS: ${{ github.event.inputs.soak_seconds || '1500' }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # No virtual displays / terminals: the soak fakes the multiplexer with a
+      # no-op psmux shim and drives the servers purely over loopback HTTP + the
+      # on-disk state/heartbeat/log artifacts. The daemon path itself is real.
+      - name: Run soak tier
+        run: pytest tests/e2e/test_soak.py -v -m soak
