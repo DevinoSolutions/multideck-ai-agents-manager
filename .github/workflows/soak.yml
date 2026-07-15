@@ -12,6 +12,10 @@ name: Soak (nightly)
 # attention badge/flash renderers and the SendInput chain actually ship).
 
 on:
+  # TEMP(test/soak-nightly): drives CI on this branch to prove both legs green
+  # before the PR is marked ready — removed in the final cleanup commit.
+  push:
+    branches: [test/soak-nightly]
   schedule:
     # 07:00 UTC — a quiet hour, well clear of the working-day CI peak.
     - cron: "0 7 * * *"
@@ -43,7 +47,9 @@ jobs:
       MDTEST_SOAK: "1"
       # Dispatch supplies soak_seconds; the scheduled run has no inputs, so fall
       # back to the full 25-minute default.
-      MDTEST_SOAK_SECONDS: ${{ github.event.inputs.soak_seconds || '1500' }}
+      # TEMP(test/soak-nightly): '60' smoke value on push — restored to '1500'
+      # for the full-duration proof, then this whole override is reverted.
+      MDTEST_SOAK_SECONDS: ${{ github.event.inputs.soak_seconds || '60' }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
