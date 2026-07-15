@@ -54,7 +54,15 @@ classifiers = [
 sentry = ["sentry-sdk>=2"]
 toast = ["winotify>=1.1.0"]
 qr = ["qrcode>=7"]
-dev = ["pytest>=7.0", "pexpect>=4.8", "ruff>=0.15", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
+# pexpect drives the POSIX real-PTY menu tests; pywinpty (win32-only wheels)
+# drives the same tests over a real ConPTY on Windows — hence the platform
+# marker so `pip install -e ".[dev]"` still resolves on macOS/Linux.
+dev = ["pytest>=7.0", "pexpect>=4.8", "pywinpty>=2.0; sys_platform == 'win32'", "ruff>=0.15", "pytest-cov>=5.0", "ty==0.0.56", "vulture>=2.14"]
+# Kept out of `dev` on purpose: Playwright + its browser download are heavy and
+# only the dedicated browser-upload CI job needs them, so the OS x Py unit matrix
+# and the quality gate stay lean. Never a runtime dep (the dist import-sweep
+# guards against src importing it).
+browser = ["playwright>=1.40"]
 
 [project.scripts]
 multideck = "multideck.cli:main"
@@ -82,6 +90,8 @@ markers = [
     "needs_ssh: e2e tests that require a live SSH server (skipped locally by the ssh_available fixture)",
     "dist: packaged-install tests (build wheel -> pristine no-extras venv -> real installed entry point)",
     "monitor_lab: virtual-monitor lab tests (install parsec-vdd; CI-only, gated on MDTEST_MONITOR_LAB=1)",
+    "pty: real-PTY tests driving the interactive menu (pexpect on POSIX, pywinpty on Windows)",
+    "browser: real-browser upload tests (Playwright + chromium; CI-only, gated on MDTEST_BROWSER=1)",
 ]
 
 [tool.ruff]
