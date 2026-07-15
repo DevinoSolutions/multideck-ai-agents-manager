@@ -92,6 +92,8 @@ markers = [
     "monitor_lab: virtual-monitor lab tests (install parsec-vdd; CI-only, gated on MDTEST_MONITOR_LAB=1)",
     "pty: real-PTY tests driving the interactive menu (pexpect on POSIX, pywinpty on Windows)",
     "browser: real-browser upload tests (Playwright + chromium; CI-only, gated on MDTEST_BROWSER=1)",
+    "wt_cold: wt cold-broker pin (first-ever wt launch on a fresh runner; CI-only, gated on MDTEST_WT_COLD=1)",
+    "interaction: real-input interaction tests (SendInput + real clipboard; CI-only, gated on MDTEST_INTERACTION=1)",
 ]
 
 [tool.ruff]

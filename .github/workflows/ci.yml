@@ -83,7 +83,43 @@ jobs:
         uses: ./.github/actions/setup-virtual-displays
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
+      # MUST stay the first step that can spawn wt on this runner: the pin's
+      # "cold" claim is guaranteed by ordering (fresh VM, no earlier wt), not
+      # by the test itself. Runs alone, gated on MDTEST_WT_COLD=1 so the main
+      # sweep below never re-runs it warm.
+      - name: wt cold-broker pin (first-ever wt launch on this runner)
+        if: runner.os == 'Windows'
+        env:
+          MDTEST_WT_COLD: "1"
+        run: pytest tests/platform/test_wt_cold_start.py -v -m wt_cold
+      # Pinned psmux so the real psmux tier (lifecycle + full attach chain)
+      # actually runs instead of skipping on the binary check. Release zip
+      # pinned by version + sha256 (gitleaks pattern) rather than choco: the
+      # community feed 504s often enough to fail unrelated runs. Installed to
+      # %LOCALAPPDATA%\psmux (the product's own find_psmux() fallback dir) and
+      # added to PATH like a normal user install.
+      - name: Install psmux (pinned)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $url = "https://github.com/psmux/psmux/releases/download/v3.3.6/psmux-v3.3.6-windows-x64.zip"
+          $sha = "a56a890ea0829567818b9a368f16dcbd39c087f27328573df17c10dd39618947"
+          Invoke-WebRequest -Uri $url -OutFile psmux.zip
+          $actual = (Get-FileHash psmux.zip -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $sha) { throw "psmux.zip sha256 mismatch: $actual" }
+          $dest = Join-Path $env:LOCALAPPDATA "psmux"
+          Expand-Archive psmux.zip -DestinationPath $dest -Force
+          Add-Content $env:GITHUB_PATH $dest
+          & (Join-Path $dest "psmux.exe") -V
       - run: pytest tests/platform/ -v -m platform
+      # Real-input tier: global SendInput chord + machine clipboard. CI-only
+      # by design (MDTEST_INTERACTION=1 is set nowhere else); a dev box run
+      # would stomp the user's clipboard and fire global keystrokes.
+      - name: Interaction fidelity (real Alt+V hotkey chain)
+        if: runner.os == 'Windows'
+        env:
+          MDTEST_INTERACTION: "1"
+        run: pytest tests/platform/test_real_hotkey.py -v -m interaction
 
   end-to-end:
     name: "End-to-End (${{ matrix.os }})"
