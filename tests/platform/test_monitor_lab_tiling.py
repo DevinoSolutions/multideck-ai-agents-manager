@@ -66,10 +66,17 @@ _MATERIALIZE_TIMEOUT = 90  # s: slow CI VMs are slow to paint wt windows
 # The layout zoo: each entry is the list of virtual displays to add, as
 # (width, height, dpi_percent). Positioned left-to-right by the lab; the
 # runner's own (primary) monitor stays monitor 0.
+#
+# Every (resolution, dpi) here must be PHYSICALLY ACHIEVABLE on Windows: a
+# panel cannot scale above the DPI at which its effective resolution drops
+# below the OS minimum (~1024x768). e.g. 1280x720 cannot exceed 100% -- so the
+# live triple uses 2560x1440@125 (effective 2048x1152). The OFFLINE grid-math
+# test (tests/unit/test_monitor_lab_topologies.py) is free to pin synthetic,
+# hardware-impossible topologies like 720p@125 to exercise column collapse.
 ZOO: dict[str, list[tuple[int, int, int]]] = {
     "dual_mixed_dpi": [(1920, 1080, 100), (2560, 1440, 150)],
     "solo_4k": [(3840, 2160, 200)],
-    "triple_720p": [(1280, 720, 125), (1280, 720, 125), (1280, 720, 125)],
+    "triple_1440p_125": [(2560, 1440, 125), (2560, 1440, 125), (2560, 1440, 125)],
 }
 
 
