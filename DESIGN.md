@@ -629,11 +629,12 @@ box to run it, the same never-on-a-dev-box posture as `needs_ssh` /
 `monitor_lab`. The upload server's no-token loopback+tailnet bind is exercised
 as-is; no auth was added and the default bind logic was not touched.
 
-**Nine findings carried open into the next audit cycle** (deliberately
+**Ten findings carried open into the next audit cycle** (deliberately
 triaged out of the fix pass that produced this document, not overlooked):
 
 | Item (provenance) | Substance |
 |---|---|
+| Phantom `state-sink.mjs` writer (F-NC-001) | **The out-of-repo writer multideck's docs name — `state-sink.mjs`, shipped by `ai-agent-notifier` — does not exist.** Driving the real published `ai-agent-notifier@1.0.6` under node (`tests/e2e/test_state_sink_contract.py`) shows its only hook is `src/notify.mjs`, a pure notifier (toast/ntfy/bell) that writes `~/.ai-agent-notifier/.lock-<source>` and **nothing** to `~/.multideck/state/`. So a user who wires only `ai-agent-notifier` per README "Where agent states come from" gets an EMPTY state store and a blank `watch`/`attention`. The `node_contract` tier pins this gap and flips RED when any wired hook starts writing multideck records. Product decision owed: either ship a real state-writer (in `ai-agent-notifier` or elsewhere) or correct multideck's README/`agent_state.py`/`test_agent_state.py`/CLAUDE.md references to `state-sink.mjs`. Codex `notify` (the other named writer) is likewise unverified by any live tier. |
 | `IDE_TOOLS` consolidation (F-CT-003) | IDE-vs-CLI-agent tool identity is string-matched in several places instead of one registry — see Key Decisions. |
 | Upload server per-request logging (F-IC-001) | `UploadHandler.log_message` routes the stdlib HTTP access log to DEBUG level (deliberately quiet at INFO to avoid logging `?project=` query strings) — so per-request errors surface nowhere at the default level; the rotating `upload` log covers lifecycle events only. |
 | Upload retry/robustness (F-IC-003) | The hotkey→server upload path is one HTTP attempt; a flaky mobile/Tailscale link just fails once. |

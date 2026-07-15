@@ -95,6 +95,7 @@ markers = [
     "wt_cold: wt cold-broker pin (first-ever wt launch on a fresh runner; CI-only, gated on MDTEST_WT_COLD=1)",
     "interaction: real-input interaction tests (SendInput + real clipboard; CI-only, gated on MDTEST_INTERACTION=1)",
     "needs_tailscale: e2e tests that require a live Tailscale node (CI-only, gated on MDTEST_TAILSCALE=1; skipped locally)",
+    "node_contract: run the REAL published agent-state writer under real node and check multideck's reader against it (needs node/npm + npm registry; skips cleanly otherwise)",
 ]
 
 [tool.ruff]
