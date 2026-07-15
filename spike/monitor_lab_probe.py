@@ -24,11 +24,15 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import faulthandler
 import json
 import sys
 import threading
 import time
+import traceback
 from ctypes import POINTER, byref, wintypes
+
+faulthandler.enable()
 
 # ---------------------------------------------------------------------------
 # tiny JSON-lines emitter
@@ -45,6 +49,14 @@ def emit(kind: str, **fields: object) -> None:
 def marker(text: str) -> None:
     sys.stdout.write(f"=== {text} ===\n")
     sys.stdout.flush()
+
+
+def _guard(label: str, fn: object) -> None:
+    """Run fn(); never let one stage's exception abort the whole battery."""
+    try:
+        fn()  # type: ignore[operator]
+    except Exception:  # noqa: BLE001 - spike: capture and continue
+        emit("stage_error", stage=label, traceback=traceback.format_exc())
 
 
 # ---------------------------------------------------------------------------
@@ -261,10 +273,49 @@ def full_dump(tag: str) -> None:
 # Q3 — resolution change
 # ---------------------------------------------------------------------------
 
+DM_POSITION = 0x00000020
+DM_BITSPERPEL = 0x00040000
 DM_PELSWIDTH = 0x00080000
 DM_PELSHEIGHT = 0x00100000
 CDS_UPDATEREGISTRY = 0x00000001
+CDS_NORESET = 0x10000000
 CDS_RESET = 0x40000000
+
+# SetDisplayConfig topology flags
+SDC_APPLY = 0x00000080
+SDC_TOPOLOGY_EXTEND = 0x00000004
+
+
+def force_extend_desktop() -> None:
+    """Recompute display topology, extending the desktop onto every connected
+    display (attaches IddCx virtual monitors that arrived but stayed inactive)."""
+    rc = user32.SetDisplayConfig(0, None, 0, None, SDC_APPLY | SDC_TOPOLOGY_EXTEND)
+    emit("force_extend", ret=rc, ok=(rc == 0))
+
+
+def attach_display(device: str, w: int, h: int, x: int, apply_now: bool = False) -> None:
+    """Attach a present-but-inactive display at (x,0) with resolution w x h.
+    Deferred (CDS_NORESET) unless apply_now; caller applies the batch once."""
+    dm = DEVMODEW()
+    dm.dmSize = ctypes.sizeof(DEVMODEW)
+    # seed with a real supported mode if one is enumerable
+    if not user32.EnumDisplaySettingsW(device, 0, byref(dm)):
+        dm = DEVMODEW()
+        dm.dmSize = ctypes.sizeof(DEVMODEW)
+    dm.dmPelsWidth = w
+    dm.dmPelsHeight = h
+    dm.dmBitsPerPel = 32
+    dm.dmPositionX = x
+    dm.dmPositionY = 0
+    dm.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL
+    flags = CDS_UPDATEREGISTRY | (0 if apply_now else CDS_NORESET)
+    ret = user32.ChangeDisplaySettingsExW(device, byref(dm), None, flags, None)
+    emit("attach", device=device, at=[x, 0], res=[w, h], ret_code=ret, ok=(ret == 0))
+
+
+def apply_pending_display_changes() -> None:
+    ret = user32.ChangeDisplaySettingsExW(None, None, None, 0, None)
+    emit("attach_apply", ret_code=ret, ok=(ret == 0))
 
 
 def set_resolution(device: str, w: int, h: int) -> None:
@@ -608,24 +659,31 @@ def open_vdd() -> int | None:
 
 
 def vdd_ioctl(handle: int, code: int, in_buf: bytes = b"") -> int:
+    # Mirrors parsec-vdd core VddIoControl exactly: always a 32-byte zeroed
+    # input buffer, manual-reset event, and GetOverlappedResultEx (NOT a bare
+    # WaitForSingleObject) so OutBuffer is actually committed before we read it.
+    inbuf = ctypes.create_string_buffer(32)
+    if in_buf:
+        ctypes.memmove(inbuf, in_buf, min(len(in_buf), 32))
     out = wintypes.DWORD(0)
     ov = OVERLAPPED()
-    ov.hEvent = kernel32.CreateEventW(None, False, False, None)
-    inp = ctypes.create_string_buffer(in_buf, len(in_buf)) if in_buf else None
-    returned = wintypes.DWORD(0)
+    ov.hEvent = kernel32.CreateEventW(None, True, False, None)  # manual-reset
     kernel32.DeviceIoControl(
         ctypes.c_void_p(handle),
         wintypes.DWORD(code),
-        inp,
-        len(in_buf),
+        inbuf,
+        32,
         byref(out),
         ctypes.sizeof(out),
-        byref(returned),
+        None,
         byref(ov),
     )
-    kernel32.WaitForSingleObject(ov.hEvent, 1000)
+    transferred = wintypes.DWORD(0)
+    ok = kernel32.GetOverlappedResultEx(
+        ctypes.c_void_p(handle), byref(ov), byref(transferred), 5000, False
+    )
     kernel32.CloseHandle(ov.hEvent)
-    return out.value
+    return out.value if ok else -1
 
 
 def vdd_version(handle: int) -> int:
@@ -651,16 +709,17 @@ class Pinger(threading.Thread):
         self._stop = threading.Event()
 
     def run(self) -> None:
+        # parsec-vdd drops any added display if not pinged within ~100ms.
         while not self._stop.is_set():
             vdd_ioctl(self.handle, VDD_IOCTL_UPDATE)
-            self._stop.wait(0.2)
+            self._stop.wait(0.05)
 
     def stop(self) -> None:
         self._stop.set()
 
 
-def _parsec_devices() -> list[str]:
-    r"""active \\.\DISPLAYn whose adapter DeviceString names Parsec."""
+def _parsec_devices(active_only: bool = True) -> list[str]:
+    r"""\\.\DISPLAYn whose adapter DeviceString names Parsec (active or present)."""
     names: list[str] = []
     i = 0
     while True:
@@ -668,8 +727,9 @@ def _parsec_devices() -> list[str]:
         dd.cb = ctypes.sizeof(DISPLAY_DEVICEW)
         if not user32.EnumDisplayDevicesW(None, i, byref(dd), 0):
             break
-        if "parsec" in dd.DeviceString.lower() and (dd.StateFlags & 0x1):
-            names.append(dd.DeviceName)
+        if "parsec" in dd.DeviceString.lower():
+            if not active_only or (dd.StateFlags & 0x1):
+                names.append(dd.DeviceName)
         i += 1
     return names
 
@@ -693,35 +753,52 @@ def cmd_parsec_battery(count: int) -> int:
         idx = vdd_add(handle)
         added.append(idx)
         emit("parsec_add", index=idx)
-        time.sleep(1.0)
-    time.sleep(4.0)  # let Windows attach the monitors
-    full_dump("after-parsec-add")
-    parsec_devs = _parsec_devices()
-    emit("parsec_devices", devices=parsec_devs, added_indices=added)
+        time.sleep(2.0)  # give IddCx time to register the monitor arrival
+    time.sleep(3.0)
+
+    # IddCx monitors can arrive "connected" but inactive on a headless runner;
+    # force the desktop to extend onto them, then explicitly attach+position
+    # any that are still inactive (this doubles as the Q3 per-monitor res set).
+    _guard("force-extend", force_extend_desktop)
+    time.sleep(2.0)
+    present = _parsec_devices(active_only=False)
+    emit("parsec_present", devices=present)
+    targets = [(1920, 1080), (2560, 1440), (1280, 720), (3840, 2160)]
+    x = 1024  # start to the right of the runner's default 1024x768 primary
+    for dev, (w, h) in zip(present, targets):
+        _guard(f"attach {dev}", lambda d=dev, w=w, h=h, xx=x: attach_display(d, w, h, xx))
+        x += w
+    _guard("apply", apply_pending_display_changes)
+    time.sleep(3.0)
+
+    _guard("dump-after-add", lambda: full_dump("after-parsec-add"))
+    parsec_active = _parsec_devices(active_only=True)
+    emit("parsec_devices", active=parsec_active, present=present, added_indices=added)
     marker(
-        f"Q2 RESULT: {'PASS' if parsec_devs else 'FAIL'} — "
-        f"{len(parsec_devs)} parsec monitor(s) enumerated: {parsec_devs}"
+        f"Q2 RESULT: {'PASS' if parsec_active else 'FAIL'} — "
+        f"{len(parsec_active)} parsec monitor(s) ACTIVE: {parsec_active}"
     )
 
-    marker("Q3 SET DIFFERENT RESOLUTIONS PER VIRTUAL MONITOR")
-    targets = [(1920, 1080), (2560, 1440), (1280, 720), (3840, 2160)]
-    for dev, (w, h) in zip(parsec_devs, targets):
-        set_resolution(dev, w, h)
+    marker("Q3 CONFIRM DIFFERENT RESOLUTIONS PER VIRTUAL MONITOR")
+    res_targets = dict(zip(present, targets))
+    for dev in parsec_active:
+        w, h = res_targets.get(dev, (2560, 1440))
+        _guard(f"setres {dev}", lambda d=dev, w=w, h=h: set_resolution(d, w, h))
     time.sleep(2.0)
-    full_dump("after-setres")
+    _guard("dump-after-setres", lambda: full_dump("after-setres"))
 
     marker("Q4 LIVE PER-MONITOR DPI OVERRIDE")
     dpi_targets = [150, 200, 125, 175]
-    for dev, pct in zip(parsec_devs, dpi_targets):
-        set_dpi(dev, pct)
-    full_dump("after-setdpi")
+    for dev, pct in zip(parsec_active, dpi_targets):
+        _guard(f"setdpi {dev}", lambda d=dev, p=pct: set_dpi(d, p))
+    _guard("dump-after-setdpi", lambda: full_dump("after-setdpi"))
 
     marker("CLEANUP: remove virtual displays")
     for idx in added:
-        vdd_remove(handle, idx)
+        _guard(f"remove {idx}", lambda ix=idx: vdd_remove(handle, ix))
     pinger.stop()
     time.sleep(2.0)
-    full_dump("after-remove")
+    _guard("dump-after-remove", lambda: full_dump("after-remove"))
     kernel32.CloseHandle(ctypes.c_void_p(handle))
     return 0
 
