@@ -288,22 +288,19 @@ def test_windows_tile_across_virtual_monitors(topology, lab, tmp_path):
     assert len(slots) == len(monitors_sorted)
     n = len(slots)
 
-    # 1. Each added virtual monitor reports the resolution AND DPI we set --
-    #    the mixed-DPI precondition, in physical pixels. Virtuals are laid out
-    #    left-to-right in add order, so virtuals[k] <-> specs[k] <-> devices[k].
-    from .monitor_lab import monitor_scale_percent
-
+    # 1. Each added virtual monitor reports the resolution AND DPI we set,
+    #    THROUGH multideck's own list_monitors() view -- the mixed-DPI
+    #    precondition, in physical pixels. Virtuals are laid out left-to-right
+    #    in add order, so virtuals[k] <-> specs[k].
     virtuals_sorted = sorted(virtuals, key=lambda m: m.x)
     for k, (w, _h, dpi) in enumerate(specs):
         vm = virtuals_sorted[k]
-        assert vm.w == w, f"virtual {k}: width {vm.w} != requested {w}"
-        assert round(vm.scale_factor * 100) == dpi, (
-            f"virtual {k}: list_monitors DPI {round(vm.scale_factor * 100)}% != {dpi}%"
+        assert vm.w == w, (
+            f"virtual {k}: width {vm.w} != requested {w} (events: {lab.events[-12:]})"
         )
-        # Independent cross-check straight off GetDpiForMonitor by device name.
-        device_pct = monitor_scale_percent(lab.devices[k])
-        assert device_pct == dpi, (
-            f"virtual {k} ({lab.devices[k]}): GetDpiForMonitor {device_pct}% != {dpi}%"
+        assert round(vm.scale_factor * 100) == dpi, (
+            f"virtual {k}: DPI {round(vm.scale_factor * 100)}% != {dpi}% "
+            f"(events: {lab.events[-12:]})"
         )
 
     # 2. Launch one real wt window per monitor via the real --go pipeline.

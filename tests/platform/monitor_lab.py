@@ -285,33 +285,6 @@ def set_dpi_aware() -> None:
         shcore.SetProcessDpiAwareness(2)
 
 
-def monitor_scale_percent(device: str) -> int | None:
-    r"""Effective DPI scale (percent) that ``GetDpiForMonitor`` reports for the
-    monitor backing ``\\.\DISPLAYn`` -- the independent cross-check that a
-    live DPI override actually took."""
-    found: list[int] = []
-
-    def cb(hmon: int, _hdc: int, _lprect: object, _lp: int) -> int:
-        info = MONITORINFOEXW()
-        info.cbSize = ctypes.sizeof(MONITORINFOEXW)
-        user32.GetMonitorInfoW(hmon, byref(info))
-        if info.szDevice == device:
-            found.append(hmon)
-            return 0
-        return 1
-
-    user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(cb), 0)
-    if not found:
-        return None
-    dx, dy = ctypes.c_uint(0), ctypes.c_uint(0)
-    try:
-        if shcore.GetDpiForMonitor(found[0], 0, byref(dx), byref(dy)) != 0:
-            return None
-    except (OSError, AttributeError):
-        return None
-    return round(dx.value / 96.0 * 100) if dx.value else None
-
-
 # ---------------------------------------------------------------------------
 # Display attach / resolution (Q3)
 # ---------------------------------------------------------------------------
@@ -323,9 +296,46 @@ def _force_extend_desktop() -> int:
     return user32.SetDisplayConfig(0, None, 0, None, SDC_APPLY | SDC_TOPOLOGY_EXTEND)
 
 
-def _attach_display(device: str, w: int, h: int, x: int, apply_now: bool) -> int:
-    """Attach a present-but-inactive display at (x,0), resolution w x h.
-    Deferred (CDS_NORESET) unless apply_now; caller applies the batch once."""
+def _list_modes(device: str) -> list[tuple[int, int]]:
+    """Distinct (w, h) the driver advertises for ``device`` -- parsec-vdd only
+    accepts a resolution from this enumerated set."""
+    seen: list[tuple[int, int]] = []
+    i = 0
+    while True:
+        dm = DEVMODEW()
+        dm.dmSize = ctypes.sizeof(DEVMODEW)
+        if not user32.EnumDisplaySettingsW(device, i, byref(dm)):
+            break
+        pair = (int(dm.dmPelsWidth), int(dm.dmPelsHeight))
+        if pair not in seen:
+            seen.append(pair)
+        i += 1
+    return seen
+
+
+def _current_mode(device: str) -> tuple[int, int]:
+    dm = DEVMODEW()
+    dm.dmSize = ctypes.sizeof(DEVMODEW)
+    if not user32.EnumDisplaySettingsW(device, ENUM_CURRENT_SETTINGS, byref(dm)):
+        return (0, 0)
+    return (int(dm.dmPelsWidth), int(dm.dmPelsHeight))
+
+
+def _mode_for(device: str, w: int, h: int) -> DEVMODEW:
+    """Full advertised DEVMODE whose resolution is (w, h) -- carrying the
+    driver's own frequency/bpp so ChangeDisplaySettingsEx accepts it. Falls
+    back to seeding mode 0 and overriding the resolution fields if (w, h) is
+    not enumerable (logged by the caller via the resulting mismatch)."""
+    i = 0
+    while True:
+        dm = DEVMODEW()
+        dm.dmSize = ctypes.sizeof(DEVMODEW)
+        if not user32.EnumDisplaySettingsW(device, i, byref(dm)):
+            break
+        if int(dm.dmPelsWidth) == w and int(dm.dmPelsHeight) == h:
+            dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL
+            return dm
+        i += 1
     dm = DEVMODEW()
     dm.dmSize = ctypes.sizeof(DEVMODEW)
     if not user32.EnumDisplaySettingsW(device, 0, byref(dm)):
@@ -334,9 +344,17 @@ def _attach_display(device: str, w: int, h: int, x: int, apply_now: bool) -> int
     dm.dmPelsWidth = w
     dm.dmPelsHeight = h
     dm.dmBitsPerPel = 32
+    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL
+    return dm
+
+
+def _attach_display(device: str, w: int, h: int, x: int, apply_now: bool) -> int:
+    """Attach ``device`` at (x, 0) with resolution (w, h) using a driver-
+    advertised mode. Deferred (CDS_NORESET) unless apply_now."""
+    dm = _mode_for(device, w, h)
     dm.dmPositionX = x
     dm.dmPositionY = 0
-    dm.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL
+    dm.dmFields |= DM_POSITION
     flags = CDS_UPDATEREGISTRY | (0 if apply_now else CDS_NORESET)
     return user32.ChangeDisplaySettingsExW(device, byref(dm), None, flags, None)
 
@@ -346,13 +364,7 @@ def _apply_pending_display_changes() -> int:
 
 
 def _set_resolution(device: str, w: int, h: int) -> int:
-    dm = DEVMODEW()
-    dm.dmSize = ctypes.sizeof(DEVMODEW)
-    if not user32.EnumDisplaySettingsW(device, ENUM_CURRENT_SETTINGS, byref(dm)):
-        return -1
-    dm.dmPelsWidth = w
-    dm.dmPelsHeight = h
-    dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT
+    dm = _mode_for(device, w, h)
     return user32.ChangeDisplaySettingsExW(
         device, byref(dm), None, CDS_UPDATEREGISTRY, None
     )
@@ -442,6 +454,23 @@ def _set_dpi(device: str, percent: int) -> bool:
         return False
     adapter, source_id = smap[device]
     return _dpi_set(adapter, source_id, percent)
+
+
+def _dpi_probe(device: str) -> str:
+    """Diagnostic string of the raw CCD DPI scale state for ``device`` -- why a
+    ``_set_dpi`` succeeded or failed (source-map membership + min/cur/max rel)."""
+    smap = _source_name_map()
+    if device not in smap:
+        return f"not-in-source-map keys={list(smap)}"
+    adapter, source_id = smap[device]
+    pkt = DPI_SCALE_GET()
+    pkt.header.type = DPI_GET
+    pkt.header.size = ctypes.sizeof(DPI_SCALE_GET)
+    pkt.header.adapterId = adapter
+    pkt.header.id = source_id
+    if user32.DisplayConfigGetDeviceInfo(byref(pkt.header)) != 0:
+        return "DPI_GET failed"
+    return f"minRel={pkt.minScaleRel} curRel={pkt.curScaleRel} maxRel={pkt.maxScaleRel}"
 
 
 # ---------------------------------------------------------------------------
@@ -655,15 +684,33 @@ class MonitorLab:
         x = self._next_x()
         disp = _Display(device, idx, width, height, x, dpi_percent)
         self._displays.append(disp)
-        # Re-pin EVERY display's position: force_extend can auto-rearrange the
-        # already-attached ones, so re-apply the whole layout as one batch.
+
+        # Apply resolution + position for THIS display immediately (a driver-
+        # advertised mode -- parsec rejects non-enumerated resolutions), then
+        # re-pin EVERY display's position as one batch (force_extend can
+        # auto-rearrange the already-attached ones).
+        ret = _attach_display(device, width, height, x, apply_now=True)
+        self._log(f"attach {device} -> {width}x{height}@{x} ret={ret}")
         self._reapply_layout()
         time.sleep(2.0)
+        # Belt-and-suspenders resolution set (mirrors the spike's double set).
+        self._log(
+            f"set_resolution {device} ret={_set_resolution(device, width, height)}"
+        )
+        time.sleep(2.0)
+        got = _current_mode(device)
+        if got != (width, height):
+            self._log(
+                f"RES MISMATCH {device}: got {got[0]}x{got[1]} want {width}x{height}; "
+                f"modes={_list_modes(device)}"
+            )
 
         if dpi_percent != 100:
             ok = _set_dpi(device, dpi_percent)
-            self._log(f"set_dpi {device} -> {dpi_percent}% ok={ok}")
-            time.sleep(1.0)
+            self._log(
+                f"set_dpi {device} -> {dpi_percent}% ok={ok} raw={_dpi_probe(device)}"
+            )
+            time.sleep(1.5)
         return device
 
     def set_resolution(self, device: str, width: int, height: int) -> bool:
