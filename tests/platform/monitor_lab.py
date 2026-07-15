@@ -594,21 +594,25 @@ class _Pinger(threading.Thread):
         self._stop.set()
 
 
-def _parsec_devices(active_only: bool) -> list[str]:
-    r"""\\.\DISPLAYn whose adapter DeviceString names Parsec (active or present)."""
-    names: list[str] = []
-    i = 0
-    while True:
-        dd = DISPLAY_DEVICEW()
-        dd.cb = ctypes.sizeof(DISPLAY_DEVICEW)
-        if not user32.EnumDisplayDevicesW(None, i, byref(dd), 0):
-            break
-        if "parsec" in dd.DeviceString.lower() and (
-            not active_only or (dd.StateFlags & DISPLAY_DEVICE_ACTIVE)
-        ):
-            names.append(dd.DeviceName)
-        i += 1
-    return names
+def _active_monitors() -> list[tuple[str, bool]]:
+    r"""(\\.\DISPLAYn, is_primary) for every ACTIVE monitor -- the GDI display
+    names that ChangeDisplaySettingsEx / the CCD DPI port actually accept.
+
+    Crucial: the parsec adapter's EnumDisplayDevices ordinal (e.g. DISPLAY10)
+    is NOT a settable display -- once force_extend activates the virtual
+    monitor, Windows assigns it a low active source name (DISPLAY2/3/...). That
+    active szDevice is what every downstream call must target."""
+    out: list[tuple[str, bool]] = []
+
+    def cb(hmon: int, _hdc: int, _lprect: object, _lp: int) -> int:
+        info = MONITORINFOEXW()
+        info.cbSize = ctypes.sizeof(MONITORINFOEXW)
+        user32.GetMonitorInfoW(hmon, byref(info))
+        out.append((info.szDevice, bool(info.dwFlags & MONITORINFOF_PRIMARY)))
+        return 1
+
+    user32.EnumDisplayMonitors(None, None, MONITORENUMPROC(cb), 0)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -673,7 +677,7 @@ class MonitorLab:
         and return its ``\\.\DISPLAYn`` device name."""
         if self._handle is None:
             raise MonitorLabError("lab is not open")
-        before = set(_parsec_devices(active_only=False))
+        before = {name for name, _primary in _active_monitors()}
         idx = _vdd_add(self._handle)
         self._log(f"vdd_add -> index {idx}")
         time.sleep(2.0)  # let IddCx register the monitor arrival
@@ -798,17 +802,23 @@ class MonitorLab:
     # -- internals ---------------------------------------------------------
 
     def _resolve_new_device(self, before: set[str]) -> str:
-        present = _parsec_devices(active_only=False)
+        """The newly-activated non-primary monitor's GDI name (the display that
+        appeared after this vdd_add + force_extend)."""
+        active = _active_monitors()
         known = {d.device for d in self._displays}
-        fresh = [d for d in present if d not in before and d not in known]
+        fresh = [
+            n
+            for n, primary in active
+            if not primary and n not in before and n not in known
+        ]
         if fresh:
             return sorted(fresh)[0]
-        # Fallback: any parsec device we have not positioned yet.
-        unpositioned = [d for d in present if d not in known]
+        # Fallback: any active non-primary display we have not positioned yet.
+        unpositioned = [n for n, primary in active if not primary and n not in known]
         if unpositioned:
             return sorted(unpositioned)[0]
         raise MonitorLabError(
-            f"no new parsec device appeared after add (present={present})"
+            f"no new active display appeared after add; active={active}"
         )
 
     def _next_x(self) -> int:
