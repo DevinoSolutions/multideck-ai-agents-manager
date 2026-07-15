@@ -1,0 +1,114 @@
+{
+  "layout": {
+    "cols": 3,
+    "rows": 1
+  },
+  "monitors": [
+    {
+      "x": 0,
+      "y": 0,
+      "w": 1920,
+      "h": 1080,
+      "is_primary": true,
+      "scale_factor": 1.0
+    },
+    {
+      "x": 1920,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "is_primary": false,
+      "scale_factor": 1.25
+    },
+    {
+      "x": 3200,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "is_primary": false,
+      "scale_factor": 1.25
+    },
+    {
+      "x": 4480,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "is_primary": false,
+      "scale_factor": 1.25
+    }
+  ],
+  "expected_slots": [
+    {
+      "x": 0,
+      "y": 0,
+      "w": 640,
+      "h": 1080,
+      "monitor_index": 0,
+      "label": "r1c1"
+    },
+    {
+      "x": 640,
+      "y": 0,
+      "w": 640,
+      "h": 1080,
+      "monitor_index": 0,
+      "label": "r1c2"
+    },
+    {
+      "x": 1280,
+      "y": 0,
+      "w": 640,
+      "h": 1080,
+      "monitor_index": 0,
+      "label": "r1c3"
+    },
+    {
+      "x": 1920,
+      "y": 0,
+      "w": 640,
+      "h": 720,
+      "monitor_index": 1,
+      "label": "r1c1"
+    },
+    {
+      "x": 2560,
+      "y": 0,
+      "w": 640,
+      "h": 720,
+      "monitor_index": 1,
+      "label": "r1c2"
+    },
+    {
+      "x": 3200,
+      "y": 0,
+      "w": 640,
+      "h": 720,
+      "monitor_index": 2,
+      "label": "r1c1"
+    },
+    {
+      "x": 3840,
+      "y": 0,
+      "w": 640,
+      "h": 720,
+      "monitor_index": 2,
+      "label": "r1c2"
+    },
+    {
+      "x": 4480,
+      "y": 0,
+      "w": 640,
+      "h": 720,
+      "monitor_index": 3,
+      "label": "r1c1"
+    },
+    {
+      "x": 5120,
+      "y": 0,
+      "w": 640,
+      "h": 720,
+      "monitor_index": 3,
+      "label": "r1c2"
+    }
+  ]
+}

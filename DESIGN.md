@@ -499,13 +499,31 @@ time. The flash (and toast/ntfy when enabled) are the *reliable* signals;
 the badge is best-effort ambience. Revisit only if a real terminal in the
 fleet proves badge-hostile in practice.
 
-**CI multi-monitor emulation is unavailable (R4-05 → documented limitation,
-2026-07-07):** hosted GitHub runners do not materialize `xrandr --setmonitor`
-VIRTUAL monitors under Xvfb, so the platform/e2e CI legs exercise windowing
-against a single screen; `setup-virtual-displays` emits a loud `::warning`
-when this happens instead of pretending otherwise. Multi-monitor placement
-logic is covered by `FakePlatform` unit tests only. A real multi-monitor CI
-story (self-hosted runner or a working RANDR emulation) is next-cycle work.
+**CI multi-monitor emulation is unavailable on the SHARED legs (R4-05 →
+partially closed on Windows, 2026-07-15):** hosted GitHub runners do not
+materialize `xrandr --setmonitor` VIRTUAL monitors under Xvfb, so the
+platform/e2e CI legs exercise windowing against a single screen;
+`setup-virtual-displays` emits a loud `::warning` when this happens instead of
+pretending otherwise.
+
+*What is now closed (Windows):* the dedicated `monitor-lab` CI job
+(windows-latest, not a required check) installs the parsec-vdd virtual-display
+driver and fabricates a mixed-DPI, multi-monitor topology in-process, then
+drives multideck's REAL `--go` launch+tile pipeline across it and asserts each
+window rect lands in its `compute_grid` cell in physical pixels
+(`tests/platform/test_monitor_lab_tiling.py`, engine in
+`tests/platform/monitor_lab.py`). The offline grid-math layer is pinned
+everywhere by `tests/unit/test_monitor_lab_topologies.py`, which feeds
+committed golden topologies (`tests/platform/fixtures/topologies/*.json`) into
+`compute_grid` and locks the mixed-DPI slot arithmetic + per-monitor
+column-collapse. `FakePlatform` unit tests still cover the placement logic on
+every OS/leg.
+
+*What remains open:* macOS has no equivalent virtual-display lab (no
+parsec-vdd analogue wired up), and the Linux/RANDR emulation path under Xvfb is
+still unmaterialized — a real multi-monitor story on those two platforms
+(self-hosted runner or a working RANDR emulation) is future work; do not build
+it in the Windows tier.
 
 **macOS has no window-over-SSH e2e coverage (documented limitation,
 2026-07-10):** the real-SSH e2e tier (`tests/e2e/test_ssh_real.py`, over the

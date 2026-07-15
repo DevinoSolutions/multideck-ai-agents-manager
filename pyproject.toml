@@ -81,6 +81,7 @@ markers = [
     "e2e: end-to-end tests (full pipeline)",
     "needs_ssh: e2e tests that require a live SSH server (skipped locally by the ssh_available fixture)",
     "dist: packaged-install tests (build wheel -> pristine no-extras venv -> real installed entry point)",
+    "monitor_lab: virtual-monitor lab tests (install parsec-vdd; CI-only, gated on MDTEST_MONITOR_LAB=1)",
 ]
 
 [tool.ruff]
