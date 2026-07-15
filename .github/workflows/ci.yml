@@ -139,3 +139,28 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pip install build
       - run: pytest tests/dist/ -v -m dist
+
+  monitor-lab:
+    name: "Monitor Lab (windows-latest)"
+    # NOT a required check by design: installs the parsec-vdd virtual-display
+    # driver on a throwaway hosted runner to fabricate a mixed-DPI multi-monitor
+    # topology, then drives multideck's real launch+tile pipeline over it. The
+    # runner is discarded at job end; the driver is never installed on a dev box
+    # (the tier skips cleanly without MDTEST_MONITOR_LAB=1). Generous timeout:
+    # driver install (~15s) + per-topology display settle add up.
+    timeout-minutes: 30
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # wt is needed for the REAL --go window-spawn legs; the fixture installs
+      # the parsec-vdd driver itself (pinned URL + sha256, silent /S).
+      - name: Install terminal emulators
+        uses: ./.github/actions/install-terminals
+      - name: Run monitor-lab tier
+        env:
+          MDTEST_MONITOR_LAB: "1"
+        run: pytest tests/platform/test_monitor_lab_tiling.py -m monitor_lab -q
