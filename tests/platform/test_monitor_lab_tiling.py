@@ -15,53 +15,35 @@ runner that is discarded at job end). NEVER set that variable or install
 parsec-vdd on a real dev machine to run these locally -- without the variable
 the whole module skips cleanly. The offline grid-math half lives in
 ``tests/unit/test_monitor_lab_topologies.py`` and runs everywhere.
+
+The driver install, the ``lab`` session fixture (shared with the doctor-replay
+tier so the driver installs once), and the real-window helpers live in
+``lab_harness.py`` / ``conftest.py``.
 """
 
 from __future__ import annotations
 
-import ctypes
-import hashlib
 import json
-import os
 import shutil
 import subprocess
 import sys
 import time
-import urllib.request
 import uuid
-import zipfile
-from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import pytest
 
-if TYPE_CHECKING:
-    from pathlib import Path
-
-pytestmark = [
-    pytest.mark.monitor_lab,
-    pytest.mark.skipif(
-        sys.platform != "win32", reason="virtual-monitor lab is win32-only"
-    ),
-    pytest.mark.skipif(
-        os.environ.get("MDTEST_MONITOR_LAB") != "1",
-        reason=(
-            "monitor-lab tier installs the parsec-vdd display driver; CI-only "
-            "(set MDTEST_MONITOR_LAB=1). Never enable on a dev machine."
-        ),
-    ),
-]
-
-# Pinned parsec-vdd release (WHQL-signed, silent /S install, no reboot).
-_PARSEC_URL = (
-    "https://github.com/nomi-san/parsec-vdd/releases/download/v0.45.1/"
-    "ParsecVDisplay-v0.45-portable.zip"
+from . import lab_harness
+from .lab_harness import (
+    assert_in_slot,
+    child_env,
+    close_and_verify_gone,
+    emit_events,
+    md_handles,
+    wait_until,
+    window_rect,
 )
-_PARSEC_SHA256 = "9792e4121d85ed3e4c40c2d8ba36ec8657e13227a8357d719d923e801238ccdd"
 
-_WM_CLOSE = 0x0010
-_EDGE_TOL = 100  # px: window chrome / DPI rounding slack per edge
-_MATERIALIZE_TIMEOUT = 90  # s: slow CI VMs are slow to paint wt windows
+pytestmark = lab_harness.PYTESTMARK
 
 # The layout zoo: each entry is the list of virtual displays to add, as
 # (width, height, dpi_percent). Positioned left-to-right by the lab; the
@@ -78,175 +60,6 @@ ZOO: dict[str, list[tuple[int, int, int]]] = {
     "solo_4k": [(3840, 2160, 200)],
     "triple_1440p_125": [(2560, 1440, 125), (2560, 1440, 125), (2560, 1440, 125)],
 }
-
-
-# --------------------------------------------------------------------------- #
-# driver install (session-scoped, in the fixture per the tier's contract)
-# --------------------------------------------------------------------------- #
-
-
-def _install_parsec_vdd(workdir: Path) -> None:
-    zip_path = workdir / "parsec.zip"
-    urllib.request.urlretrieve(_PARSEC_URL, zip_path)  # pinned https, sha256 below
-    digest = hashlib.sha256(zip_path.read_bytes()).hexdigest()
-    if digest != _PARSEC_SHA256:
-        raise AssertionError(
-            f"parsec-vdd zip sha256 mismatch: got {digest}, want {_PARSEC_SHA256}"
-        )
-    extract = workdir / "parsec"
-    with zipfile.ZipFile(zip_path) as zf:
-        zf.extractall(extract)
-    installers = list(extract.rglob("parsec-vdd-*.exe"))
-    if not installers:
-        raise AssertionError("parsec-vdd installer not found in portable zip")
-    proc = subprocess.run(
-        [str(installers[0]), "/S"], capture_output=True, timeout=180, check=False
-    )
-    assert proc.returncode == 0, f"parsec-vdd silent install failed: {proc.returncode}"
-    time.sleep(15)  # driver store settle (~15s once, per the spike)
-
-
-@pytest.fixture(scope="session")
-def lab(tmp_path_factory):
-    """Install the driver, open the lab (handle + keep-alive pinger), yield the
-    controller, and fully tear down (reset DPI, remove displays, close handle)
-    even if a test explodes."""
-    from .monitor_lab import MonitorLab, MonitorLabError
-
-    workdir = tmp_path_factory.mktemp("parsec")
-    _install_parsec_vdd(workdir)
-    try:
-        controller = MonitorLab().open()
-    except MonitorLabError as exc:  # pragma: no cover - install/driver failure
-        pytest.fail(f"could not open the virtual-display lab: {exc}")
-    try:
-        yield controller
-    finally:
-        controller.clear()
-        _emit_events(controller, "session-teardown")
-
-
-def _emit_events(controller, tag: str) -> None:
-    """Surface the lab's structured event log as a CI ``::warning`` -- the lab
-    never writes to stdout, so this is the one diagnostic channel."""
-    if controller.events:
-        joined = " | ".join(controller.events[-40:])
-        print(f"::warning title=monitor-lab {tag}::{joined}")  # noqa: T201  # reason: GitHub Actions ::warning marker is the lab diagnostic channel
-
-
-# --------------------------------------------------------------------------- #
-# real-window helpers (physical rects via Win32, mirrors test_real_launch.py)
-# --------------------------------------------------------------------------- #
-
-
-@dataclass
-class _Rect:
-    left: int
-    top: int
-    right: int
-    bottom: int
-
-    @property
-    def cx(self) -> float:
-        return (self.left + self.right) / 2
-
-    @property
-    def cy(self) -> float:
-        return (self.top + self.bottom) / 2
-
-
-def _window_rect(hwnd) -> _Rect:
-    class RECT(ctypes.Structure):
-        _fields_ = [
-            ("left", ctypes.c_long),
-            ("top", ctypes.c_long),
-            ("right", ctypes.c_long),
-            ("bottom", ctypes.c_long),
-        ]
-
-    rect = RECT()
-    assert ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    return _Rect(rect.left, rect.top, rect.right, rect.bottom)
-
-
-def _child_env(home: Path) -> dict[str, str]:
-    env = {
-        k: v for k, v in os.environ.items() if not k.upper().startswith("MULTIDECK_")
-    }
-    home_s = str(home)
-    drive, tail = os.path.splitdrive(home_s)
-    env["USERPROFILE"] = home_s
-    env["HOMEDRIVE"] = drive
-    env["HOMEPATH"] = tail or "\\"
-    env["HOME"] = home_s
-    return env
-
-
-def _wait_until(check, timeout: float, interval: float = 1.0):
-    deadline = time.monotonic() + timeout
-    while True:
-        result = check()
-        if result:
-            return result
-        if time.monotonic() >= deadline:
-            return result
-        time.sleep(interval)
-
-
-def _md_handles(plat, titles: list[str]) -> dict[str, object]:
-    snap = plat.snapshot_windows()
-    return {t: snap[t] for t in titles if t in snap}
-
-
-def _cmd_procs_with(marker: str) -> list[int]:
-    query = (
-        "Get-CimInstance Win32_Process -Filter \"Name='cmd.exe'\" | "
-        "ForEach-Object { if ($_.CommandLine -like '*" + marker + "*') "
-        "{ $_.ProcessId } } | ConvertTo-Json -Compress"
-    )
-    r = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", query],
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
-    out = (r.stdout or "").strip()
-    if not out:
-        return []
-    data = json.loads(out)
-    return [data] if isinstance(data, int) else list(data)
-
-
-def _close_and_verify_gone(plat, titles: list[str], marker: str) -> list[str]:
-    for hwnd in _md_handles(plat, titles).values():
-        ctypes.windll.user32.PostMessageW(hwnd, _WM_CLOSE, 0, 0)
-    _wait_until(lambda: not _md_handles(plat, titles), timeout=15)
-    for pid in _cmd_procs_with(marker):
-        subprocess.run(
-            ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, check=False
-        )
-    _wait_until(
-        lambda: not _md_handles(plat, titles) and not _cmd_procs_with(marker),
-        timeout=15,
-    )
-    leftovers = [f"window {t}" for t in _md_handles(plat, titles)]
-    leftovers += [f"process pid={p}" for p in _cmd_procs_with(marker)]
-    return leftovers
-
-
-def _assert_in_slot(rect: _Rect, slot, label: str) -> None:
-    assert abs(rect.left - slot.x) <= _EDGE_TOL, (
-        f"{label}: left {rect.left} vs {slot.x}"
-    )
-    assert abs(rect.top - slot.y) <= _EDGE_TOL, f"{label}: top {rect.top} vs {slot.y}"
-    assert abs(rect.right - (slot.x + slot.w)) <= _EDGE_TOL, (
-        f"{label}: right {rect.right} vs {slot.x + slot.w}"
-    )
-    assert abs(rect.bottom - (slot.y + slot.h)) <= _EDGE_TOL, (
-        f"{label}: bottom {rect.bottom} vs {slot.y + slot.h}"
-    )
-    assert slot.x <= rect.cx <= slot.x + slot.w, f"{label}: center_x outside its cell"
-    assert slot.y <= rect.cy <= slot.y + slot.h, f"{label}: center_y outside its cell"
 
 
 # --------------------------------------------------------------------------- #
@@ -351,15 +164,15 @@ def test_windows_tile_across_virtual_monitors(topology, lab, tmp_path):
             capture_output=True,
             text=True,
             timeout=300,
-            env=_child_env(home),
+            env=child_env(home),
         )
         assert result.returncode == 0, (
             f"--go failed\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
         )
 
-        handles = _wait_until(
-            lambda: (h := _md_handles(plat, titles)) and len(h) == n and h,
-            timeout=_MATERIALIZE_TIMEOUT,
+        handles = wait_until(
+            lambda: (h := md_handles(plat, titles)) and len(h) == n and h,
+            timeout=lab_harness.MATERIALIZE_TIMEOUT,
         )
         assert handles, (
             f"expected {n} windows {titles}; visible md: windows: "
@@ -369,9 +182,9 @@ def test_windows_tile_across_virtual_monitors(topology, lab, tmp_path):
         # 3. Each window i sits in slots[i], on monitor i -- physical pixels,
         #    mixed DPI. The virtual-monitor windows (i >= 1) are the payload.
         for i, title in enumerate(titles):
-            _assert_in_slot(_window_rect(handles[title]), slots[i], f"window {i}")
+            assert_in_slot(window_rect(handles[title]), slots[i], f"window {i}")
             assert slots[i].monitor_index == i
     finally:
-        leftovers = _close_and_verify_gone(plat, titles, marker)
-        _emit_events(lab, f"after {'-'.join(str(s) for s in specs[0])}")
+        leftovers = close_and_verify_gone(plat, titles, marker)
+        emit_events(lab, f"after {'-'.join(str(s) for s in specs[0])}")
         assert not leftovers, f"cleanup left windows/processes behind: {leftovers}"

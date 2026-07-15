@@ -19,8 +19,10 @@ from multideck.cli.doctor import (
     _check_monitors,
     _check_tailscale,
     _check_upload_port,
+    _monitor_topology,
 )
 from multideck.config import SCHEMA_VERSION, load_config
+from multideck.grid import MonitorRect
 from tests.conftest import FakePlatform
 
 
@@ -106,6 +108,93 @@ class TestCheckMonitors:
         fp = FakePlatform()
         monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
         assert _check_monitors()[0] == OK
+
+
+class TestMonitorTopology:
+    """The additive `monitors` key: exact `grid.MonitorRect` fields, and a
+    never-crash contract when the platform probe fails or finds nothing."""
+
+    def _two_monitors(self) -> list[MonitorRect]:
+        return [
+            MonitorRect(x=0, y=0, w=1920, h=1200, is_primary=True, scale_factor=1.5),
+            MonitorRect(
+                x=-2560, y=0, w=2560, h=1440, is_primary=False, scale_factor=1.0
+            ),
+        ]
+
+    def test_topology_dicts_carry_every_monitorrect_field(self, monkeypatch):
+        fp = FakePlatform(monitors=self._two_monitors())
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        topo = _monitor_topology()
+        assert topo == [
+            {
+                "x": 0,
+                "y": 0,
+                "w": 1920,
+                "h": 1200,
+                "is_primary": True,
+                "scale_factor": 1.5,
+            },
+            {
+                "x": -2560,
+                "y": 0,
+                "w": 2560,
+                "h": 1440,
+                "is_primary": False,
+                "scale_factor": 1.0,
+            },
+        ]
+
+    def test_empty_when_no_monitors(self, monkeypatch):
+        fp = FakePlatform(monitors=[])
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        assert _monitor_topology() == []
+
+    def test_never_crashes_on_probe_failure(self, monkeypatch):
+        class _Boom:
+            def list_monitors(self):
+                raise OSError("no display")
+
+        monkeypatch.setattr("multideck.platform.get_platform", _Boom)
+        assert _monitor_topology() == []
+
+    def test_json_envelope_is_additive_and_includes_monitors(
+        self, runner, monkeypatch, tmp_config
+    ):
+        fp = FakePlatform(monitors=self._two_monitors())
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        monkeypatch.setattr("multideck.cli.background._probe_port", lambda _p: False)
+        monkeypatch.setattr(
+            "multideck.cli.background._running_upload_port", lambda: None
+        )
+        config_path = tmp_config(
+            {"version": SCHEMA_VERSION, "projects": [{"path": "api"}]}
+        )
+
+        result = runner.invoke(cli.main, ["--config", config_path, "doctor", "--json"])
+
+        payload = json.loads(result.stdout)
+        # existing keys unchanged (purely additive)
+        assert set(payload) == {"ok", "checks", "failures", "monitors"}
+        assert payload["ok"] is True
+        assert len(payload["monitors"]) == 2
+        assert payload["monitors"][0]["scale_factor"] == 1.5
+
+    def test_human_output_lists_each_monitor(self, runner, monkeypatch, tmp_config):
+        fp = FakePlatform(monitors=self._two_monitors())
+        monkeypatch.setattr("multideck.platform.get_platform", lambda: fp)
+        monkeypatch.setattr("multideck.cli.background._probe_port", lambda _p: False)
+        monkeypatch.setattr(
+            "multideck.cli.background._running_upload_port", lambda: None
+        )
+        config_path = tmp_config(
+            {"version": SCHEMA_VERSION, "projects": [{"path": "api"}]}
+        )
+
+        result = runner.invoke(cli.main, ["--config", config_path, "doctor"])
+
+        assert "1920x1200 @ (0,0) 150% *primary" in result.output
+        assert "2560x1440 @ (-2560,0) 100%" in result.output
 
 
 def _tailscale_cp(returncode: int, stdout: str) -> subprocess.CompletedProcess[str]:

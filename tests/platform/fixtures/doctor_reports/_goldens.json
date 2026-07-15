@@ -1,0 +1,286 @@
+{
+  "layout": {
+    "cols": 3,
+    "rows": 2
+  },
+  "slots": {
+    "laptop_plus_external_left": [
+      {
+        "x": -2560,
+        "y": 0,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 0,
+        "label": "r1c1"
+      },
+      {
+        "x": -1707,
+        "y": 0,
+        "w": 854,
+        "h": 720,
+        "monitor_index": 0,
+        "label": "r1c2"
+      },
+      {
+        "x": -853,
+        "y": 0,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 0,
+        "label": "r1c3"
+      },
+      {
+        "x": -2560,
+        "y": 720,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 0,
+        "label": "r2c1"
+      },
+      {
+        "x": -1707,
+        "y": 720,
+        "w": 854,
+        "h": 720,
+        "monitor_index": 0,
+        "label": "r2c2"
+      },
+      {
+        "x": -853,
+        "y": 720,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 0,
+        "label": "r2c3"
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "w": 960,
+        "h": 600,
+        "monitor_index": 1,
+        "label": "r1c1"
+      },
+      {
+        "x": 960,
+        "y": 0,
+        "w": 960,
+        "h": 600,
+        "monitor_index": 1,
+        "label": "r1c2"
+      },
+      {
+        "x": 0,
+        "y": 600,
+        "w": 960,
+        "h": 600,
+        "monitor_index": 1,
+        "label": "r2c1"
+      },
+      {
+        "x": 960,
+        "y": 600,
+        "w": 960,
+        "h": 600,
+        "monitor_index": 1,
+        "label": "r2c2"
+      }
+    ],
+    "solo_4k_175": [
+      {
+        "x": 0,
+        "y": 0,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 0,
+        "label": "r1c1"
+      },
+      {
+        "x": 1280,
+        "y": 0,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 0,
+        "label": "r1c2"
+      },
+      {
+        "x": 2560,
+        "y": 0,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 0,
+        "label": "r1c3"
+      },
+      {
+        "x": 0,
+        "y": 1080,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 0,
+        "label": "r2c1"
+      },
+      {
+        "x": 1280,
+        "y": 1080,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 0,
+        "label": "r2c2"
+      },
+      {
+        "x": 2560,
+        "y": 1080,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 0,
+        "label": "r2c3"
+      }
+    ],
+    "workstation_triple": [
+      {
+        "x": -1920,
+        "y": 0,
+        "w": 640,
+        "h": 540,
+        "monitor_index": 0,
+        "label": "r1c1"
+      },
+      {
+        "x": -1280,
+        "y": 0,
+        "w": 640,
+        "h": 540,
+        "monitor_index": 0,
+        "label": "r1c2"
+      },
+      {
+        "x": -640,
+        "y": 0,
+        "w": 640,
+        "h": 540,
+        "monitor_index": 0,
+        "label": "r1c3"
+      },
+      {
+        "x": -1920,
+        "y": 540,
+        "w": 640,
+        "h": 540,
+        "monitor_index": 0,
+        "label": "r2c1"
+      },
+      {
+        "x": -1280,
+        "y": 540,
+        "w": 640,
+        "h": 540,
+        "monitor_index": 0,
+        "label": "r2c2"
+      },
+      {
+        "x": -640,
+        "y": 540,
+        "w": 640,
+        "h": 540,
+        "monitor_index": 0,
+        "label": "r2c3"
+      },
+      {
+        "x": 0,
+        "y": 0,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 1,
+        "label": "r1c1"
+      },
+      {
+        "x": 853,
+        "y": 0,
+        "w": 854,
+        "h": 720,
+        "monitor_index": 1,
+        "label": "r1c2"
+      },
+      {
+        "x": 1707,
+        "y": 0,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 1,
+        "label": "r1c3"
+      },
+      {
+        "x": 0,
+        "y": 720,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 1,
+        "label": "r2c1"
+      },
+      {
+        "x": 853,
+        "y": 720,
+        "w": 854,
+        "h": 720,
+        "monitor_index": 1,
+        "label": "r2c2"
+      },
+      {
+        "x": 1707,
+        "y": 720,
+        "w": 853,
+        "h": 720,
+        "monitor_index": 1,
+        "label": "r2c3"
+      },
+      {
+        "x": 2560,
+        "y": 0,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 2,
+        "label": "r1c1"
+      },
+      {
+        "x": 3840,
+        "y": 0,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 2,
+        "label": "r1c2"
+      },
+      {
+        "x": 5120,
+        "y": 0,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 2,
+        "label": "r1c3"
+      },
+      {
+        "x": 2560,
+        "y": 1080,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 2,
+        "label": "r2c1"
+      },
+      {
+        "x": 3840,
+        "y": 1080,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 2,
+        "label": "r2c2"
+      },
+      {
+        "x": 5120,
+        "y": 1080,
+        "w": 1280,
+        "h": 1080,
+        "monitor_index": 2,
+        "label": "r2c3"
+      }
+    ]
+  }
+}

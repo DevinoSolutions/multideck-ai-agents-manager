@@ -127,6 +127,42 @@ def _check_monitors() -> CheckResult:
     return (OK, f"{len(monitors)} monitor(s) detected")
 
 
+def _monitor_topology() -> list[dict[str, object]]:
+    """The live monitor topology as plain dicts (``grid.MonitorRect`` fields),
+    for the doctor --json ``monitors`` key. Never raises: a platform/DPI probe
+    failure degrades to an empty list so doctor always produces a report.
+    """
+    from multideck.platform import get_platform  # heavy subsystem: in-body per policy
+
+    try:
+        monitors = get_platform().list_monitors()
+    except OSError:
+        return []
+    return [
+        {
+            "x": m.x,
+            "y": m.y,
+            "w": m.w,
+            "h": m.h,
+            "is_primary": m.is_primary,
+            "scale_factor": round(m.scale_factor, 4),
+        }
+        for m in monitors
+    ]
+
+
+def _monitor_lines(monitors: list[dict[str, object]]) -> list[str]:
+    """Terse one-line-per-monitor geometry for the human (non-JSON) report."""
+    lines: list[str] = []
+    for m in monitors:
+        x, y, w, h = m["x"], m["y"], m["w"], m["h"]
+        scale = m["scale_factor"]
+        pct = round(scale * 100) if isinstance(scale, (int, float)) else scale
+        tag = " *primary" if m["is_primary"] else ""
+        lines.append(f"{w}x{h} @ ({x},{y}) {pct}%{tag}")
+    return lines
+
+
 def _check_hotkey() -> CheckResult:
     from multideck.platform import get_platform  # heavy subsystem: in-body per policy
 
@@ -230,11 +266,23 @@ def doctor_cmd(ctx: click.Context, as_json: bool) -> None:
     config_file = find_config(ctx.obj.get("config_path"))
     results = _run_checks(config_file)
     failures = sum(1 for r in results if r["status"] == FAIL)
+    monitors = _monitor_topology()
 
     if as_json:
         # P3-04: `ok: true` -- doctor always produces a valid report; the
-        # per-check result lives in `failures` (and the exit code).
-        click.echo(json.dumps({"ok": True, "checks": results, "failures": failures}))
+        # per-check result lives in `failures` (and the exit code). `monitors`
+        # is additive: the exact topology a bug report can replay in the
+        # monitor-lab tier (see tests/platform/doctor_replay.py).
+        click.echo(
+            json.dumps(
+                {
+                    "ok": True,
+                    "checks": results,
+                    "failures": failures,
+                    "monitors": monitors,
+                }
+            )
+        )
         sys.exit(1 if failures else 0)
 
     click.echo(f"  {style('multideck doctor', bold=True)}")
@@ -245,6 +293,8 @@ def doctor_cmd(ctx: click.Context, as_json: bool) -> None:
             f"  {style(mark, fg=color, bold=True)} {r['name']:<12} "
             f"{style(r['detail'], dim=(r['status'] == OK))}"
         )
+    for line in _monitor_lines(monitors):
+        click.echo(f"      {style(line, dim=True)}")
     click.echo()
     if failures:
         click.echo(f"  {style(f'{failures} check(s) failed.', fg='red', bold=True)}")

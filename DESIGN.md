@@ -500,7 +500,8 @@ the badge is best-effort ambience. Revisit only if a real terminal in the
 fleet proves badge-hostile in practice.
 
 **CI multi-monitor emulation is unavailable on the SHARED legs (R4-05 →
-partially closed on Windows, 2026-07-15):** hosted GitHub runners do not
+partially closed on Windows + user-topology replay, 2026-07-15):** hosted
+GitHub runners do not
 materialize `xrandr --setmonitor` VIRTUAL monitors under Xvfb, so the
 platform/e2e CI legs exercise windowing against a single screen;
 `setup-virtual-displays` emits a loud `::warning` when this happens instead of
@@ -518,6 +519,27 @@ committed golden topologies (`tests/platform/fixtures/topologies/*.json`) into
 `compute_grid` and locks the mixed-DPI slot arithmetic + per-monitor
 column-collapse. `FakePlatform` unit tests still cover the placement logic on
 every OS/leg.
+
+*Replaying a user's monitor topology:* `multideck doctor --json` emits the
+live topology under a top-level `monitors` key (list of `grid.MonitorRect`
+fields — `x/y/w/h/is_primary/scale_factor`), so a bug report can hand us the
+reporter's exact setup. `tests/platform/doctor_replay.py` (a pure, POSIX-safe
+planner) parses that blob and maps each monitor to the closest resolution+DPI
+the lab can physically achieve — snapping `scale_factor` to a standard Windows
+step and capping it where the effective resolution would fall below the OS
+~1024×768 floor (e.g. 720p can't exceed 100%). Every divergence is recorded as
+a deviation, never silently approximated. The live tier
+(`tests/platform/test_doctor_replay.py`, same `monitor_lab` gate, sharing the
+one session-scoped `lab` fixture in `tests/platform/conftest.py` so the driver
+still installs once) materializes each committed sample report
+(`tests/platform/fixtures/doctor_reports/*.json`) and runs the same real `--go`
+tiling assertion. One thing the live lab does NOT reproduce: exact report
+*origins* — the runner's own primary is immovable, so displays are replayed
+left-to-right to its right, not at a report's negative-x "left-of-primary"
+coordinates. That origin/arrangement math (the classic tiling bug class) is
+instead pinned OFFLINE by `tests/unit/test_doctor_replay_offline.py`, which
+feeds the same parsed reports through `compute_grid` against committed golden
+slots — negative origins included — and runs everywhere in the unit gate.
 
 *What remains open:* macOS has no equivalent virtual-display lab (no
 parsec-vdd analogue wired up), and the Linux/RANDR emulation path under Xvfb is
