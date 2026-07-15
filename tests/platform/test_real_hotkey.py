@@ -35,10 +35,17 @@ step (same posture as needs_ssh / monitor_lab). Focus quirks are expected on
 hosted runners: every chord attempt re-asserts foreground and the chord is
 retried before failing.
 
-Isolation: every child (serve, hotkey listener) gets a redirected HOME so pid
-files, heartbeats, logs, and the uploads dir land in tmp_path; MULTIDECK_*
-stripped; session/window names uuid-namespaced; cleanup kills exactly the
-children/session/window this test created.
+Real HOME, by necessity (empirically pinned in CI, run 29437354149): psmux
+resolves its ``-L`` socket namespace from USERPROFILE/HOME, so a serve child
+with a redirected HOME looks in a DIFFERENT socket dir and reports the live
+session down (``discover_sessions`` -> "Unknown project"). The chain only
+works when the session creator, the serve process, and the attach client all
+share one profile -- which is exactly production reality (one user). So this
+test uses the runner's REAL home for every party, mirroring the SSH attach
+flagship's posture: additionally gated on ``GITHUB_ACTIONS=true`` /
+``MDTEST_ALLOW_REAL_HOME=1``, uuid-namespaced artifacts, and the chord proof
+is a NEW uploads file (pre-chord snapshot delta) with byte-exact content.
+MULTIDECK_* vars are still stripped from every child.
 """
 
 import contextlib
@@ -50,6 +57,7 @@ import subprocess
 import sys
 import time
 import uuid
+from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
@@ -68,23 +76,26 @@ pytestmark = [
         shutil.which("wt") is None, reason="Windows Terminal (wt) not on PATH"
     ),
     pytest.mark.skipif(psmux.find_psmux() is None, reason="psmux not installed"),
+    # The chain must run against the REAL home (psmux sockets are per-profile;
+    # see module docstring) -- same extra gate as the SSH attach flagship.
+    pytest.mark.skipif(
+        os.environ.get("GITHUB_ACTIONS") != "true"
+        and os.environ.get("MDTEST_ALLOW_REAL_HOME") != "1",
+        reason="touches the real HOME (uploads/pid/logs); CI or "
+        "MDTEST_ALLOW_REAL_HOME=1 only",
+    ),
 ]
 
 _WM_CLOSE = 0x0010
 _CF_DIB = 8
 
 
-def _child_env(home) -> dict[str, str]:
-    env = {
+def _child_env() -> dict[str, str]:
+    """The real environment minus ambient MULTIDECK_* vars. HOME is NOT
+    redirected -- psmux sockets are per-profile (see module docstring)."""
+    return {
         k: v for k, v in os.environ.items() if not k.upper().startswith("MULTIDECK_")
     }
-    home_s = str(home)
-    drive, tail = os.path.splitdrive(home_s)
-    env["USERPROFILE"] = home_s
-    env["HOMEDRIVE"] = drive
-    env["HOMEPATH"] = tail or "\\"
-    env["HOME"] = home_s
-    return env
 
 
 def _wait_until(check, timeout: float, interval: float = 0.5):
@@ -326,9 +337,8 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
 
     proj = tmp_path / f"proj-{unique}"
     proj.mkdir()
-    home = tmp_path / "home"
-    home.mkdir()
-    env = _child_env(home)
+    home = Path.home()  # REAL home: psmux sockets are per-profile (docstring)
+    env = _child_env()
     cfg = tmp_path / "multideck.config.json"
     cfg.write_text(
         json.dumps(
@@ -350,6 +360,8 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
     hotkey_proc = None
     session_created = False
     handles = []
+    uploads = home / ".multideck" / "uploads"
+    pre_existing = set(uploads.glob("*_clipboard.bmp")) if uploads.is_dir() else set()
 
     def _sink(path):
         fh = path.open("wb")
@@ -425,10 +437,18 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
             stderr=_sink(hotkey_err),
         )
         # hotkey.pid is written only AFTER SetWindowsHookExW succeeded -- the
-        # product's own "hook is live" signal.
+        # product's own "hook is live" signal. Real HOME, so require the pid
+        # file to carry OUR child's pid (never a stale leftover).
         pid_file = home / ".multideck" / "hotkey.pid"
-        assert _wait_until(pid_file.exists, timeout=60), (
-            "listener never wrote hotkey.pid (hook install failed?)\n"
+
+        def _hook_live() -> bool:
+            try:
+                return int(pid_file.read_text().strip()) == hotkey_proc.pid
+            except (OSError, ValueError):
+                return False
+
+        assert _wait_until(_hook_live, timeout=60), (
+            "listener never wrote its hotkey.pid (hook install failed?)\n"
             f"listener alive: {hotkey_proc.poll() is None}\n"
             f"listener stdout:\n{_tail(hotkey_out)}\n"
             f"listener stderr:\n{_tail(hotkey_err)}"
@@ -445,14 +465,13 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
 
         # 6. The chord, with focus re-asserted per attempt (hosted-runner
         #    foreground quirks are expected; the assertion stays strict --
-        #    the upload must happen).
-        uploads = home / ".multideck" / "uploads"
-
+        #    the upload must happen). Real HOME, so the proof is a NEW file
+        #    beyond the pre-test snapshot (byte-identity asserted below).
         def _uploaded():
             if not uploads.is_dir():
                 return None
-            files = sorted(uploads.glob("*_clipboard.bmp"))
-            return files[-1] if files else None
+            new = sorted(set(uploads.glob("*_clipboard.bmp")) - pre_existing)
+            return new[-1] if new else None
 
         attempts_log: list[str] = []
         for attempt in range(6):
@@ -511,6 +530,14 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
         for fh in handles:
             with contextlib.suppress(OSError):
                 fh.close()
+        # Real-HOME tidy-up: remove exactly the artifacts this test created
+        # (uploaded file, stale listener pid left by the hard kill).
+        if uploads.is_dir():
+            for f in set(uploads.glob("*_clipboard.bmp")) - pre_existing:
+                with contextlib.suppress(OSError):
+                    f.unlink()
+        with contextlib.suppress(OSError):
+            (home / ".multideck" / "hotkey.pid").unlink()
 
     assert not psmux.has_session(name), f"cleanup left psmux session {name!r} alive"
     assert plat.find_window(title) is None, f"cleanup left window {title!r} open"
