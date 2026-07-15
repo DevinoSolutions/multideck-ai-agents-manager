@@ -160,7 +160,15 @@ jobs:
       # the parsec-vdd driver itself (pinned URL + sha256, silent /S).
       - name: Install terminal emulators
         uses: ./.github/actions/install-terminals
+      # Both live tiers share one driver install + one session-scoped `lab`
+      # fixture (tests/platform/conftest.py): the hand-authored zoo and the
+      # doctor-report replay. One pytest invocation keeps them in the same
+      # session so the parsec-vdd driver installs exactly once.
       - name: Run monitor-lab tier
         env:
           MDTEST_MONITOR_LAB: "1"
-        run: pytest tests/platform/test_monitor_lab_tiling.py -m monitor_lab -q
+        run: >-
+          pytest
+          tests/platform/test_monitor_lab_tiling.py
+          tests/platform/test_doctor_replay.py
+          -m monitor_lab -q

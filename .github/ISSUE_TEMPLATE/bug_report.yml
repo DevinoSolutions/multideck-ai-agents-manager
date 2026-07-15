@@ -53,7 +53,11 @@ body:
     id: doctor
     attributes:
       label: multideck doctor output
-      description: Paste the output of `multideck doctor`. Rendered as code — no backticks needed.
+      description: >
+        Paste the output of `multideck doctor --json`. The `--json` form also
+        captures your exact monitor topology (resolutions, positions, DPI) under
+        the `monitors` key, which lets us replay a tiling bug on your setup.
+        Rendered as code — no backticks needed.
       render: text
     validations:
       required: false
