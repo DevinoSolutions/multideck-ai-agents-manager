@@ -1,6 +1,6 @@
-"""REAL psmux server lifecycle: a uniquely-named detached session brought up
-through the same platform primitive the launch path uses, then interrogated
-and torn down through the psmux module's real subprocess primitives.
+"""REAL psmux lifecycle + full attach chain: sessions brought up through the
+same platform primitives the launch/attach paths use, interrogated and torn
+down through the psmux module's real subprocess primitives.
 
 What this proves (against a live psmux server, zero stubs):
 
@@ -17,6 +17,7 @@ support (macOS/Linux, and CI runners without the binary).
 """
 
 import os
+import shutil
 import time
 import uuid
 from pathlib import Path
@@ -124,3 +125,119 @@ def test_real_session_pane_cwd_and_kill(tmp_path):
             psmux.kill_server(name)  # idempotent; only ever targets our name
 
     assert not psmux.has_session(name), f"cleanup left psmux session {name!r} alive"
+
+
+# --- full chain: create -> attach in a REAL wt window -> teardown -------------
+#
+# What the chain test proves beyond the lifecycle test above (still zero
+# stubs): the ATTACH path. ``platform.attach_psmux`` opens a real Windows
+# Terminal window running ``psmux attach`` against the live session, titled by
+# the product's own ``titles.make_title`` grammar; the window materializes on
+# the real desktop under exactly that ``md:`` title; the psmux server sees a
+# REAL attached client (``list-clients``); and after ``kill_server`` the
+# session is gone and the primitives degrade as promised. Cleanup closes
+# exactly the one uuid-titled window this test opened.
+
+_WM_CLOSE = 0x0010
+
+
+def _list_clients(name: str) -> str:
+    """Raw ``psmux list-clients`` output for a session ("" on error)."""
+    import subprocess
+
+    binary = psmux.find_psmux()
+    assert binary is not None  # module pytestmark guarantees it
+    try:
+        result = subprocess.run(
+            [binary, "-L", name, "list-clients"],
+            capture_output=True,
+            timeout=5,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return (result.stdout or "").strip() if result.returncode == 0 else ""
+
+
+@pytest.mark.skipif(
+    shutil.which("wt") is None, reason="Windows Terminal (wt) not on PATH"
+)
+def test_full_chain_create_attach_in_real_wt_window_teardown(tmp_path):
+    import ctypes
+
+    from multideck.platform import get_platform
+    from multideck.titles import make_title, parse_title
+
+    plat = get_platform()
+    unique = uuid.uuid4().hex[:12]
+    name = f"mdrl-att-{unique}"
+    title = make_title(name)  # the product's title grammar, never hand-built
+    workdir = tmp_path / f"cwd-{unique}"
+    workdir.mkdir()
+
+    created = False
+    try:
+        # 1. Create the detached session through the launch-path primitive.
+        get_platform().launch_psmux_session(
+            [
+                PsmuxWindowOpts(
+                    window_name=name,
+                    cwd=str(workdir),
+                    command=f"rem mdrl-att-{unique}",
+                )
+            ]
+        )
+        created = True
+        assert _wait_until(lambda: psmux.has_session(name), timeout=10), (
+            f"psmux session {name!r} never came up"
+        )
+        # Empirical psmux quirk (pinned): a fresh DETACHED session already
+        # reports one pseudo-client (e.g. "/dev/pts/0: ... pwsh"), so "no
+        # clients before attach" is false. The attach proof below is therefore
+        # a DELTA: the wt attach must add a client beyond this baseline.
+        baseline = {ln for ln in _list_clients(name).splitlines() if ln}
+
+        # 2. Attach through the product attach path: a REAL wt window.
+        plat.attach_psmux(name, title)
+
+        hwnd = _wait_until(lambda: plat.find_window(title), timeout=90)
+        assert hwnd, (
+            f"attach window {title!r} never materialized; md: windows visible: "
+            f"{[t for t in plat.snapshot_windows() if t.startswith('md:')]}"
+        )
+        # The title on the live HWND round-trips through the product grammar.
+        parsed = parse_title(title)
+        assert parsed == (name, None)
+
+        # 3. The psmux server sees a REAL new attached client.
+        def _new_clients() -> set[str]:
+            return {ln for ln in _list_clients(name).splitlines() if ln} - baseline
+
+        clients = _wait_until(_new_clients, timeout=30)
+        assert clients, (
+            f"no NEW client attached to {name!r} after the wt window opened; "
+            f"baseline={sorted(baseline)}, now={_list_clients(name)!r}"
+        )
+
+        # 4. Teardown: detach the client through the product primitive, then
+        #    kill the server and watch the primitives degrade honestly.
+        assert psmux.detach_client(name), "detach_client failed against a live client"
+        assert psmux.kill_server(name), f"kill_server({name!r}) failed"
+        assert _wait_until(lambda: not psmux.has_session(name), timeout=5), (
+            "session still answering after kill_server"
+        )
+    finally:
+        if created:
+            psmux.kill_server(name)
+        # Close exactly our uuid-titled window (the attach client may keep the
+        # tab open after the server dies; wt closeOnExit behavior is not ours
+        # to assert). Verified gone below.
+        hwnd = plat.find_window(title)
+        if hwnd:
+            ctypes.windll.user32.PostMessageW(hwnd, _WM_CLOSE, 0, 0)
+        _wait_until(lambda: plat.find_window(title) is None, timeout=15)
+
+    assert not psmux.has_session(name), f"cleanup left psmux session {name!r} alive"
+    assert plat.find_window(title) is None, f"cleanup left window {title!r} open"
