@@ -140,6 +140,33 @@ jobs:
       - run: pip install build
       - run: pytest tests/dist/ -v -m dist
 
+  browser-upload:
+    name: "Browser Upload (ubuntu-latest)"
+    # NOT a required check by design (same posture as monitor-lab): provisions a
+    # real headless Chromium via Playwright and drives the mobile upload page
+    # end-to-end against a real `multideck serve` on loopback. The tier skips
+    # cleanly on a dev box (no MDTEST_BROWSER / no Playwright); here we install
+    # the browser extra + chromium and stand up a real tmux session as the psmux
+    # shim so session discovery, validation, and injection all hit a live
+    # multiplexer. Every other CI job stays byte-identical.
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,browser]"
+      # Downloads the chromium build + its OS libraries (needs apt, hence --with-deps).
+      - run: python -m playwright install --with-deps chromium
+      # tmux is symlinked in as `psmux` by the test to back a real session.
+      - name: Ensure tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Run browser-upload tier
+        env:
+          MDTEST_BROWSER: "1"
+        run: pytest tests/e2e/test_upload_browser.py -m browser -v
+
   monitor-lab:
     name: "Monitor Lab (windows-latest)"
     # NOT a required check by design: installs the parsec-vdd virtual-display

@@ -567,6 +567,41 @@ when its wire smoke actually passes, so a flaky hosted-runner sshd degrades
 to a loud skip of the real-wire tests instead of a red job (the dry-run ssh
 tests keep running either way).
 
+**Real-PTY menu coverage + real-browser upload coverage (2026-07-15):** two
+tiers close the "we only ever tested this through a fake terminal / at the
+socket layer" gaps.
+
+*Real-PTY interactive menu (`tests/e2e/test_pty_menu.py`, marker `pty`):* every
+prior test of the no-subcommand interactive path went through Click's
+`CliRunner`, where `sys.stdin.isatty()` is False — so the real first-run/menu
+branch in `cli/app.py` never executed the way a user hits it. These tests drive
+the installed `python -m multideck` under a GENUINE pseudo-terminal (pexpect on
+POSIX via `os.forkpty`, pywinpty/ConPTY on Windows; the uniform driver is
+`tests/e2e/_pty.py`), assert on the plain on-screen text (escape sequences
+stripped first, children launched `NO_COLOR=1` so click emits none of its own),
+and — for first run — assert the VALID config the wizard writes to disk. They
+ride the existing `end-to-end` CI job on all three OSes (pywinpty is a
+win32-only marker in the `dev` extra; nothing else changes). No honest gap:
+this is the real terminal, all three flows (seeded-discovery first run, menu
+render + quit, group-submenu round-trip).
+
+*Real-browser upload (`tests/e2e/test_upload_browser.py`, marker `browser`,
+dedicated `browser-upload` ubuntu job, CI-only, gated on `MDTEST_BROWSER=1` +
+present Playwright/chromium):* a real headless Chromium loads the real mobile
+upload page served by a real `multideck serve` on loopback, performs the real
+gesture (tap pill → attach a real PNG → the page's own `fetch('/upload')`
+fires), and the test asserts the bytes the product writes to
+`~/.multideck/uploads` are byte-identical to what was attached, plus the page's
+title/form contract so a template regression fails loudly. *Honest gap (small,
+deliberate):* hosted Linux runners have no `psmux` binary and `LinuxPlatform`
+does not implement `launch_psmux_session`, so the test symlinks real `tmux` in
+as `psmux` and stands up a real detached `tmux` session on a private socket
+(`TMUX_TMPDIR` confined to tmp). Session discovery, upload validation, AND the
+`send-keys` injection therefore all exercise a genuinely live multiplexer — the
+only substitution is the multiplexer *binary's name*, and the deliverable under
+test (the file transfer + on-disk write) is 100% real. The upload server's
+no-token loopback bind is exercised as-is; no auth was added.
+
 **Nine findings carried open into the next audit cycle** (deliberately
 triaged out of the fix pass that produced this document, not overlooked):
 
