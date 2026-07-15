@@ -303,6 +303,13 @@ def _read_log(home, logname: str) -> str:
         return "<no log file>"
 
 
+def _tail(path, limit: int = 2000) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError:
+        return "<no output file>"
+
+
 def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
     import ctypes
 
@@ -342,6 +349,13 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
     serve_proc = None
     hotkey_proc = None
     session_created = False
+    handles = []
+
+    def _sink(path):
+        fh = path.open("wb")
+        handles.append(fh)
+        return fh
+
     try:
         # 1. A LIVE psmux session (the server validates projects against it).
         plat.launch_psmux_session(
@@ -357,6 +371,10 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
         )
 
         # 2. The REAL upload server, as its own process with the tmp HOME.
+        #    Child output goes to files (not PIPEs) so a crash is diagnosable
+        #    from the assertion message without deadlocking on a full pipe.
+        serve_out = tmp_path / "serve.out.log"
+        serve_err = tmp_path / "serve.err.log"
         serve_proc = subprocess.Popen(
             [
                 sys.executable,
@@ -369,27 +387,51 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
                 str(port),
             ],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=_sink(serve_out),
+            stderr=_sink(serve_err),
         )
+
+        def _serve_diag() -> str:
+            return (
+                f"serve alive: {serve_proc.poll() is None} "
+                f"(rc={serve_proc.poll()})\n"
+                f"serve stdout:\n{_tail(serve_out)}\n"
+                f"serve stderr:\n{_tail(serve_err)}\n"
+                f"upload log:\n{_read_log(home, 'upload')}"
+            )
+
+        # Two-phase readiness so a failure names the guilty half: first the
+        # server must answer at all, then it must list our live session.
+        assert _wait_until(
+            lambda: _http_ok(f"{server_url}/api/sessions", '"ok": true'), timeout=60
+        ), f"upload server never answered /api/sessions\n{_serve_diag()}"
         assert _wait_until(
             lambda: _http_ok(f"{server_url}/api/sessions", name), timeout=60
-        ), f"upload server never listed session {name!r} on /api/sessions"
+        ), (
+            f"upload server answered but never listed session {name!r} "
+            f"(discover_sessions found no live psmux session?)\n"
+            f"has_session={psmux.has_session(name)} "
+            f"find_psmux={psmux.find_psmux()!r}\n{_serve_diag()}"
+        )
 
         # 3. The REAL listener, spawned with the product's exact argv
         #    (cli/background._maybe_start_hotkey builds this same command).
+        hotkey_out = tmp_path / "hotkey.out.log"
+        hotkey_err = tmp_path / "hotkey.err.log"
         hotkey_proc = subprocess.Popen(
             [sys.executable, "-m", "multideck", "hotkey", "-s", server_url],
             env=env,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=_sink(hotkey_out),
+            stderr=_sink(hotkey_err),
         )
         # hotkey.pid is written only AFTER SetWindowsHookExW succeeded -- the
         # product's own "hook is live" signal.
         pid_file = home / ".multideck" / "hotkey.pid"
         assert _wait_until(pid_file.exists, timeout=60), (
             "listener never wrote hotkey.pid (hook install failed?)\n"
-            f"listener alive: {hotkey_proc.poll() is None}"
+            f"listener alive: {hotkey_proc.poll() is None}\n"
+            f"listener stdout:\n{_tail(hotkey_out)}\n"
+            f"listener stderr:\n{_tail(hotkey_err)}"
         )
 
         # 4. The REAL md: window via the product attach path; focus it.
@@ -427,8 +469,11 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
             "Alt+V never produced an upload;\n"
             + "\n".join(attempts_log)
             + f"\nlistener alive: {hotkey_proc.poll() is None}"
+            + f"\nlistener stderr:\n{_tail(hotkey_err)}"
             + "\nhotkey log:\n"
             + _read_log(home, "hotkey")
+            + "\nupload log:\n"
+            + _read_log(home, "upload")
         )
 
         # 7a. The uploaded artifact is byte-for-byte the BMP the product's
@@ -463,6 +508,9 @@ def test_real_alt_v_uploads_clipboard_image_into_live_session(tmp_path):
             ctypes.windll.user32.PostMessageW(hwnd, _WM_CLOSE, 0, 0)
         _wait_until(lambda: plat.find_window(title) is None, timeout=15)
         _clear_clipboard()
+        for fh in handles:
+            with contextlib.suppress(OSError):
+                fh.close()
 
     assert not psmux.has_session(name), f"cleanup left psmux session {name!r} alive"
     assert plat.find_window(title) is None, f"cleanup left window {title!r} open"
