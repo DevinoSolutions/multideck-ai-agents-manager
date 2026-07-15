@@ -12,10 +12,6 @@ name: Soak (nightly)
 # attention badge/flash renderers and the SendInput chain actually ship).
 
 on:
-  # TEMP(test/soak-nightly): drives CI on this branch to prove both legs green
-  # before the PR is marked ready — removed in the final cleanup commit.
-  push:
-    branches: [test/soak-nightly]
   schedule:
     # 07:00 UTC — a quiet hour, well clear of the working-day CI peak.
     - cron: "0 7 * * *"
