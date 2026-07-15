@@ -1,9 +1,12 @@
 name: "SPIKE: Monitor Lab (manual only)"
 
-# workflow_dispatch ONLY — this spike must never run on push/PR and must never
-# become a required check. It installs a kernel-adjacent virtual-display driver
-# on a throwaway hosted runner to answer feasibility Q1-Q5; the runner is
-# discarded at job end, so nothing persists.
+# Manual dispatch + a push trigger SCOPED TO THIS SPIKE BRANCH ONLY. It never
+# runs on main or on pull_request, so it never becomes / touches a required
+# check. (A pure workflow_dispatch workflow is not dispatchable until its file
+# lands on the default branch — the branch-scoped push trigger is how this
+# never-merged spike branch gets exercised in CI without going near main.)
+# It installs a kernel-adjacent virtual-display driver on a throwaway hosted
+# runner to answer feasibility Q1-Q5; the runner is discarded at job end.
 on:
   workflow_dispatch:
     inputs:
@@ -11,6 +14,9 @@ on:
         description: "Number of virtual displays to add"
         required: false
         default: "2"
+  push:
+    branches:
+      - "spike/monitor-lab"
 
 permissions:
   contents: read
