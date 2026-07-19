@@ -1,5 +1,5 @@
 """Sentry capturability contract (R2-03/R2-04): errors-only + no-PII init
-config, ERROR-level logging integration, and a loud (never silent)
+config, ERROR-level logging integration, and a console-quiet (but logged)
 missing-sdk path.
 
 Every test injects a FAKE sentry_sdk into sys.modules mirroring the exact
@@ -17,7 +17,7 @@ import sys
 import types
 from typing import TYPE_CHECKING
 
-from multideck.sentry import init_sentry
+from multideck.sentry import SENTRY_INSTALL_HINT, init_sentry
 
 if TYPE_CHECKING:
     import pytest
@@ -124,22 +124,37 @@ class TestCapturabilityContract:
         assert logging_integration.event_level == logging.ERROR
 
 
-class TestMissingSdkIsLoud:
-    """R2-04: sentry-sdk absent must print an install tip and return quietly
-    -- never raise, and never disappear with zero explanation."""
+class TestMissingSdkIsQuietButLogged:
+    """R2-04 (revised): sentry-sdk absent must NEVER nag the console -- init
+    runs at CLI entry for every command, so the old stderr tip taxed unrelated
+    commands like `attach` on every run. The explanation still exists (never
+    silent-with-zero-trace): a rotating-log warning here, plus the actionable
+    hint in `multideck doctor`. init still must not raise."""
 
-    def test_missing_sdk_prints_install_tip_and_does_not_raise(
+    def test_missing_sdk_logs_warning_console_stays_clean(
         self,
         monkeypatch: pytest.MonkeyPatch,
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         monkeypatch.setitem(sys.modules, "sentry_sdk", None)
+        records: list[str] = []
+
+        class _RecordingLogger:
+            def warning(self, msg: str, *args: object) -> None:
+                records.append(msg % args if args else msg)
+
+        monkeypatch.setattr(
+            "multideck.sentry.get_logger", lambda _name: _RecordingLogger()
+        )
 
         init_sentry(_FAKE_DSN)  # must not raise
 
         captured = capsys.readouterr()
-        assert "sentry-sdk is not installed" in captured.err
-        assert 'pip install -e ".[sentry]"' in captured.err
+        assert captured.err == ""
+        assert captured.out == ""
+        assert len(records) == 1
+        assert "sentry-sdk is not installed" in records[0]
+        assert SENTRY_INSTALL_HINT in records[0]
 
 
 class TestNoEagerImport:

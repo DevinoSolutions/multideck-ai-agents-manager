@@ -4,7 +4,10 @@ When MULTIDECK_SENTRY_DSN is unset: zero work, zero imports.
 When set: init with errors-only (no traces), no PII, logging integration
 at ERROR level (captures every logger.exception), excepthook, and
 threading integrations. If the DSN is set but sentry-sdk isn't installed,
-this prints an install tip to stderr rather than silently doing nothing.
+init degrades to a rotating-log warning — never a console nag: init runs
+at CLI entry for EVERY command, so a stderr tip would tax unrelated
+commands (`attach`, `status`, …) for an optional feature the command never
+asked for. The actionable install hint surfaces in `multideck doctor`.
 
 Import this module in-body at CLI entry, after env validation.
 """
@@ -13,7 +16,26 @@ from __future__ import annotations
 
 import logging
 
-import click
+from multideck.log import get_logger
+
+# The hint a USER can act on: the installed-package extra. (A dev checkout
+# would use `pip install -e ".[sentry]"`, but users hitting this run the
+# published wheel — the -e form used to be shown and was wrong for them.)
+SENTRY_INSTALL_HINT = 'pip install "multideck[sentry]"'
+
+
+def sdk_installed() -> bool:
+    """True when the optional ``sentry-sdk`` package is importable — probed
+    via find_spec so the check never actually imports the SDK. Used by
+    `multideck doctor` to surface the DSN-set-but-SDK-missing state."""
+    from importlib.util import find_spec
+
+    try:
+        return find_spec("sentry_sdk") is not None
+    except (ImportError, ValueError):
+        # ValueError: sys.modules["sentry_sdk"] is None (how tests simulate
+        # the package being absent).
+        return False
 
 
 def _release() -> str | None:
@@ -38,10 +60,12 @@ def init_sentry(dsn: str) -> None:
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.threading import ThreadingIntegration
     except ImportError:
-        click.echo(
-            "Sentry DSN is set but sentry-sdk is not installed -- error "
-            'reporting is OFF. Install with: pip install -e ".[sentry]"',
-            err=True,
+        # Quiet degradation by design (was a stderr echo): the console must not
+        # nag on every command; doctor carries the actionable hint.
+        get_logger("sentry").warning(
+            "MULTIDECK_SENTRY_DSN is set but sentry-sdk is not installed -- "
+            "error reporting is OFF. Install: %s",
+            SENTRY_INSTALL_HINT,
         )
         return
 

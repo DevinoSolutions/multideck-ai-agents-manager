@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import types
 from pathlib import Path
 
 from multideck import cli
@@ -17,6 +18,7 @@ from multideck.cli.doctor import (
     _check_agent_tools,
     _check_config,
     _check_monitors,
+    _check_sentry,
     _check_tailscale,
     _check_upload_port,
     _monitor_topology,
@@ -262,6 +264,40 @@ class TestCheckUploadPort:
         assert "occupied" in detail
 
 
+class TestCheckSentry:
+    """The DSN-set-but-SDK-missing state surfaces HERE (with the
+    installed-package hint), never as a per-command stderr nag — see
+    test_sentry.py::TestMissingSdkIsQuietButLogged for the init side."""
+
+    def _fake_env(self, monkeypatch, dsn):
+        monkeypatch.setattr(
+            "multideck.env.get_env", lambda: types.SimpleNamespace(sentry_dsn=dsn)
+        )
+
+    def test_no_dsn_is_ok_and_reports_off(self, monkeypatch):
+        self._fake_env(monkeypatch, None)
+        status, detail = _check_sentry()
+        assert status == OK
+        assert "off" in detail
+
+    def test_dsn_with_sdk_installed_is_ok(self, monkeypatch):
+        self._fake_env(monkeypatch, "https://example@o0.ingest.sentry.io/0")
+        monkeypatch.setattr("multideck.sentry.sdk_installed", lambda: True)
+        status, detail = _check_sentry()
+        assert status == OK
+        assert "active" in detail
+
+    def test_dsn_without_sdk_warns_with_user_install_hint(self, monkeypatch):
+        self._fake_env(monkeypatch, "https://example@o0.ingest.sentry.io/0")
+        monkeypatch.setattr("multideck.sentry.sdk_installed", lambda: False)
+        status, detail = _check_sentry()
+        assert status == WARN
+        assert "sentry-sdk is not installed" in detail
+        assert 'pip install "multideck[sentry]"' in detail
+        # The dev-checkout form must never be shown to users.
+        assert '-e ".[sentry]"' not in detail
+
+
 class TestDoctorCli:
     def _all_ok(self, monkeypatch):
         monkeypatch.setattr(
@@ -339,6 +375,7 @@ class TestDoctorCli:
             "hotkey",
             "logs dir",
             "state dir",
+            "sentry",
             "tailscale",
             "upload port",
         } == names

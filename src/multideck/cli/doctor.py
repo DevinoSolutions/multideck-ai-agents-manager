@@ -200,6 +200,30 @@ def _check_state_dir() -> CheckResult:
     )
 
 
+def _check_sentry() -> CheckResult:
+    """Surface the DSN-set-but-SDK-missing state HERE, not at CLI entry:
+    init_sentry degrades to a log-file warning so everyday commands stay
+    quiet, and doctor is where the actionable hint lives."""
+    from pydantic import ValidationError  # heavy subsystem: in-body per policy
+
+    from multideck import env as env_module  # heavy subsystem: in-body per policy
+    from multideck.sentry import SENTRY_INSTALL_HINT, sdk_installed
+
+    try:
+        dsn = env_module.get_env().sentry_dsn
+    except ValidationError:
+        return (OK, "skipped — environment invalid (see the env check)")
+    if dsn is None:
+        return (OK, "error reporting off (MULTIDECK_SENTRY_DSN not set)")
+    if not sdk_installed():
+        return (
+            WARN,
+            "MULTIDECK_SENTRY_DSN is set but sentry-sdk is not installed — "
+            f"error reporting is OFF. Install: {SENTRY_INSTALL_HINT}",
+        )
+    return (OK, "error reporting active (DSN set, sentry-sdk installed)")
+
+
 def _check_tailscale() -> CheckResult:
     p = tailnet.probe()
     if not p.on_path:
@@ -237,6 +261,7 @@ def _run_checks(config_file: Path) -> list[dict[str, str]]:
         ("hotkey", _check_hotkey),
         ("logs dir", _check_logs_dir),
         ("state dir", _check_state_dir),
+        ("sentry", _check_sentry),
         ("tailscale", _check_tailscale),
         ("upload port", lambda: _check_upload_port(cfg)),
     ]
