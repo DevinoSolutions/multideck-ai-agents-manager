@@ -203,7 +203,9 @@ def _check_state_dir() -> CheckResult:
 def _check_sentry() -> CheckResult:
     """Surface the DSN-set-but-SDK-missing state HERE, not at CLI entry:
     init_sentry degrades to a log-file warning so everyday commands stay
-    quiet, and doctor is where the actionable hint lives."""
+    quiet, and doctor is where the actionable hint lives. sentry-sdk is a
+    base dependency, so the WARN below indicates a broken install, not a
+    missing optional extra."""
     from pydantic import ValidationError  # heavy subsystem: in-body per policy
 
     from multideck import env as env_module  # heavy subsystem: in-body per policy
@@ -218,8 +220,9 @@ def _check_sentry() -> CheckResult:
     if not sdk_installed():
         return (
             WARN,
-            "MULTIDECK_SENTRY_DSN is set but sentry-sdk is not installed — "
-            f"error reporting is OFF. Install: {SENTRY_INSTALL_HINT}",
+            "MULTIDECK_SENTRY_DSN is set but sentry-sdk is missing — error "
+            "reporting is OFF. sentry-sdk ships with multideck, so this "
+            f"install looks broken. Repair: {SENTRY_INSTALL_HINT}",
         )
     return (OK, "error reporting active (DSN set, sentry-sdk installed)")
 

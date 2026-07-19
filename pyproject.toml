@@ -5,7 +5,11 @@ description = "Launch each project's AI coding agent in its own terminal, auto-t
 readme = "README.md"
 license = "AGPL-3.0"
 requires-python = ">=3.10"
-dependencies = ["click>=8.0", "pydantic-settings>=2.14"]
+# sentry-sdk is a base dep on purpose: error reporting is env-gated (off until
+# MULTIDECK_SENTRY_DSN is set), but when the DSN IS set the SDK must exist —
+# bundling makes the "DSN set, SDK missing" state unrepresentable in a healthy
+# install instead of a warning users have to act on.
+dependencies = ["click>=8.0", "pydantic-settings>=2.14", "sentry-sdk>=2"]
 keywords = [
   "terminal",
   "windows-terminal",
@@ -51,6 +55,8 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+# Compat alias only: sentry-sdk moved into base dependencies (see above), but
+# existing `pip install "multideck[sentry]"` invocations must keep resolving.
 sentry = ["sentry-sdk>=2"]
 toast = ["winotify>=1.1.0"]
 qr = ["qrcode>=7"]

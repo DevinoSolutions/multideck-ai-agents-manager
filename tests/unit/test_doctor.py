@@ -265,8 +265,9 @@ class TestCheckUploadPort:
 
 
 class TestCheckSentry:
-    """The DSN-set-but-SDK-missing state surfaces HERE (with the
-    installed-package hint), never as a per-command stderr nag — see
+    """The DSN-set-but-SDK-missing state surfaces HERE (as a broken-install
+    warning with a repair hint — sentry-sdk is a base dependency), never as a
+    per-command stderr nag — see
     test_sentry.py::TestMissingSdkIsQuietButLogged for the init side."""
 
     def _fake_env(self, monkeypatch, dsn):
@@ -287,15 +288,19 @@ class TestCheckSentry:
         assert status == OK
         assert "active" in detail
 
-    def test_dsn_without_sdk_warns_with_user_install_hint(self, monkeypatch):
+    def test_dsn_without_sdk_warns_as_broken_install_with_repair_hint(
+        self, monkeypatch
+    ):
         self._fake_env(monkeypatch, "https://example@o0.ingest.sentry.io/0")
         monkeypatch.setattr("multideck.sentry.sdk_installed", lambda: False)
         status, detail = _check_sentry()
         assert status == WARN
-        assert "sentry-sdk is not installed" in detail
-        assert 'pip install "multideck[sentry]"' in detail
-        # The dev-checkout form must never be shown to users.
-        assert '-e ".[sentry]"' not in detail
+        assert "sentry-sdk is missing" in detail
+        # sentry-sdk is bundled, so its absence means the install is damaged:
+        # the hint must be a repair, not an optional-extra install.
+        assert "install looks broken" in detail
+        assert "pip install --force-reinstall multideck" in detail
+        assert "[sentry]" not in detail
 
 
 class TestDoctorCli:

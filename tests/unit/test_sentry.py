@@ -4,8 +4,8 @@ missing-sdk path.
 
 Every test injects a FAKE sentry_sdk into sys.modules mirroring the exact
 import shape init_sentry uses (sentry_sdk, .integrations.logging,
-.integrations.threading), so these pass whether or not the real, optional
-sentry-sdk dependency happens to be installed.
+.integrations.threading), so these never touch the real bundled sentry-sdk
+and pass even in an environment where it is absent.
 """
 
 from __future__ import annotations
@@ -125,11 +125,12 @@ class TestCapturabilityContract:
 
 
 class TestMissingSdkIsQuietButLogged:
-    """R2-04 (revised): sentry-sdk absent must NEVER nag the console -- init
-    runs at CLI entry for every command, so the old stderr tip taxed unrelated
-    commands like `attach` on every run. The explanation still exists (never
-    silent-with-zero-trace): a rotating-log warning here, plus the actionable
-    hint in `multideck doctor`. init still must not raise."""
+    """R2-04 (revised twice): sentry-sdk is a base dependency now, so a
+    missing SDK means a broken install -- but even then init must NEVER nag
+    the console: it runs at CLI entry for every command, so a stderr line
+    would tax unrelated commands like `attach` on every run. The explanation
+    still exists (never silent-with-zero-trace): a rotating-log warning here,
+    plus the repair hint in `multideck doctor`. init still must not raise."""
 
     def test_missing_sdk_logs_warning_console_stays_clean(
         self,
@@ -153,15 +154,16 @@ class TestMissingSdkIsQuietButLogged:
         assert captured.err == ""
         assert captured.out == ""
         assert len(records) == 1
-        assert "sentry-sdk is not installed" in records[0]
+        assert "sentry-sdk is missing" in records[0]
         assert SENTRY_INSTALL_HINT in records[0]
 
 
 class TestNoEagerImport:
     """Pin: merely importing multideck.sentry must never pull in sentry_sdk
-    -- the optional dependency loads only inside init_sentry's guarded try.
-    Runs in a fresh subprocess so no other test's sys.modules state can hide
-    a regression here."""
+    -- the SDK is bundled but loads only inside init_sentry's guarded try,
+    keeping `--help`-style startup free of its import cost when no DSN is
+    set. Runs in a fresh subprocess so no other test's sys.modules state can
+    hide a regression here."""
 
     def test_importing_the_module_does_not_import_sentry_sdk(self) -> None:
         probe = (

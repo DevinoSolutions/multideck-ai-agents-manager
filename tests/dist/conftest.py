@@ -80,7 +80,8 @@ def packaged(tmp_path_factory: pytest.TempPathFactory) -> Packaged:
     )
     wheel = wheels[0]
 
-    # 2. Pristine venv -- base deps ONLY (no dev/sentry/toast/qr extras), so the
+    # 2. Pristine venv -- base deps ONLY (no dev/toast/qr extras; sentry-sdk
+    #    rides along as a base dep), so the
     #    install is byte-for-byte what a plain `pip install multideck` produces.
     venv_dir = tmp_path_factory.mktemp("pristine-venv")
     made = subprocess.run(

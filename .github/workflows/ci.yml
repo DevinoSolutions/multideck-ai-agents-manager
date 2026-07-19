@@ -62,7 +62,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv lock --check
-      - run: uv sync --extra dev --extra sentry --frozen --python 3.13
+      - run: uv sync --extra dev --frozen --python 3.13
       - run: uv run --python 3.13 python scripts/check.py
 
   platform-integration:
