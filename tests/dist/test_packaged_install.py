@@ -120,8 +120,10 @@ _IMPORT_SWEEP = dedent(
     """Import every module in the installed multideck package on base deps only.
 
     Run INSIDE the pristine venv. A module that quietly imports a dev/optional
-    package (sentry_sdk / winotify / qrcode / pytest / ...) fails here. Two
-    sanctioned platform-gated exceptions, deliberately asymmetric:
+    package (winotify / qrcode / pytest / playwright / ...) fails here.
+    (sentry_sdk is a base dep now, so it is present in the pristine venv and
+    no longer a leak indicator.) Two sanctioned platform-gated exceptions,
+    deliberately asymmetric:
 
     * multideck.hotkey -- documented CONTRACT: MUST raise ImportError off-win32
       and MUST import cleanly on win32. Pinned in both directions below;
@@ -216,6 +218,24 @@ def test_import_sweep_detects_no_dev_dependency_leakage(
         f"(dev/optional-dep leak):\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
     )
     assert "IMPORT-SWEEP-OK" in r.stdout, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+
+
+def test_sentry_sdk_ships_in_the_base_install(packaged, home, neutral_cwd):
+    """sentry-sdk is a BASE dependency by design: reporting stays env-gated
+    (off until MULTIDECK_SENTRY_DSN is set), but a plain `pip install
+    multideck` must always be able to honour a DSN -- the "DSN set, SDK
+    missing" doctor warning must be unreachable from a healthy install."""
+    r = subprocess.run(
+        [str(packaged.venv_python), "-c", "import sentry_sdk"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=str(neutral_cwd),
+        env=_child_env(home),
+    )
+    assert r.returncode == 0, (
+        f"sentry_sdk missing from the pristine base-deps venv:\n{r.stderr}"
+    )
 
 
 # --- virgin first run -------------------------------------------------------

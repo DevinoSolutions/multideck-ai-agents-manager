@@ -290,7 +290,7 @@ class ToastRenderer:
     """Windows toast on push-state transitions (needs-input/error, plus done
     when ``notifyOnDone`` widens ``states``). winotify is the optional [toast]
     extra — enabled-but-missing logs one install tip and stays quiet after
-    (same optional-dep doctrine as qrcode/sentry-sdk)."""
+    (same optional-dep doctrine as qrcode)."""
 
     def __init__(
         self, engine: AttentionEngine, states: frozenset[str] = PUSH_STATES

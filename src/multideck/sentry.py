@@ -1,13 +1,17 @@
-"""Optional Sentry error reporting — env-gated, default OFF.
+"""Sentry error reporting — env-gated, default OFF; SDK bundled.
 
-When MULTIDECK_SENTRY_DSN is unset: zero work, zero imports.
-When set: init with errors-only (no traces), no PII, logging integration
-at ERROR level (captures every logger.exception), excepthook, and
-threading integrations. If the DSN is set but sentry-sdk isn't installed,
-init degrades to a rotating-log warning — never a console nag: init runs
-at CLI entry for EVERY command, so a stderr tip would tax unrelated
-commands (`attach`, `status`, …) for an optional feature the command never
-asked for. The actionable install hint surfaces in `multideck doctor`.
+sentry-sdk is a base dependency (see pyproject.toml), so a healthy install
+always has it; reporting itself stays opt-in via MULTIDECK_SENTRY_DSN.
+When the DSN is unset: zero work, zero imports (the SDK loads only inside
+init_sentry, keeping `--help` startup lean). When set: init with
+errors-only (no traces), no PII, logging integration at ERROR level
+(captures every logger.exception), excepthook, and threading integrations.
+
+If the SDK is somehow missing anyway (a broken/partial install), init
+degrades to a rotating-log warning — never a console nag: init runs at CLI
+entry for EVERY command, so a stderr line would tax unrelated commands
+(`attach`, `status`, …). The actionable repair hint surfaces in
+`multideck doctor`.
 
 Import this module in-body at CLI entry, after env validation.
 """
@@ -18,16 +22,15 @@ import logging
 
 from multideck.log import get_logger
 
-# The hint a USER can act on: the installed-package extra. (A dev checkout
-# would use `pip install -e ".[sentry]"`, but users hitting this run the
-# published wheel — the -e form used to be shown and was wrong for them.)
-SENTRY_INSTALL_HINT = 'pip install "multideck[sentry]"'
+# Repair hint for the should-never-happen state: sentry-sdk ships as a base
+# dependency, so its absence means the install itself is damaged.
+SENTRY_INSTALL_HINT = "pip install --force-reinstall multideck"
 
 
 def sdk_installed() -> bool:
-    """True when the optional ``sentry-sdk`` package is importable — probed
+    """True when the bundled ``sentry-sdk`` package is importable — probed
     via find_spec so the check never actually imports the SDK. Used by
-    `multideck doctor` to surface the DSN-set-but-SDK-missing state."""
+    `multideck doctor` to surface a broken install (SDK missing)."""
     from importlib.util import find_spec
 
     try:
@@ -60,11 +63,13 @@ def init_sentry(dsn: str) -> None:
         from sentry_sdk.integrations.logging import LoggingIntegration
         from sentry_sdk.integrations.threading import ThreadingIntegration
     except ImportError:
-        # Quiet degradation by design (was a stderr echo): the console must not
-        # nag on every command; doctor carries the actionable hint.
+        # Should be unreachable: sentry-sdk is a base dependency. Reachable
+        # only from a broken/partial install, so degrade quietly by design
+        # (never a stderr nag on every command); doctor carries the hint.
         get_logger("sentry").warning(
-            "MULTIDECK_SENTRY_DSN is set but sentry-sdk is not installed -- "
-            "error reporting is OFF. Install: %s",
+            "MULTIDECK_SENTRY_DSN is set but sentry-sdk is missing -- error "
+            "reporting is OFF. sentry-sdk ships with multideck, so this "
+            "install looks broken. Repair: %s",
             SENTRY_INSTALL_HINT,
         )
         return
