@@ -26,6 +26,7 @@ shim is a POSIX construct.
 
 from __future__ import annotations
 
+import base64
 import http.client
 import json
 import os
@@ -307,3 +308,64 @@ def test_real_browser_upload_lands_byte_identical_file(serve, page, tmp_path):
     assert len(landed) == 1, f"expected exactly one upload, got {landed}"
     assert landed[0].read_bytes() == expected, "uploaded bytes differ on disk"
     assert landed[0].name.endswith("shot.png"), landed[0].name
+
+
+def test_clipboard_paste_upload_confirms_and_lands_byte_identical(
+    serve, page, tmp_path
+):
+    """The Ctrl+V flow in a real browser: a paste event stages the image with
+    a visible preview, the confirm step holds the upload back until a project
+    is picked (Send disabled, destination line says so), picking the project
+    names it as the target, and confirming uploads — ending in the confirmed
+    success state with the exact pasted bytes on disk.
+
+    The paste itself is a synthesized ClipboardEvent (headless Chromium has no
+    OS clipboard to press Ctrl+V against); everything downstream of the event
+    — staging, preview, confirm gating, XHR POST, tmux injection, file write —
+    is the real product path."""
+    png_path = tmp_path / "clip.png"
+    expected = _make_png(png_path)
+
+    page.goto(serve.url)
+    expect(page).to_have_title("md upload")
+
+    page.evaluate(
+        """(b64) => {
+          const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+          const dt = new DataTransfer();
+          dt.items.add(new File([bytes], 'clip.png', {type: 'image/png'}));
+          window.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt}));
+        }""",
+        base64.b64encode(expected).decode(),
+    )
+
+    # Staged: preview panel up, image shown, but NOT sent — no project yet.
+    expect(page.locator("#paste-box")).to_be_visible()
+    expect(page.locator("#paste-img")).to_be_visible()
+    expect(page.locator("#paste-send")).to_be_disabled()
+    expect(page.locator("#paste-dest")).to_contain_text("select a project")
+
+    # Picking the project flips the destination line and arms Send.
+    page.locator(".pill", has_text=serve.TITLE).click()
+    expect(page.locator("#paste-dest")).to_contain_text(serve.TITLE)
+    expect(page.locator("#paste-send")).to_be_enabled()
+
+    page.locator("#paste-send").click()
+
+    # Confirmed: the button lands in the success state and the toast names the
+    # live injection target (a real tmux session behind the psmux shim).
+    expect(page.locator("#paste-send")).to_contain_text("✓")
+    expect(page.locator("#toast")).to_contain_text("pasted into " + serve.TITLE)
+
+    landed = _wait_until(
+        lambda: (
+            sorted(serve.uploads_dir.glob("*")) if serve.uploads_dir.is_dir() else []
+        ),
+        timeout=10,
+    )
+    assert landed, f"no file landed in {serve.uploads_dir}"
+    assert len(landed) == 1, f"expected exactly one upload, got {landed}"
+    assert landed[0].read_bytes() == expected, "pasted bytes differ on disk"
+    assert "paste-" in landed[0].name and landed[0].name.endswith(".png"), landed[
+        0
+    ].name

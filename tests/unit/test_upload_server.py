@@ -37,6 +37,24 @@ class TestBuildHtml:
         html = _build_html([{"name": "my.api", "session": "my-api", "path": "x"}])
         assert 'data-name="my-api"' in html
 
+    def test_clipboard_paste_ui_ships_on_the_page(self):
+        # Ctrl+V flow contract: the staged-image confirm panel (preview img,
+        # destination-project line, progress bar, explicit Send/Cancel) and the
+        # window paste listener must all be present in the served page. The
+        # real-browser behavioural proof lives in the `browser` e2e tier.
+        html = _build_html([{"name": "p", "path": "x"}])
+        for anchor in (
+            'id="paste-box"',
+            'id="paste-img"',
+            'id="paste-dest"',
+            'id="paste-bar"',
+            'id="paste-send"',
+            'id="paste-cancel"',
+            "addEventListener('paste'",
+            "XMLHttpRequest",
+        ):
+            assert anchor in html, f"paste-upload UI anchor missing: {anchor}"
+
 
 class TestConfigSessions:
     def test_carries_display_name_and_sanitized_session(self, tmp_path):
