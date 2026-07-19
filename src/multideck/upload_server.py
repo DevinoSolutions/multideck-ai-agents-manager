@@ -188,6 +188,26 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cd
 .drop.ok{border-color:#a6e3a1;color:#a6e3a1}
 .drop.err{border-color:#f38ba8;color:#f38ba8}
 .drop input{position:absolute;inset:0;opacity:0;cursor:pointer;font-size:0}
+.paste{display:none;margin-bottom:8px;border:1.5px solid #45475a;border-radius:10px;
+  padding:10px;background:#181825}
+.paste.show{display:block}
+.paste img{display:block;max-width:100%;max-height:40vh;border-radius:6px;
+  margin:0 auto 8px;background:#11111b}
+.paste-meta{display:flex;justify-content:space-between;gap:8px;font-size:.75rem;
+  color:#9399b2;margin-bottom:8px}
+#paste-dest{color:#89b4fa;font-weight:600}
+.bar{display:none;height:6px;border-radius:3px;background:#313244;overflow:hidden;
+  margin-bottom:8px}
+.bar.show{display:block}
+#bar-fill{height:100%;width:0%;background:#89b4fa;transition:width .15s}
+.paste-actions{display:flex;gap:8px}
+.paste-actions button{flex:1;padding:9px;border:none;border-radius:8px;
+  font-weight:700;font-size:.8rem;cursor:pointer}
+#paste-send{background:#a6e3a1;color:#1e1e2e}
+#paste-send:disabled{background:#45475a;color:#6c7086;cursor:not-allowed}
+#paste-send.ok{background:#a6e3a1}
+#paste-send.err{background:#f38ba8;color:#1e1e2e}
+#paste-cancel{background:#313244;color:#bac2de}
 .toast{font-size:.75rem;color:#6c7086;text-align:center;min-height:1.1em;
   transition:color .2s}
 .toast.ok{color:#a6e3a1}
@@ -205,7 +225,7 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cd
 <body>
 <div class="head">
   <h1>MD</h1>
-  <span>tap project &rsaquo; tap file &rsaquo; done</span>
+  <span>tap project &rsaquo; tap file or Ctrl+V &rsaquo; done</span>
 </div>
 
 <div class="pills" id="pills">PROJECTS_PLACEHOLDER</div>
@@ -213,6 +233,19 @@ body{font-family:-apple-system,system-ui,sans-serif;background:#1e1e2e;color:#cd
 <div class="drop" id="drop">
   <span id="drop-label">select a project first</span>
   <input type="file" id="file" accept="image/*,video/*,.pdf,.txt,.json,.csv,.log" disabled>
+</div>
+
+<div class="paste" id="paste-box">
+  <img id="paste-img" alt="pasted image">
+  <div class="paste-meta">
+    <span id="paste-dest"></span>
+    <span id="paste-size"></span>
+  </div>
+  <div class="bar" id="paste-bar"><div id="bar-fill"></div></div>
+  <div class="paste-actions">
+    <button id="paste-send" disabled>Send</button>
+    <button id="paste-cancel">Cancel</button>
+  </div>
 </div>
 <div class="toast" id="toast">&nbsp;</div>
 
@@ -286,6 +319,132 @@ input.addEventListener('change', async () => {
       label.textContent = 'tap to select file';
     }
   }, 2000);
+});
+
+// Ctrl+V clipboard upload: stage the pasted image (preview + target project),
+// send only on explicit confirm, and show live upload progress. XHR instead of
+// fetch because only XHR exposes upload-progress events.
+const pbox = document.getElementById('paste-box');
+const pimg = document.getElementById('paste-img');
+const pdest = document.getElementById('paste-dest');
+const psize = document.getElementById('paste-size');
+const pbar = document.getElementById('paste-bar');
+const pfill = document.getElementById('bar-fill');
+const psend = document.getElementById('paste-send');
+const pcancel = document.getElementById('paste-cancel');
+let staged = null;
+let sending = false;
+
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+
+function refreshPaste() {
+  if (!staged) return;
+  pdest.textContent = proj ? '→ ' + proj : 'select a project above';
+  psend.disabled = sending || !proj;
+}
+pills.forEach(p => p.addEventListener('click', refreshPaste));
+
+function clearStage() {
+  if (staged) URL.revokeObjectURL(staged.url);
+  staged = null;
+  sending = false;
+  pbox.className = 'paste';
+  pbar.className = 'bar';
+  pfill.style.width = '0%';
+  psend.className = '';
+  psend.textContent = 'Send';
+  psend.disabled = true;
+  pcancel.disabled = false;
+}
+
+window.addEventListener('paste', e => {
+  if (sending) return;  // never swap the image out from under an upload
+  const items = (e.clipboardData || {}).items || [];
+  for (const it of items) {
+    if (it.kind === 'file' && it.type.startsWith('image/')) {
+      e.preventDefault();
+      stageFile(it.getAsFile());
+      return;
+    }
+  }
+});
+
+function stageFile(file) {
+  if (staged) URL.revokeObjectURL(staged.url);
+  const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  const ts = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+  staged = {file: file, url: URL.createObjectURL(file),
+            name: 'paste-' + ts + '.' + ext};
+  pimg.src = staged.url;
+  psize.textContent = fmtSize(file.size);
+  pfill.style.width = '0%';
+  pbar.className = 'bar';
+  psend.className = '';
+  psend.textContent = 'Send';
+  pbox.className = 'paste show';
+  toast.textContent = '\u00a0';
+  toast.className = 'toast';
+  refreshPaste();
+}
+
+function pasteFail(msg) {
+  sending = false;
+  psend.className = 'err';
+  psend.textContent = 'Retry';
+  psend.disabled = false;
+  pcancel.disabled = false;
+  toast.textContent = msg;
+  toast.className = 'toast err';
+}
+
+psend.addEventListener('click', () => {
+  if (!staged || !proj || sending) return;
+  sending = true;
+  psend.className = '';
+  psend.disabled = true;
+  pcancel.disabled = true;
+  psend.textContent = 'Sending 0%';
+  pbar.className = 'bar show';
+
+  const form = new FormData();
+  form.append('file', staged.file, staged.name);
+  form.append('project', proj);
+  form.append('inject', '1');
+
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/upload');
+  xhr.upload.addEventListener('progress', ev => {
+    if (!ev.lengthComputable) return;
+    const pct = Math.round(ev.loaded / ev.total * 100);
+    pfill.style.width = pct + '%';
+    psend.textContent = 'Sending ' + pct + '%';
+  });
+  xhr.addEventListener('load', () => {
+    let d = {};
+    try { d = JSON.parse(xhr.responseText); } catch (e) {}
+    if (xhr.status === 200 && d.ok) {
+      pfill.style.width = '100%';
+      psend.className = 'ok';
+      psend.textContent = (d.injected ? 'Pasted into ' + proj : 'Sent') + ' ✓';
+      toast.textContent = staged.name
+        + (d.injected ? ' pasted into ' + proj : ' sent');
+      toast.className = 'toast ok';
+      setTimeout(clearStage, 2500);
+    } else {
+      pasteFail(d.error || 'upload failed');
+    }
+  });
+  xhr.addEventListener('error', () => pasteFail('network error'));
+  xhr.send(form);
+});
+
+pcancel.addEventListener('click', () => {
+  if (sending) return;
+  clearStage();
 });
 </script>
 
